@@ -55,6 +55,9 @@ export const attachDocInput = z.object({
 export const docSearchQuery = z.string().trim().max(100, "Recherche trop longue");
 
 /** Premier message d'erreur lisible d'une validation Zod. */
+/** Journal de bord d'une période de travail. */
+export const workNote = z.string().trim().max(5000, "Le journal est limité à 5 000 caractères.");
+
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Données invalides";
 }

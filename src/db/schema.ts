@@ -4,6 +4,7 @@
  *   users ──< sessions
  *   users ──< task_assignees >── tasks >── projects
  *   users ──< external_connections ──< external_resources >── projects
+ *   users ──< work_sessions >── projects
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
  * - Un projet archivé (archived_at non nul) disparaît des vues courantes mais reste consultable.
@@ -12,7 +13,7 @@
  * - Intégrations : un utilisateur rattache un compte externe (Google, puis GitHub) ; les
  *   ressources externes (Google Docs, puis dépôts, issues…) sont rattachées à un projet.
  */
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   date,
   doublePrecision,
@@ -24,6 +25,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -190,12 +192,37 @@ export const externalResources = pgTable(
   ],
 );
 
+/**
+ * Temps de travail mesuré au chrono du tableau de bord : une ligne par période démarrée puis
+ * arrêtée, avec son compte rendu facultatif. `ended_at` nul = chrono en cours ; un membre n'en a jamais qu'un seul à la fois.
+ */
+export const workSessions = pgTable(
+  "work_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Projet sélectionné au démarrage du chrono. */
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Journal de bord : ce que le membre a fait pendant la période, rédigé après l'arrêt. */
+    note: text("note").notNull().default(""),
+  },
+  (t) => [
+    index("work_sessions_user_started_idx").on(t.userId, t.startedAt),
+    uniqueIndex("work_sessions_running_uq").on(t.userId).where(sql`${t.endedAt} is null`),
+  ],
+);
+
 // Relations (pour les requêtes relationnelles `db.query.*`)
 
 export const usersRelations = relations(users, ({ many }) => ({
   assignments: many(taskAssignees),
   sessions: many(sessions),
   connections: many(externalConnections),
+  workSessions: many(workSessions),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -230,6 +257,11 @@ export const externalResourcesRelations = relations(externalResources, ({ one })
   }),
 }));
 
+export const workSessionsRelations = relations(workSessions, ({ one }) => ({
+  user: one(users, { fields: [workSessions.userId], references: [users.id] }),
+  project: one(projects, { fields: [workSessions.projectId], references: [projects.id] }),
+}));
+
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
@@ -237,4 +269,5 @@ export type TaskStatus = (typeof taskStatus.enumValues)[number];
 export type TaskPriority = (typeof taskPriority.enumValues)[number];
 export type ExternalConnection = typeof externalConnections.$inferSelect;
 export type ExternalResource = typeof externalResources.$inferSelect;
+export type WorkSession = typeof workSessions.$inferSelect;
 export type IntegrationProvider = (typeof integrationProvider.enumValues)[number];

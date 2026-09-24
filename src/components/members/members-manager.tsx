@@ -1,6 +1,7 @@
 "use client";
 
-import { KeyRound, Trash2, UserPlus } from "lucide-react";
+import { ChevronRight, KeyRound, Trash2, UserPlus } from "lucide-react";
+import Link from "next/link";
 import { useState, useTransition, type FormEvent } from "react";
 import { createMember, deleteMember, resetMemberPassword } from "@/actions/members";
 import { useApp } from "@/components/layout/app-provider";
@@ -38,13 +39,16 @@ export function MembersManager({ team }: { team: Member[] }) {
         <ul className="divide-y divide-border">
           {team.map((m) => (
             <li key={m.id} className="flex items-center gap-3 px-4 py-3">
-              <Avatar user={m} size={32} />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">
-                  {m.name} {m.id === me.id && <span className="font-normal text-muted">(vous)</span>}
-                </p>
-                <p className="truncate text-xs text-muted">{m.email}</p>
-              </div>
+              <Link href={`/membres/${m.id}`} className="group flex min-w-0 flex-1 items-center gap-3" title={`Temps de travail et tâches de ${m.name}`}>
+                <Avatar user={m} size={32} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium group-hover:text-accent group-hover:underline">
+                    {m.name} {m.id === me.id && <span className="font-normal text-muted">(vous)</span>}
+                  </p>
+                  <p className="truncate text-xs text-muted">{m.email}</p>
+                </div>
+                <ChevronRight size={15} className="shrink-0 text-muted opacity-0 transition-opacity group-hover:opacity-100" />
+              </Link>
               {m.role === "admin" && <span className="rounded-full bg-accent-soft px-2 py-0.5 text-xs text-accent">Admin</span>}
               <Button size="icon" variant="ghost" title="Réinitialiser le mot de passe" aria-label={`Réinitialiser le mot de passe de ${m.name}`} onClick={() => setResetFor(m)}>
                 <KeyRound size={15} />

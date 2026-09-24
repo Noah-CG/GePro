@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -65,5 +66,42 @@ export function SideTooltip({ label }: { label: string }) {
     >
       {label}
     </span>
+  );
+}
+
+const TONES = {
+  danger: "text-danger bg-danger-soft",
+  warning: "text-warning bg-warning-soft",
+  accent: "text-accent bg-accent-soft",
+  success: "text-success bg-success-soft",
+};
+
+/** Chiffre clé (tableau de bord, fiche membre), cliquable si `href` est fourni. */
+export function Stat({ icon, label, value, tone, href }: { icon: ReactNode; label: string; value: ReactNode; tone?: keyof typeof TONES; href?: string }) {
+  const body = (
+    <Card className="flex items-center gap-3 p-4">
+      <span className={cn("flex h-9 w-9 items-center justify-center rounded-lg", tone ? TONES[tone] : "bg-surface-2 text-muted")}>{icon}</span>
+      <div>
+        <p className="text-xl font-semibold tabular-nums">{value}</p>
+        <p className="text-xs text-muted">{label}</p>
+      </div>
+    </Card>
+  );
+  return href ? <Link href={href}>{body}</Link> : body;
+}
+
+/** Carte avec un en-tête : titre, compteur facultatif et action à droite. */
+export function Section({ title, count, tone, action, children }: { title: string; count?: number; tone?: "danger"; action?: ReactNode; children: ReactNode }) {
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {count !== undefined && count > 0 && (
+          <span className={cn("rounded-full px-1.5 text-xs font-medium", tone === "danger" ? "bg-danger-soft text-danger" : "bg-surface-2 text-muted")}>{count}</span>
+        )}
+        <span className="ml-auto">{action}</span>
+      </div>
+      {children}
+    </Card>
   );
 }
