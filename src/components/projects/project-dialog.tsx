@@ -94,7 +94,7 @@ export function ProjectDialog({
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
             Annuler
           </Button>
-          <Button type="submit" variant="primary" disabled={pending || !draft.name.trim()}>
+          <Button type="submit" variant="primary" disabled={!draft.name.trim()} loading={pending}>
             {project ? "Enregistrer" : "Créer le projet"}
           </Button>
         </div>

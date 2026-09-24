@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import { setProjectArchived } from "@/actions/projects";
 import { useApp } from "@/components/layout/app-provider";
 import { useTabs } from "@/components/layout/tabs";
+import { Spinner } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/misc";
 import { formatShort } from "@/lib/dates";
 import type { ProjectWithStats } from "@/lib/queries";
@@ -68,8 +69,14 @@ export function ProjectMenu({ project }: { project: ProjectWithStats }) {
           >
             <AppWindow size={14} className="text-muted" /> Ouvrir dans un nouvel onglet
           </button>
-          <button className={row} onClick={toggleArchive} disabled={pending}>
-            {project.archived ? <ArchiveRestore size={14} className="text-muted" /> : <Archive size={14} className="text-muted" />}
+          <button className={row} onClick={toggleArchive} disabled={pending} aria-busy={pending || undefined}>
+            {pending ? (
+              <Spinner size={14} className="text-muted" />
+            ) : project.archived ? (
+              <ArchiveRestore size={14} className="text-muted" />
+            ) : (
+              <Archive size={14} className="text-muted" />
+            )}
             {project.archived ? "Désarchiver" : "Archiver"}
           </button>
         </Popover.Content>

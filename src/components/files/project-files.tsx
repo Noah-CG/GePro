@@ -123,7 +123,7 @@ function FileRow({ file: f }: { file: FileView }) {
           variant={confirming ? "danger" : "ghost"}
           onClick={remove}
           onBlur={() => setConfirming(false)}
-          disabled={pending}
+          loading={pending}
           aria-label={confirming ? `Confirmer la suppression de ${f.title}` : `Supprimer ${f.title}`}
           title="Supprimer"
         >

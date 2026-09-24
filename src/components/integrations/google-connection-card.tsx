@@ -55,7 +55,7 @@ export function GoogleConnectionCard({
       variant={confirming ? "danger" : "ghost"}
       onClick={disconnect}
       onBlur={() => setConfirming(false)}
-      disabled={pending}
+      loading={pending}
     >
       {confirming ? "Confirmer la déconnexion" : "Déconnecter"}
     </Button>

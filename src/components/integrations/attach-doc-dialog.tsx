@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { attachGoogleDoc, searchGoogleDocs, type DocOption } from "@/actions/integrations";
 import { useApp } from "@/components/layout/app-provider";
-import { Button, buttonClass } from "@/components/ui/button";
+import { Button, buttonClass, Spinner } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { parseDocId } from "@/lib/integrations/doc-links";
@@ -65,6 +65,8 @@ function AttachForm({ projectId, attachedIds, onDone }: { projectId: string; att
   const [link, setLink] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Document en cours de rattachement (clic dans la liste), pour son indicateur.
+  const [attaching, setAttaching] = useState<string | null>(null);
 
   // Recherche à la frappe (300 ms d'attente), et liste des documents récents à l'ouverture.
   useEffect(() => {
@@ -90,6 +92,7 @@ function AttachForm({ projectId, attachedIds, onDone }: { projectId: string; att
 
   function attach(value: string) {
     setError(null);
+    setAttaching(value);
     startTransition(async () => {
       const res = await attachGoogleDoc(projectId, value);
       if (!res.ok) return setError(res.error);
@@ -143,6 +146,7 @@ function AttachForm({ projectId, attachedIds, onDone }: { projectId: string; att
                       type="button"
                       onClick={() => attach(doc.id)}
                       disabled={attached || pending}
+                      aria-busy={(pending && attaching === doc.id) || undefined}
                       className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-surface-2 disabled:cursor-default disabled:hover:bg-transparent"
                     >
                       <FileText size={16} className="shrink-0 text-accent" />
@@ -153,6 +157,7 @@ function AttachForm({ projectId, attachedIds, onDone }: { projectId: string; att
                           {doc.lastModifiedBy && ` par ${doc.lastModifiedBy}`}
                         </span>
                       </span>
+                      {pending && attaching === doc.id && <Spinner size={14} className="text-accent" />}
                       {attached && (
                         <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted">
                           <Check size={12} /> Déjà rattaché
@@ -179,7 +184,7 @@ function AttachForm({ projectId, attachedIds, onDone }: { projectId: string; att
               aria-invalid={linkInvalid}
               aria-describedby={linkInvalid ? "doc-link-error" : undefined}
             />
-            <Button type="submit" variant="primary" disabled={pending || !link.trim() || linkInvalid}>
+            <Button type="submit" variant="primary" disabled={!link.trim() || linkInvalid} loading={pending}>
               Rattacher
             </Button>
           </div>

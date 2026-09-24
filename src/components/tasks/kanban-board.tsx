@@ -22,6 +22,7 @@ import { createTask, moveTask } from "@/actions/tasks";
 import type { TaskStatus } from "@/db/schema";
 import { useApp } from "@/components/layout/app-provider";
 import { StatusIcon } from "@/components/ui/badges";
+import { Spinner } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { STATUSES } from "@/lib/constants";
 import type { TaskView } from "@/lib/queries";
@@ -247,17 +248,20 @@ function QuickAdd({ projectId, status }: { projectId: string; status: TaskStatus
   };
 
   return editing ? (
-    <Input
-      autoFocus
-      value={title}
-      disabled={pending}
-      onChange={(e) => setTitle(e.target.value)}
-      onKeyDown={onKeyDown}
-      onBlur={() => !title.trim() && setEditing(false)}
-      placeholder="Titre puis Entrée…"
-      aria-label="Titre de la nouvelle tâche"
-      className="m-1 w-auto border-accent"
-    />
+    <div className="relative" aria-busy={pending || undefined}>
+      <Input
+        autoFocus
+        value={title}
+        disabled={pending}
+        onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={() => !title.trim() && setEditing(false)}
+        placeholder="Titre puis Entrée…"
+        aria-label="Titre de la nouvelle tâche"
+        className="m-1 w-auto border-accent"
+      />
+      {pending && <Spinner size={14} className="absolute top-1/2 right-4 -translate-y-1/2 text-muted" />}
+    </div>
   ) : (
     <button onClick={() => setEditing(true)} className="m-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted hover:bg-surface hover:text-text">
       <Plus size={14} /> Ajouter

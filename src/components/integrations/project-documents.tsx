@@ -49,8 +49,8 @@ export function ProjectDocuments({
         </h2>
         <div className="flex items-center gap-1">
           {resources.length > 0 && (
-            <Button size="icon" variant="ghost" onClick={refresh} disabled={refreshing} aria-label="Actualiser les documents" title="Actualiser">
-              <RefreshCw size={14} className={cn(refreshing && "animate-spin")} />
+            <Button size="icon" variant="ghost" onClick={refresh} loading={refreshing} aria-label="Actualiser les documents" title="Actualiser">
+              <RefreshCw size={14} />
             </Button>
           )}
           {googleConfigured && (
@@ -144,7 +144,7 @@ function DocumentRow({ resource: r }: { resource: ResourceView }) {
         variant={confirming ? "danger" : "ghost"}
         onClick={detach}
         onBlur={() => setConfirming(false)}
-        disabled={pending}
+        loading={pending}
         aria-label={`Détacher ${r.title}`}
         title="Détacher du projet"
       >

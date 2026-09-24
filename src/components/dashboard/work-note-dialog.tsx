@@ -56,7 +56,7 @@ export function WorkNoteDialog({ target, onClose }: { target: NoteTarget | null;
           <span className="text-xs text-muted">Ctrl + Entrée pour enregistrer</span>
           <div className="flex gap-2">
             <Button onClick={() => onClose(false)}>Plus tard</Button>
-            <Button type="submit" variant="primary" disabled={pending}>
+            <Button type="submit" variant="primary" loading={pending}>
               Enregistrer
             </Button>
           </div>

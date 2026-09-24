@@ -57,14 +57,16 @@ export function TaskDialog({
   }));
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [saving, startSaving] = useTransition();
+  const [deleting, startDeleting] = useTransition();
+  const pending = saving || deleting;
 
   const set = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => setDraft((d) => ({ ...d, [key]: value }));
 
   function submit(e?: FormEvent) {
     e?.preventDefault();
     setError(null);
-    startTransition(async () => {
+    startSaving(async () => {
       const res = task ? await updateTask(task.id, draft) : await createTask(draft);
       if (!res.ok) return setError(res.error);
       toast(task ? "Tâche mise à jour" : "Tâche créée");
@@ -75,7 +77,7 @@ export function TaskDialog({
   function remove() {
     if (!task) return;
     if (!confirmDelete) return setConfirmDelete(true);
-    startTransition(async () => {
+    startDeleting(async () => {
       const res = await deleteTask(task.id);
       if (!res.ok) return setError(res.error);
       toast("Tâche supprimée");
@@ -173,7 +175,7 @@ export function TaskDialog({
 
           <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
             {task ? (
-              <Button variant={confirmDelete ? "danger" : "ghost"} size="sm" onClick={remove} disabled={pending}>
+              <Button variant={confirmDelete ? "danger" : "ghost"} size="sm" onClick={remove} disabled={pending} loading={deleting}>
                 <Trash2 size={14} />
                 {confirmDelete ? "Confirmer la suppression" : "Supprimer"}
               </Button>
@@ -186,7 +188,7 @@ export function TaskDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Annuler
               </Button>
-              <Button type="submit" variant="primary" disabled={pending || !draft.title.trim()}>
+              <Button type="submit" variant="primary" disabled={pending || !draft.title.trim()} loading={saving}>
                 {task ? "Enregistrer" : "Créer la tâche"}
               </Button>
             </div>

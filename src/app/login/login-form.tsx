@@ -17,7 +17,7 @@ export function LoginForm() {
         <Input id="password" name="password" type="password" autoComplete="current-password" required />
       </Field>
       {state.error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{state.error}</p>}
-      <Button type="submit" variant="primary" className="w-full justify-center" disabled={pending}>
+      <Button type="submit" variant="primary" className="w-full justify-center" loading={pending}>
         {pending ? "Connexion…" : "Se connecter"}
       </Button>
     </form>

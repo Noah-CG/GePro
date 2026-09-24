@@ -36,7 +36,7 @@ export function FileActions({ fileId, projectId, name, canDelete }: { fileId: st
           variant={confirming ? "danger" : "ghost"}
           onClick={remove}
           onBlur={() => setConfirming(false)}
-          disabled={pending}
+          loading={pending}
           aria-label={confirming ? `Confirmer la suppression de ${name}` : `Supprimer ${name}`}
         >
           <Trash2 size={14} /> {confirming ? "Confirmer la suppression" : "Supprimer"}
