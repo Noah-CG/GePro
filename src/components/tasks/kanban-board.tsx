@@ -22,6 +22,7 @@ import { createTask, moveTask } from "@/actions/tasks";
 import type { TaskStatus } from "@/db/schema";
 import { useApp } from "@/components/layout/app-provider";
 import { StatusIcon } from "@/components/ui/badges";
+import { Input } from "@/components/ui/input";
 import { STATUSES } from "@/lib/constants";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -246,7 +247,7 @@ function QuickAdd({ projectId, status }: { projectId: string; status: TaskStatus
   };
 
   return editing ? (
-    <input
+    <Input
       autoFocus
       value={title}
       disabled={pending}
@@ -254,7 +255,8 @@ function QuickAdd({ projectId, status }: { projectId: string; status: TaskStatus
       onKeyDown={onKeyDown}
       onBlur={() => !title.trim() && setEditing(false)}
       placeholder="Titre puis Entrée…"
-      className="m-1 h-9 rounded-lg border border-accent bg-surface px-3 text-sm outline-none"
+      aria-label="Titre de la nouvelle tâche"
+      className="m-1 w-auto border-accent"
     />
   ) : (
     <button onClick={() => setEditing(true)} className="m-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted hover:bg-surface hover:text-text">

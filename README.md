@@ -2,7 +2,7 @@
 
 Application de gestion de projet pour petites équipes (5 à 15 personnes) : projets, tâches, Kanban, liste filtrable, tableau de bord, recherche rapide et Google Docs rattachés aux projets.
 
-**Stack** : Next.js 16 (App Router, Server Actions) · Neon Postgres · Drizzle ORM · Tailwind CSS 4 · dnd-kit · cmdk · Vitest.
+**Stack** : Next.js 16 (App Router, Server Actions) · Neon Postgres · Drizzle ORM · Tailwind CSS 4 · composants Radix UI façon shadcn/ui · react-day-picker · dnd-kit · cmdk · Vitest.
 
 ---
 
@@ -219,7 +219,7 @@ src/
 │   └── api/integrations/     Routes OAuth (connect → Google → callback)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/
-│   ├── ui/                   Briques génériques : Button, Dialog, Input, Badges, Avatar…
+│   ├── ui/                   Briques génériques : Button, Dialog, Input, Select, DatePicker, Calendar, Badges, Avatar…
 │   ├── layout/               AppProvider (contexte, raccourcis, toasts), AppShell, barre latérale (sidebar*), onglets, sélecteur de projet, palette de recherche
 │   ├── tasks/                TaskBoard, KanbanBoard, TaskList, TaskDialog, filtres
 │   ├── projects/             ProjectCard, ProjectDialog
@@ -240,6 +240,7 @@ Principes :
 - **Filtres et tri côté client** : une équipe de 15 personnes a au plus quelques centaines de tâches actives, donc filtrer est instantané, sans aller-retour serveur.
 - **Recherche** côté serveur (`ILIKE` sur titres et descriptions, y compris les projets archivés).
 - **Thème** clair, sombre ou automatique (`next-themes`), construit sur des variables CSS.
+- **Champs de formulaire** : aucun contrôle natif du navigateur pour les listes et les dates. `components/ui/select.tsx` (Radix Select) et `components/ui/date-picker.tsx` (calendrier `react-day-picker` en français, semaine du lundi) reprennent les composants de shadcn/ui, recopiés et adaptés aux couleurs de l'app plutôt qu'installés via `npx shadcn init`, qui remplacerait le thème existant.
 - **Intégrations** : appels REST directs à Google, sans SDK. Chaque erreur est traduite en code (`lib/integrations/errors.ts`), et le code en message lisible au moment de l'affichage.
 
 ## Tests

@@ -4,6 +4,9 @@ import { SlidersHorizontal, Search, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { TaskPriority, TaskStatus } from "@/db/schema";
 import { useApp } from "@/components/layout/app-provider";
+import { PRIORITY_DOT } from "@/components/ui/badges";
+import { Input } from "@/components/ui/input";
+import { SimpleSelect } from "@/components/ui/select";
 import { PRIORITIES, PRIORITY_RANK, STATUSES, STATUS_RANK } from "@/lib/constants";
 import { endOfWeekISO } from "@/lib/dates";
 import type { TaskView } from "@/lib/queries";
@@ -112,9 +115,6 @@ export function sortTasks(tasks: TaskView[], sort: Sort): TaskView[] {
   return [...tasks].sort((a, b) => cmp(a, b) || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.title.localeCompare(b.title, "fr"));
 }
 
-const select =
-  "h-8 rounded-lg border border-border bg-surface pr-7 pl-2.5 text-sm focus:border-accent focus:outline-none";
-
 /** Barre de filtres commune aux vues Kanban et Liste. */
 export function FilterBar({
   filters,
@@ -151,7 +151,7 @@ export function FilterBar({
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-full sm:w-56">
         <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
-        <input
+        <Input
           value={text}
           onChange={(e) => {
             setText(e.target.value);
@@ -160,7 +160,7 @@ export function FilterBar({
           }}
           placeholder="Filtrer…"
           aria-label="Filtrer par texte"
-          className="h-8 w-full rounded-lg border border-border bg-surface pr-2 pl-8 text-sm placeholder:text-muted focus:border-accent focus:outline-none"
+          className="h-8 pr-2 pl-8"
         />
       </div>
 
@@ -184,58 +184,71 @@ export function FilterBar({
       </button>
 
       <div className={cn("w-full flex-wrap items-center gap-2 sm:flex sm:w-auto", expanded ? "flex" : "hidden")}>
-      <select aria-label="Responsable" className={select} value={filters.assignee} onChange={(e) => set("assignee", e.target.value)}>
-        <option value="all">Tous les responsables</option>
-        <option value="me">Moi</option>
-        <option value="none">Non assignées</option>
-        {team.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.name}
-          </option>
-        ))}
-      </select>
+        <SimpleSelect
+          aria-label="Responsable"
+          size="sm"
+          className="w-auto"
+          value={filters.assignee}
+          onValueChange={(v) => set("assignee", v)}
+          options={[
+            { value: "all", label: "Tous les responsables" },
+            { value: "me", label: "Moi" },
+            { value: "none", label: "Non assignées" },
+            ...team.map((m, i) => ({ value: m.id, label: m.name, dot: m.color, separatorBefore: i === 0 })),
+          ]}
+        />
 
-      <select aria-label="Priorité" className={select} value={filters.priority} onChange={(e) => set("priority", e.target.value as TaskFilters["priority"])}>
-        <option value="all">Toutes priorités</option>
-        {PRIORITIES.map((p) => (
-          <option key={p.value} value={p.value}>
-            {p.label}
-          </option>
-        ))}
-      </select>
+        <SimpleSelect
+          aria-label="Priorité"
+          size="sm"
+          className="w-auto"
+          value={filters.priority}
+          onValueChange={(v) => set("priority", v)}
+          options={[
+            { value: "all" as const, label: "Toutes priorités" },
+            ...PRIORITIES.map((p) => ({ value: p.value, label: p.label, dot: PRIORITY_DOT[p.value] })),
+          ]}
+        />
 
-      <select aria-label="Échéance" className={select} value={filters.due} onChange={(e) => set("due", e.target.value as DueFilter)}>
-        <option value="all">Toutes échéances</option>
-        <option value="overdue">En retard</option>
-        <option value="today">Aujourd&apos;hui</option>
-        <option value="week">Cette semaine</option>
-        <option value="none">Sans échéance</option>
-      </select>
+        <SimpleSelect
+          aria-label="Échéance"
+          size="sm"
+          className="w-auto"
+          value={filters.due}
+          onValueChange={(v) => set("due", v)}
+          options={[
+            { value: "all", label: "Toutes échéances" },
+            { value: "overdue", label: "En retard" },
+            { value: "today", label: "Aujourd'hui" },
+            { value: "week", label: "Cette semaine" },
+            { value: "none", label: "Sans échéance" },
+          ]}
+        />
 
-      {showStatus && (
-        <select aria-label="Statut" className={select} value={filters.status} onChange={(e) => set("status", e.target.value as TaskFilters["status"])}>
-          <option value="all">Tous statuts</option>
-          {STATUSES.map((s) => (
-            <option key={s.value} value={s.value}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      )}
+        {showStatus && (
+          <SimpleSelect
+            aria-label="Statut"
+            size="sm"
+            className="w-auto"
+            value={filters.status}
+            onValueChange={(v) => set("status", v)}
+            options={[{ value: "all" as const, label: "Tous statuts" }, ...STATUSES.map((st) => ({ value: st.value, label: st.label }))]}
+          />
+        )}
 
-      {showProject && (
-        <select aria-label="Projet" className={select} value={filters.project} onChange={(e) => set("project", e.target.value)}>
-          <option value="all">Tous les projets</option>
-          {projects
-            .filter((p) => !p.archived)
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-        </select>
-      )}
-
+        {showProject && (
+          <SimpleSelect
+            aria-label="Projet"
+            size="sm"
+            className="w-auto"
+            value={filters.project}
+            onValueChange={(v) => set("project", v)}
+            options={[
+              { value: "all", label: "Tous les projets" },
+              ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name, dot: p.color })),
+            ]}
+          />
+        )}
       </div>
 
       {active && (

@@ -83,10 +83,6 @@
     outline: 2px solid var(--ring);
     outline-offset: 2px;
   }
-  /* Icône du sélecteur de date lisible en mode sombre. */
-  .dark input[type="date"]::-webkit-calendar-picker-indicator {
-    filter: invert(0.8);
-  }
 }
 
 /* Défilement sans barre visible (barre d'onglets : on fait défiler à la molette ou au doigt). */
