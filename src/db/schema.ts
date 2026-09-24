@@ -4,6 +4,7 @@
  *   users ──< sessions
  *   users ──< task_assignees >── tasks >── projects
  *   users ──< external_connections ──< external_resources >── projects
+ *   projects ──< project_events (projet facultatif : sans projet, événement d'équipe)
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
  * - Un projet archivé (archived_at non nul) disparaît des vues courantes mais reste consultable.
@@ -125,6 +126,27 @@ export const taskAssignees = pgTable(
 );
 
 /**
+ * Événements du calendrier (réunion, jalon, livraison…), distincts des tâches.
+ * Sans projet, c'est un événement d'équipe, affiché dans le calendrier de chaque projet.
+ */
+export const projectEvents = pgTable(
+  "project_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    /** Date métier "YYYY-MM-DD", comme les échéances des tâches. */
+    eventDate: date("event_date", { mode: "string" }).notNull(),
+    color: text("color").notNull().default("#6366f1"),
+    /** Seul le créateur (ou un admin) peut modifier ou supprimer l'événement. */
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("project_events_project_date_idx").on(t.projectId, t.eventDate)],
+);
+
+/**
  * Compte externe rattaché à un utilisateur (un seul par fournisseur).
  * Les jetons sont chiffrés (AES-256-GCM, voir lib/crypto.ts) et ne quittent jamais le serveur.
  */
@@ -205,6 +227,12 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 export const projectsRelations = relations(projects, ({ many }) => ({
   tasks: many(tasks),
   resources: many(externalResources),
+  events: many(projectEvents),
+}));
+
+export const projectEventsRelations = relations(projectEvents, ({ one }) => ({
+  project: one(projects, { fields: [projectEvents.projectId], references: [projects.id] }),
+  creator: one(users, { fields: [projectEvents.createdBy], references: [users.id] }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
@@ -233,6 +261,7 @@ export const externalResourcesRelations = relations(externalResources, ({ one })
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
+export type ProjectEvent = typeof projectEvents.$inferSelect;
 export type TaskStatus = (typeof taskStatus.enumValues)[number];
 export type TaskPriority = (typeof taskPriority.enumValues)[number];
 export type ExternalConnection = typeof externalConnections.$inferSelect;
