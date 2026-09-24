@@ -9,6 +9,8 @@ import { insertProject, insertUser, resetDb } from "@/test/db";
 import { cancelFileUpload, deleteFile, finishFileUpload, startFileUpload, uploadFileChunk } from "./files";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
+// Fichiers de plusieurs Mo en base : plus lent que les autres tests quand tout tourne en parallèle.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 

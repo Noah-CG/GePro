@@ -123,6 +123,21 @@ Chaque document est lu et synchronisé avec le compte Google de la personne qui 
 | Il faut se reconnecter chaque semaine | Application Externe en mode Test : les autorisations expirent au bout de 7 jours (voir plus haut). |
 | « Non configurée sur ce serveur » dans les paramètres du projet | Une des quatre variables manque, ou `INTEGRATIONS_ENCRYPTION_KEY` ne fait pas 32 octets. Redémarrez le serveur après toute modification. |
 
+## Documents PDF
+
+Chaque projet peut aussi recevoir des **PDF importés depuis l'ordinateur**, lisibles par toute l'équipe dans GePro, en lecture seule. Aucune configuration n'est nécessaire.
+
+- **Importer** : **+** de la section Documents de la barre latérale, puis *Importer un PDF*, ou page **Documents** du projet (bouton ou glisser-déposer, plusieurs fichiers à la fois). 20 Mo au plus par fichier. Un PDF importé seul s'ouvre aussitôt dans un nouvel onglet GePro.
+- **Lire** : le lecteur de GePro affiche les pages telles qu'elles sont dans le PDF (texte, images, mise en page), sans iframe. Le texte se sélectionne, se copie et se trouve avec Ctrl+F (sur les pages déjà affichées). Zoom, ajustement à la largeur, accès direct à une page, liens cliquables, bouton **Télécharger**.
+- **Supprimer** : réservé à la personne qui a importé le fichier et aux administrateurs.
+
+Fonctionnement :
+
+- Le lecteur repose sur [pdf.js](https://mozilla.github.io/pdf.js/) (`pdfjs-dist`, la bibliothèque du lecteur PDF de Firefox), chargé uniquement à l'ouverture d'un PDF. Chaque page est dessinée dans un `<canvas>`, sous un calque de texte transparent ; seules les pages proches de l'écran sont téléchargées et dessinées.
+- Les fichiers sont stockés **dans la base Postgres** (Neon, ou PGlite en local), découpés en morceaux de 960 Ko (`project_file_chunks`). Vercel limite chaque requête à 4,5 Mo et une Server Action à 1 Mo : l'import envoie donc un morceau par requête, et la route `/api/fichiers/[id]` sert le fichier par plages d'octets (`Range`), ce qui permet à pdf.js de ne demander que les morceaux utiles. Comptez la place sur le quota Neon : 0,5 Go dans l'offre gratuite.
+- Les fichiers annexes de pdf.js (polices standard, tables de caractères, décodeurs d'images JBIG2 et JPEG 2000 des PDF scannés) sont servis depuis `node_modules/pdfjs-dist` par la route `/api/pdfjs/…` (voir `outputFileTracingIncludes` dans `next.config.ts`).
+- Un import interrompu (onglet fermé, coupure) reste invisible et est supprimé au bout d'un jour.
+
 ## Scripts
 
 | Commande | Rôle |
@@ -156,6 +171,7 @@ users ──< sessions
 users ──< task_assignees >── tasks >── projects
 users ──< external_connections ──< external_resources >── projects
 projects ──< project_events
+projects ──< project_files ──< project_file_chunks
 ```
 
 | Table | Champs principaux | Notes |
@@ -166,6 +182,8 @@ projects ──< project_events
 | **tasks** | `id`, `project_id`, `title`, `description`, `status` (`todo`/`in_progress`/`done`), `priority` (`low`/`medium`/`high`), `due_date`, `position`, `completed_at`, `created_by` | `position` est un flottant : insérer une carte revient à prendre la moyenne de ses voisines |
 | **task_assignees** | `task_id`, `user_id` (clé composite) | Plusieurs responsables par tâche |
 | **project_events** | `id`, `project_id` (facultatif), `title`, `description`, `event_date`, `color`, `created_by` | Événements du calendrier. Sans projet : événement d'équipe, visible dans tous les projets. Modifiables par leur créateur ou un admin |
+| **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un admin |
+| **project_file_chunks** | `file_id`, `position` (clé composite), `data` (`bytea`) | Contenu des fichiers, en morceaux de 960 Ko |
 | **external_connections** | `user_id`, `provider` (`google`/`github`), `account_email`, `access_token_enc`, `refresh_token_enc`, `access_token_expires_at`, `status` (`active`/`needs_reauth`) | Un compte externe par utilisateur et par fournisseur ; jetons chiffrés |
 | **external_resources** | `project_id`, `provider`, `kind` (`google_doc`…), `external_id`, `title`, `url`, `external_updated_at`, `metadata` (JSON), `connection_id`, `attached_by`, `synced_at`, `sync_error` | Ressources externes rattachées à un projet (copie en cache), uniques par (`project_id`, `provider`, `external_id`) |
 
@@ -192,7 +210,7 @@ De haut en bas :
 - le **sélecteur de projet** ;
 - **Nouvelle tâche** et **Rechercher** ;
 - **Tableau de bord**, **Tâches** (avec le nombre de tâches ouvertes) et **Calendrier** du projet, puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
-- **Documents** : les Google Docs liés au projet, le **+** pour en lier un, et un lien vers la page de gestion ;
+- **Documents** : les Google Docs et les PDF du projet, le **+** pour importer un PDF ou lier un Google Doc, et un lien vers la page de gestion ;
 - **Administration** (admin) : membres ;
 - tout en bas, **Paramètres du projet** et le menu du compte (thème, mot de passe, déconnexion).
 
@@ -214,7 +232,7 @@ Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bu
 Au-dessus du contenu, une barre d'onglets permet de garder plusieurs pages ouvertes (un autre projet, un Google Doc…). Chaque onglet mémorise une adresse de GePro : changer d'onglet affiche sa page, à la position de défilement où on l'avait laissée. Les filtres des tâches et la vue Kanban/Liste sont dans l'adresse, donc propres à chaque onglet.
 
 - **Ouvrir** : `Ctrl/⌘ + clic` ou clic du milieu sur n'importe quel lien interne, **Ouvrir dans un nouvel onglet** dans le menu ⋯ d'un projet, ou le **+** de la barre d'onglets. Un vrai onglet du navigateur reste accessible par clic droit → *Ouvrir le lien dans un nouvel onglet*.
-- **Documents** : un Google Doc s'ouvre toujours dans un onglet à lui, sans quitter la page en cours ; s'il est déjà ouvert, son onglet est simplement réactivé.
+- **Documents** : un Google Doc ou un PDF s'ouvre toujours dans un onglet à lui, sans quitter la page en cours ; s'il est déjà ouvert, son onglet est simplement réactivé.
 - **Fermer** : la croix, le clic du milieu, ou `Suppr` sur l'onglet sélectionné. Le dernier onglet ne se ferme pas.
 - 10 onglets au maximum. Ils sont mémorisés dans ce navigateur (`localStorage`, par utilisateur) et retrouvés au prochain passage.
 
@@ -228,9 +246,9 @@ src/
 │       ├── page.tsx          Tableau de bord du projet sélectionné
 │       ├── taches/           Redirige vers les tâches du projet sélectionné (anciens liens)
 │       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
-│       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId]) = documents et lecture, [id]/parametres
+│       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres
 │       └── membres/          Gestion des comptes (admin)
-│   └── api/integrations/     Routes OAuth (connect → Google → callback)
+│   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/
 │   ├── ui/                   Briques génériques : Button, Dialog, Input, Select, DatePicker, Calendar, Badges, Avatar…
@@ -239,9 +257,10 @@ src/
 │   ├── projects/             ProjectCard, ProjectDialog
 │   ├── integrations/         Connexion Google, page Documents, fenêtre de rattachement, lecture Markdown
 │   ├── calendar/             Grilles Mois / Semaine, liste mobile, tâches et événements, fenêtre d'événement
+│   ├── files/                Lecteur PDF (pdf.js), import par morceaux, liste des PDF du projet
 │   └── dashboard/, members/
 ├── db/                       Schéma Drizzle + client (Neon ou PGlite)
-├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, constantes, chiffrement, onglets, préférences de navigation
+├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, fichiers (découpage, plages d'octets), constantes, chiffrement, onglets, préférences de navigation
 │   └── integrations/         Client Google (OAuth + Drive, export Markdown), jetons, état OAuth, lecture des documents, erreurs
 ├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google
 └── proxy.ts                  Redirection rapide vers /login sans cookie

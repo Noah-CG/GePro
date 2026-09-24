@@ -4,7 +4,7 @@ import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose,
 import { usePathname } from "next/navigation";
 import { Kbd, SideTooltip } from "@/components/ui/misc";
 import type { SidebarSectionId } from "@/lib/navigation-prefs";
-import type { ProjectWithStats, ResourceLink } from "@/lib/queries";
+import type { FileLink, ProjectWithStats, ResourceLink } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useApp } from "./app-provider";
 import { ProjectSwitcher } from "./project-switcher";
@@ -18,6 +18,8 @@ export type SidebarData = {
   projects: ProjectWithStats[];
   /** Documents rattachés, tous projets confondus. */
   resources: ResourceLink[];
+  /** PDF importés, tous projets confondus. */
+  files: FileLink[];
   google: GoogleSidebarState;
 };
 
@@ -155,7 +157,12 @@ export function Sidebar({
           </div>
 
           {project && (
-            <SidebarDocuments projectId={project.id} resources={data.resources.filter((r) => r.projectId === project.id)} google={data.google} />
+            <SidebarDocuments
+              projectId={project.id}
+              resources={data.resources.filter((r) => r.projectId === project.id)}
+              files={data.files.filter((f) => f.projectId === project.id)}
+              google={data.google}
+            />
           )}
 
           {me.role === "admin" && (

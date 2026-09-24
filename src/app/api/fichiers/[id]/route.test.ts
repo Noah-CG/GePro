@@ -8,6 +8,8 @@ import { insertProject, insertUser, resetDb } from "@/test/db";
 import { GET } from "./route";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
+// Fichiers de plusieurs Mo en base : plus lent que les autres tests quand tout tourne en parallèle.
+vi.setConfig({ testTimeout: 30_000, hookTimeout: 30_000 });
 vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn() }));
 
 /** Contenu de test : 2 morceaux complets et un dernier de 10 octets. */
