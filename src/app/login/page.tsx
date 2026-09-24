@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth";
 import { isLocalDb } from "@/db";
+import { Logo } from "@/components/ui/logo";
 import { LoginForm } from "./login-form";
 
 export const metadata: Metadata = { title: "Connexion" };
@@ -13,9 +14,7 @@ export default async function LoginPage() {
     <main className="flex min-h-dvh items-center justify-center px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <span className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-accent text-lg font-semibold text-accent-fg">
-            G
-          </span>
+          <Logo className="mx-auto mb-4" />
           <h1 className="text-xl font-semibold tracking-tight">Connexion à GePro</h1>
           <p className="mt-1 text-sm text-muted">Votre compte est créé par un administrateur.</p>
         </div>

@@ -12,6 +12,6 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Tout sauf la page de connexion et les fichiers statiques.
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico).*)"],
+  // Tout sauf la page de connexion et les fichiers statiques (dont le favicon, affiché aussi sur /login).
+  matcher: ["/((?!login|icon\\.svg|_next/static|_next/image|favicon.ico).*)"],
 };
