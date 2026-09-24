@@ -34,6 +34,26 @@ export const projectInput = z
   });
 export type ProjectInput = z.input<typeof projectInput>;
 
+/** Vraie date du calendrier au format "YYYY-MM-DD" (refuse par exemple un 31 septembre). */
+const requiredDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Choisissez une date")
+  .refine((iso) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+  }, "Date invalide");
+
+export const eventInput = z.object({
+  title: z.string().trim().min(1, "Le titre est obligatoire").max(200),
+  description: z.string().max(5000).default(""),
+  eventDate: requiredDate,
+  color,
+  /** Facultatif : sans projet, l'événement concerne toute l'équipe. */
+  projectId: z.uuid("Projet invalide").nullable().or(z.literal("").transform(() => null)).default(null),
+});
+export type EventInput = z.input<typeof eventInput>;
+
 export const memberInput = z.object({
   name: z.string().trim().min(1, "Le nom est obligatoire").max(80),
   email: z.email("Email invalide").transform((e) => e.toLowerCase()),

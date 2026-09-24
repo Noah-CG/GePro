@@ -5,9 +5,10 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { externalConnections, externalResources, projects, taskAssignees, tasks, users, workSessions } from "@/db/schema";
+import { externalConnections, externalResources, projectEvents, projectFiles, projects, taskAssignees, tasks, users, workSessions } from "@/db/schema";
 import type { IntegrationProvider, TaskPriority, TaskStatus } from "@/db/schema";
 import { addDays, APP_TIMEZONE, endOfWeekISO, formatDateTime } from "@/lib/dates";
+import { fileTitle, formatFileSize } from "@/lib/files";
 import { isIntegrationErrorCode, type IntegrationErrorCode } from "@/lib/integrations/errors";
 
 export type Member = { id: string; name: string; email: string; role: "admin" | "member"; color: string };
@@ -42,6 +43,23 @@ export type TaskView = {
   position: number;
   assigneeIds: string[];
 };
+
+/** Événement du calendrier, tel qu'affiché. */
+export type CalendarEvent = {
+  id: string;
+  projectId: string | null;
+  projectName: string | null;
+  projectColor: string | null;
+  title: string;
+  description: string;
+  /** "YYYY-MM-DD". */
+  date: string;
+  color: string;
+  createdBy: string | null;
+};
+
+/** Contenu d'une vue du calendrier : tâches (par échéance) et événements, triés par jour. */
+export type CalendarItems = { tasks: TaskView[]; events: CalendarEvent[] };
 
 /** Connexion d'un utilisateur à un fournisseur, sans aucun jeton. */
 export type ConnectionView = { status: "active" | "needs_reauth"; email: string };
@@ -100,6 +118,26 @@ export type MemberWork = { userId: string; weekMs: number; runningSince: string 
 
 /** Temps de travail cumulé par projet (null = aucun projet sélectionné au démarrage). */
 export type ProjectTime = { projectId: string | null; name: string | null; color: string | null; ms: number };
+
+/** Fichier PDF importé, tel qu'affiché dans la page Documents et la page de lecture. */
+export type FileView = {
+  id: string;
+  projectId: string;
+  /** Nom du fichier, extension comprise (téléchargement). */
+  name: string;
+  /** Nom sans l'extension .pdf. */
+  title: string;
+  size: number;
+  /** « 1,2 Mo ». */
+  sizeLabel: string;
+  /** "12 oct. 2026 à 14:32", déjà formaté dans le fuseau de l'équipe. */
+  uploadedLabel: string;
+  uploadedBy: string | null;
+  uploadedByName: string | null;
+};
+
+/** Fichier tel que listé dans la barre latérale. */
+export type FileLink = { id: string; projectId: string; title: string };
 
 /** Au-delà, les métadonnées en cache sont rafraîchies à l'affichage de la page projet. */
 const RESOURCE_TTL_MS = 15 * 60_000;
@@ -378,4 +416,146 @@ export async function getProjectTeamWork(projectId: string, today: string): Prom
     .where(and(eq(workSessions.projectId, projectId), sql`(${workSessions.endedAt} is null or ${thisWeek})`))
     .groupBy(workSessions.userId);
   return rows.map((r) => ({ ...r, runningSince: r.runningSince?.toISOString() ?? null }));
+}
+
+/** Fichiers importés d'un projet (imports terminés seulement), du plus ancien au plus récent. */
+export async function getProjectFiles(projectId: string): Promise<FileView[]> {
+  const rows = await selectFiles()
+    .where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.status, "ready")))
+    .orderBy(asc(projectFiles.createdAt));
+  return rows.map(toFileView);
+}
+
+/** Un fichier importé d'un projet (page de lecture). */
+export async function getProjectFile(projectId: string, fileId: string): Promise<FileView | null> {
+  const [row] = await selectFiles()
+    .where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.id, fileId), eq(projectFiles.status, "ready")))
+    .limit(1);
+  return row ? toFileView(row) : null;
+}
+
+/** Tous les fichiers importés, pour la barre latérale (une seule requête pour tous les projets). */
+export async function getFileLinks(): Promise<FileLink[]> {
+  const rows = await db
+    .select({ id: projectFiles.id, projectId: projectFiles.projectId, name: projectFiles.name })
+    .from(projectFiles)
+    .where(eq(projectFiles.status, "ready"))
+    .orderBy(asc(projectFiles.createdAt));
+  return rows.map(({ name, ...r }) => ({ ...r, title: fileTitle(name) }));
+}
+
+const selectFiles = () =>
+  db
+    .select({
+      id: projectFiles.id,
+      projectId: projectFiles.projectId,
+      name: projectFiles.name,
+      size: projectFiles.size,
+      createdAt: projectFiles.createdAt,
+      uploadedBy: projectFiles.uploadedBy,
+      uploadedByName: users.name,
+    })
+    .from(projectFiles)
+    .leftJoin(users, eq(users.id, projectFiles.uploadedBy));
+
+function toFileView({ createdAt, ...r }: Awaited<ReturnType<typeof selectFiles>>[number]): FileView {
+  return {
+    ...r,
+    title: fileTitle(r.name),
+    sizeLabel: formatFileSize(r.size),
+    uploadedLabel: formatDateTime(createdAt.toISOString()),
+  };
+}
+
+type CalendarRow = {
+  kind: "task" | "event";
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  status: TaskStatus | null;
+  priority: TaskPriority | null;
+  position: number | null;
+  project_id: string | null;
+  project_name: string | null;
+  project_color: string | null;
+  assignee_ids: unknown;
+  color: string | null;
+  created_by: string | null;
+};
+
+/** Tableau JSON renvoyé par Postgres : déjà décodé par le pilote, ou encore sous forme de texte. */
+const jsonArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value : typeof value === "string" ? (JSON.parse(value) as string[]) : [];
+
+/**
+ * Tâches (par échéance) et événements entre `from` et `to` inclus ("YYYY-MM-DD"), pour le projet
+ * sélectionné ; les événements sans projet (équipe) sont toujours inclus.
+ *
+ * Une seule requête, bornée sur l'intervalle affiché : UNION ALL des deux sources, responsables
+ * agrégés en JSON. Dates et énumérations sont converties en texte côté SQL pour que Neon et
+ * PGlite renvoient exactement les mêmes valeurs (dates "YYYY-MM-DD", convention du projet).
+ */
+export async function getCalendarItems({
+  from,
+  to,
+  projectId,
+}: {
+  from: string;
+  to: string;
+  projectId: string | null;
+}): Promise<CalendarItems> {
+  const { rows } = await db.execute<CalendarRow>(sql`
+    select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date,
+           t.status::text as status, t.priority::text as priority, t.position,
+           t.project_id, p.name as project_name, p.color as project_color,
+           coalesce((select json_agg(a.user_id) from ${taskAssignees} a where a.task_id = t.id), '[]'::json) as assignee_ids,
+           null::text as color, null::uuid as created_by
+      from ${tasks} t
+      join ${projects} p on p.id = t.project_id
+     where t.project_id = ${projectId}::uuid
+       and t.due_date between ${from}::date and ${to}::date
+    union all
+    select 'event', e.id, e.title, e.description, e.event_date::text,
+           null, null, null,
+           e.project_id, p.name, p.color,
+           null, e.color, e.created_by
+      from ${projectEvents} e
+      left join ${projects} p on p.id = e.project_id
+     where (e.project_id = ${projectId}::uuid or e.project_id is null)
+       and e.event_date between ${from}::date and ${to}::date
+    order by date, kind, title
+  `);
+
+  const result: CalendarItems = { tasks: [], events: [] };
+  for (const r of rows) {
+    if (r.kind === "task") {
+      result.tasks.push({
+        id: r.id,
+        projectId: r.project_id!,
+        projectName: r.project_name!,
+        projectColor: r.project_color!,
+        title: r.title,
+        description: r.description,
+        status: r.status!,
+        priority: r.priority!,
+        dueDate: r.date,
+        position: Number(r.position),
+        assigneeIds: jsonArray(r.assignee_ids),
+      });
+    } else {
+      result.events.push({
+        id: r.id,
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectColor: r.project_color,
+        title: r.title,
+        description: r.description,
+        date: r.date,
+        color: r.color!,
+        createdBy: r.created_by,
+      });
+    }
+  }
+  return result;
 }

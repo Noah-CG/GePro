@@ -4,6 +4,8 @@
  *   users ──< sessions
  *   users ──< task_assignees >── tasks >── projects
  *   users ──< external_connections ──< external_resources >── projects
+ *   projects ──< project_events (projet facultatif : sans projet, événement d'équipe)
+ *   projects ──< project_files ──< project_file_chunks (PDF importés, découpés en morceaux)
  *   users ──< work_sessions >── projects
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
@@ -15,9 +17,11 @@
  */
 import { relations, sql } from "drizzle-orm";
 import {
+  customType,
   date,
   doublePrecision,
   index,
+  integer,
   jsonb,
   pgEnum,
   pgTable,
@@ -35,6 +39,18 @@ export const taskPriority = pgEnum("task_priority", ["low", "medium", "high"]);
 /** "github" est déclaré d'avance : l'ajouter plus tard imposerait une migration. */
 export const integrationProvider = pgEnum("integration_provider", ["google", "github"]);
 export const connectionStatus = pgEnum("connection_status", ["active", "needs_reauth"]);
+/** "uploading" tant que tous les morceaux du fichier ne sont pas arrivés. */
+export const fileStatus = pgEnum("file_status", ["uploading", "ready"]);
+
+/**
+ * Octets bruts. Les deux drivers acceptent un Uint8Array (Neon l'envoie en hexadécimal, PGlite en
+ * binaire) et renvoient des octets ; le texte hexadécimal (`\x…`) est accepté en lecture par sécurité.
+ */
+const bytea = customType<{ data: Uint8Array; driverData: string | Uint8Array }>({
+  dataType: () => "bytea",
+  toDriver: (value) => value,
+  fromDriver: (value) => (typeof value === "string" ? Buffer.from(value.slice(2), "hex") : value),
+});
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -127,6 +143,27 @@ export const taskAssignees = pgTable(
 );
 
 /**
+ * Événements du calendrier (réunion, jalon, livraison…), distincts des tâches.
+ * Sans projet, c'est un événement d'équipe, affiché dans le calendrier de chaque projet.
+ */
+export const projectEvents = pgTable(
+  "project_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    /** Date métier "YYYY-MM-DD", comme les échéances des tâches. */
+    eventDate: date("event_date", { mode: "string" }).notNull(),
+    color: text("color").notNull().default("#6366f1"),
+    /** Seul le créateur (ou un admin) peut modifier ou supprimer l'événement. */
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("project_events_project_date_idx").on(t.projectId, t.eventDate)],
+);
+
+/**
  * Compte externe rattaché à un utilisateur (un seul par fournisseur).
  * Les jetons sont chiffrés (AES-256-GCM, voir lib/crypto.ts) et ne quittent jamais le serveur.
  */
@@ -193,6 +230,44 @@ export const externalResources = pgTable(
 );
 
 /**
+ * Fichier importé dans un projet (PDF pour l'instant). Le contenu est stocké à part, découpé en
+ * morceaux : Vercel limite chaque requête à 4,5 Mo, l'envoi et la lecture se font donc par morceaux.
+ */
+export const projectFiles = pgTable(
+  "project_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Nom du fichier sur l'ordinateur de la personne qui l'a importé. */
+    name: text("name").notNull(),
+    mimeType: text("mime_type").notNull().default("application/pdf"),
+    /** Taille en octets. */
+    size: integer("size").notNull(),
+    chunkCount: integer("chunk_count").notNull(),
+    status: fileStatus("status").notNull().default("uploading"),
+    /** Seule cette personne (ou un admin) peut supprimer le fichier. */
+    uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [index("project_files_project_idx").on(t.projectId)],
+);
+
+/** Morceaux d'un fichier, dans l'ordre de `position` (tous de même taille sauf le dernier). */
+export const projectFileChunks = pgTable(
+  "project_file_chunks",
+  {
+    fileId: uuid("file_id")
+      .notNull()
+      .references(() => projectFiles.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    data: bytea("data").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.fileId, t.position] })],
+);
+
+/**
  * Temps de travail mesuré au chrono du tableau de bord : une ligne par période démarrée puis
  * arrêtée, avec son compte rendu facultatif. `ended_at` nul = chrono en cours ; un membre n'en a jamais qu'un seul à la fois.
  */
@@ -232,6 +307,23 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 export const projectsRelations = relations(projects, ({ many }) => ({
   tasks: many(tasks),
   resources: many(externalResources),
+  events: many(projectEvents),
+  files: many(projectFiles),
+}));
+
+export const projectFilesRelations = relations(projectFiles, ({ one, many }) => ({
+  project: one(projects, { fields: [projectFiles.projectId], references: [projects.id] }),
+  uploader: one(users, { fields: [projectFiles.uploadedBy], references: [users.id] }),
+  chunks: many(projectFileChunks),
+}));
+
+export const projectFileChunksRelations = relations(projectFileChunks, ({ one }) => ({
+  file: one(projectFiles, { fields: [projectFileChunks.fileId], references: [projectFiles.id] }),
+}));
+
+export const projectEventsRelations = relations(projectEvents, ({ one }) => ({
+  project: one(projects, { fields: [projectEvents.projectId], references: [projects.id] }),
+  creator: one(users, { fields: [projectEvents.createdBy], references: [users.id] }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
@@ -265,6 +357,8 @@ export const workSessionsRelations = relations(workSessions, ({ one }) => ({
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
+export type ProjectEvent = typeof projectEvents.$inferSelect;
+export type ProjectFile = typeof projectFiles.$inferSelect;
 export type TaskStatus = (typeof taskStatus.enumValues)[number];
 export type TaskPriority = (typeof taskPriority.enumValues)[number];
 export type ExternalConnection = typeof externalConnections.$inferSelect;

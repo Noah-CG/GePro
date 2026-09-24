@@ -2,7 +2,7 @@
 
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Command } from "cmdk";
-import { FolderKanban, FolderPlus, LayoutDashboard, Moon, Plus, Search, SquareKanban, Sun } from "lucide-react";
+import { CalendarDays, FolderKanban, FolderPlus, LayoutDashboard, Moon, Plus, Search, SquareKanban, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -60,6 +60,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     { label: "Nouveau projet", icon: <FolderPlus size={16} />, shortcut: "P", run: () => newProject() },
     { label: "Tableau de bord", icon: <LayoutDashboard size={16} />, run: () => router.push("/") },
     ...(currentProjectId ? [{ label: "Tâches du projet", icon: <SquareKanban size={16} />, run: () => router.push(`/projets/${currentProjectId}`) }] : []),
+    { label: "Calendrier", icon: <CalendarDays size={16} />, run: () => router.push("/calendrier") },
     { label: "Tous les projets", icon: <FolderKanban size={16} />, run: () => router.push("/projets") },
     {
       label: resolvedTheme === "dark" ? "Passer en mode clair" : "Passer en mode sombre",
