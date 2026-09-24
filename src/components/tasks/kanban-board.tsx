@@ -17,7 +17,7 @@ import {
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Plus } from "lucide-react";
-import { useEffect, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { createTask, moveTask } from "@/actions/tasks";
 import type { TaskStatus } from "@/db/schema";
 import { useApp } from "@/components/layout/app-provider";
@@ -53,6 +53,9 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
   const [byId, setById] = useState(() => new Map(tasks.map((t) => [t.id, t])));
   const [columns, setColumns] = useState<Columns>(() => toColumns(tasks));
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Sans id, dnd-kit numérote ses attributs aria avec un compteur global qui diffère entre
+  // le serveur et le navigateur (erreur d'hydratation) ; useId est identique des deux côtés.
+  const dndId = useId();
 
   // Resynchronise quand les données serveur changent (hors glisser en cours).
   useEffect(() => {
@@ -128,6 +131,7 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
 
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={closestCorners}
       onDragStart={onDragStart}
