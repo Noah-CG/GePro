@@ -39,3 +39,11 @@ export const COLORS = [
   "#14b8a6", // sarcelle
   "#64748b", // ardoise
 ];
+
+/** Tri par échéance (les tâches sans échéance en dernier), puis par priorité. */
+export function compareByDueThenPriority(
+  a: { dueDate: string | null; priority: TaskPriority },
+  b: { dueDate: string | null; priority: TaskPriority },
+): number {
+  return (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999") || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+}

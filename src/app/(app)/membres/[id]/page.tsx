@@ -3,13 +3,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DashboardTaskList } from "@/components/dashboard/dashboard-task-list";
+import { TaskRates } from "@/components/tasks/task-rates";
 import { Avatar } from "@/components/ui/avatar";
 import { Card, PageHeader, Section, Stat } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
-import { PRIORITY_RANK } from "@/lib/constants";
+import { compareByDueThenPriority } from "@/lib/constants";
 import { formatDateTime, formatDuration, formatTime, todayISO } from "@/lib/dates";
 import { getTasks, getTeam, getWorkByProject, getWorkSessions, getWorkSummary, type TaskView } from "@/lib/queries";
-import { percent } from "@/lib/utils";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -51,16 +51,11 @@ export default async function MemberPage({ params }: Props) {
   const byStatus = (status: TaskView["status"]) =>
     tasks
       .filter((t) => t.status === status)
-      .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || (a.dueDate ?? "9").localeCompare(b.dueDate ?? "9"));
+      .sort(compareByDueThenPriority);
   const done = byStatus("done");
   const inProgress = byStatus("in_progress");
   const todo = byStatus("todo");
 
-  const rates = [
-    { label: "Terminées", count: done.length, color: "var(--success)" },
-    { label: "En cours", count: inProgress.length, color: "var(--accent)" },
-    { label: "Pas commencées", count: todo.length, color: "var(--muted)" },
-  ];
   const projectMax = Math.max(1, ...byProject.map((p) => p.ms));
 
   return (
@@ -92,24 +87,7 @@ export default async function MemberPage({ params }: Props) {
           <h2 className="text-sm font-semibold">Avancement des tâches</h2>
           <span className="text-xs text-muted">{tasks.length} tâche{tasks.length > 1 ? "s" : ""}</span>
         </div>
-        <div className="flex h-3 w-full overflow-hidden rounded-full bg-surface-2" role="img" aria-label={rates.map((r) => `${r.label} : ${percent(r.count, tasks.length)} %`).join(", ")}>
-          {rates.map((r) => (
-            <div key={r.label} className="h-full transition-[width] duration-500" style={{ width: `${(r.count / Math.max(1, tasks.length)) * 100}%`, background: r.color }} />
-          ))}
-        </div>
-        <ul className="mt-3 grid grid-cols-3 gap-3">
-          {rates.map((r) => (
-            <li key={r.label}>
-              <p className="flex items-center gap-1.5 text-xs text-muted">
-                <span className="h-2 w-2 rounded-full" style={{ background: r.color }} />
-                {r.label}
-              </p>
-              <p className="mt-0.5 text-lg font-semibold tabular-nums">
-                {percent(r.count, tasks.length)} %<span className="ml-1.5 text-xs font-normal text-muted">({r.count})</span>
-              </p>
-            </li>
-          ))}
-        </ul>
+        <TaskRates tasks={tasks} />
       </Card>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">

@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { workSessions } from "@/db/schema";
+import { taskAssignees, tasks, workSessions } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { formatClock, formatDuration } from "@/lib/dates";
-import { getWorkByProject, getWorkSessions, getWorkSummary } from "@/lib/queries";
+import { getProjectTeamWork, getTasks, getWorkByProject, getWorkSessions, getWorkSummary } from "@/lib/queries";
 import { getSelectedProjectId } from "@/lib/selected-project";
 import { insertProject, insertUser, resetDb } from "@/test/db";
 import { startWorkTimer, stopWorkTimer } from "./work-sessions";
@@ -104,6 +104,41 @@ describe("temps de travail", () => {
       "2026-09-23T08:00:00.000Z",
       "2026-09-22T08:00:00.000Z",
     ]);
+  });
+});
+
+describe("tableau de bord", () => {
+  it("temps de l'équipe sur le projet : cumul de la semaine et chronos en cours", async () => {
+    const other = await insertUser(db, "Léa Dubois");
+    const otherProject = await insertProject(db, "Application mobile");
+    await insertSession("2026-09-22T08:00:00Z", 60);
+    await insertSession("2026-09-14T08:00:00Z", 30); // semaine précédente : exclu
+    await insertSession("2026-09-23T08:00:00Z", 45, otherProject.id); // autre projet : exclu
+    const runningStart = new Date("2026-09-24T09:00:00Z");
+    await db.insert(workSessions).values({ userId: other.id, projectId, startedAt: runningStart });
+
+    const work = await getProjectTeamWork(projectId, "2026-09-24");
+    expect(work).toHaveLength(2);
+    expect(work.find((w) => w.userId === me.id)).toEqual({ userId: me.id, weekMs: 60 * 60_000, runningSince: null });
+    expect(work.find((w) => w.userId === other.id)).toEqual({ userId: other.id, weekMs: 0, runningSince: runningStart.toISOString() });
+  });
+
+  it("« Mes tâches » ne renvoie que les tâches assignées au membre", async () => {
+    const other = await insertUser(db, "Léa Dubois");
+    const [mine, theirs, shared] = await db
+      .insert(tasks)
+      .values([{ projectId, title: "À moi" }, { projectId, title: "À Léa" }, { projectId, title: "Partagée" }])
+      .returning({ id: tasks.id });
+    await db.insert(taskAssignees).values([
+      { taskId: mine.id, userId: me.id },
+      { taskId: theirs.id, userId: other.id },
+      { taskId: shared.id, userId: me.id },
+      { taskId: shared.id, userId: other.id },
+    ]);
+
+    const result = await getTasks({ projectId, assigneeId: me.id });
+    expect(result.map((t) => t.title).sort()).toEqual(["Partagée", "À moi"]);
+    expect(result.find((t) => t.title === "Partagée")!.assigneeIds).toHaveLength(2);
   });
 });
 

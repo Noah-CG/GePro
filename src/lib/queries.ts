@@ -90,6 +90,12 @@ export type WorkSessionView = {
   projectColor: string | null;
 };
 
+/**
+ * Temps de travail d'un membre sur un projet : cumul de la semaine (périodes terminées) et
+ * chrono en cours, s'il tourne sur ce projet.
+ */
+export type MemberWork = { userId: string; weekMs: number; runningSince: string | null };
+
 /** Temps de travail cumulé par projet (null = aucun projet sélectionné au démarrage). */
 export type ProjectTime = { projectId: string | null; name: string | null; color: string | null; ms: number };
 
@@ -300,8 +306,11 @@ const workedMs = (filter?: ReturnType<typeof sql>) =>
 /** Jour de démarrage d'une période, dans le fuseau de l'équipe. */
 const startedDay = sql`(${workSessions.startedAt} at time zone ${APP_TIMEZONE})::date`;
 
+/** Lundi de la semaine en cours. */
+const weekStartOf = (today: string) => addDays(endOfWeekISO(today), -6);
+
 export async function getWorkSummary(userId: string, today: string): Promise<WorkSummary> {
-  const weekStart = addDays(endOfWeekISO(today), -6);
+  const weekStart = weekStartOf(today);
   const [[totals], [running]] = await Promise.all([
     db
       .select({
@@ -349,4 +358,21 @@ export async function getWorkByProject(userId: string): Promise<ProjectTime[]> {
     .where(eq(workSessions.userId, userId))
     .groupBy(workSessions.projectId, projects.name, projects.color)
     .orderBy(desc(ms));
+}
+
+/** Temps de l'équipe sur un projet cette semaine, et chronos en cours sur ce projet. */
+export async function getProjectTeamWork(projectId: string, today: string): Promise<MemberWork[]> {
+  const thisWeek = sql`${startedDay} >= ${weekStartOf(today)}::date`;
+  const rows = await db
+    .select({
+      userId: workSessions.userId,
+      weekMs: workedMs(),
+      runningSince: sql<Date | null>`max(${workSessions.startedAt}) filter (where ${workSessions.endedAt} is null)`.mapWith(
+        workSessions.startedAt,
+      ),
+    })
+    .from(workSessions)
+    .where(and(eq(workSessions.projectId, projectId), sql`(${workSessions.endedAt} is null or ${thisWeek})`))
+    .groupBy(workSessions.userId);
+  return rows.map((r) => ({ ...r, runningSince: r.runningSince?.toISOString() ?? null }));
 }

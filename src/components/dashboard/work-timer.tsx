@@ -11,8 +11,9 @@ import { cn } from "@/lib/utils";
 /**
  * Chrono de temps de travail : un clic pour démarrer, un clic pour arrêter. L'état vit en base
  * (il survit à un rechargement et se retrouve sur un autre appareil) ; l'affichage défile ici.
+ * `large` : version mise en avant (vue « Mes tâches »).
  */
-export function WorkTimer({ summary }: { summary: WorkSummary }) {
+export function WorkTimer({ summary, large }: { summary: WorkSummary; large?: boolean }) {
   const { toast } = useApp();
   const [pending, startTransition] = useTransition();
   const [runningSince, setRunningSince] = useOptimistic(summary.runningSince);
@@ -39,21 +40,22 @@ export function WorkTimer({ summary }: { summary: WorkSummary }) {
   }
 
   return (
-    <div className="flex items-center gap-4 p-4">
+    <div className={cn("flex items-center", large ? "gap-5 p-5" : "gap-4 p-4")}>
       <button
         onClick={toggle}
         disabled={pending}
         aria-pressed={running}
         aria-label={running ? "Arrêter le chrono" : "Démarrer le chrono"}
         className={cn(
-          "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-transform hover:scale-105 active:scale-95 disabled:opacity-60",
+          large ? "h-20 w-20" : "h-14 w-14",
+          "flex shrink-0 items-center justify-center rounded-full text-white shadow-sm transition-transform hover:scale-105 active:scale-95 disabled:opacity-60",
           running ? "bg-danger" : "bg-success",
         )}
       >
-        {running ? <Square size={20} fill="currentColor" /> : <Play size={22} fill="currentColor" className="ml-0.5" />}
+        {running ? <Square size={large ? 26 : 20} fill="currentColor" /> : <Play size={large ? 30 : 22} fill="currentColor" className="ml-1" />}
       </button>
       <div className="min-w-0 flex-1">
-        <p className={cn("font-mono text-2xl font-semibold tabular-nums", !running && "text-muted")}>{formatClock(elapsed)}</p>
+        <p className={cn("font-mono font-semibold tabular-nums", large ? "text-4xl" : "text-2xl", !running && "text-muted")}>{formatClock(elapsed)}</p>
         <p className="text-xs text-muted">
           {running ? (
             <span className="inline-flex items-center gap-1 text-success">
@@ -64,7 +66,7 @@ export function WorkTimer({ summary }: { summary: WorkSummary }) {
           )}
         </p>
       </div>
-      <dl className="shrink-0 space-y-0.5 text-right text-xs">
+      <dl className={cn("shrink-0 space-y-0.5 text-right", large ? "text-sm" : "text-xs")}>
         <div className="flex items-center justify-end gap-1.5">
           <dt className="text-muted">Aujourd&apos;hui</dt>
           <dd className="font-medium tabular-nums">{formatDuration(summary.todayMs + elapsed)}</dd>
