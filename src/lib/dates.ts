@@ -3,7 +3,8 @@
  * elles se comparent directement comme des chaînes (ordre lexicographique = chronologique).
  */
 
-export const APP_TIMEZONE = process.env.APP_TIMEZONE || "Europe/Paris";
+// trim() : une variable collée dans Vercel peut garder un retour à la ligne final.
+export const APP_TIMEZONE = process.env.APP_TIMEZONE?.trim() || "Europe/Paris";
 
 /** Date du jour dans le fuseau de l'équipe. */
 export function todayISO(timeZone: string = APP_TIMEZONE): string {

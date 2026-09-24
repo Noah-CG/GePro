@@ -14,10 +14,10 @@ import * as schema from "./schema";
 
 export type Db = NeonHttpDatabase<typeof schema>;
 
-export const isLocalDb = !process.env.DATABASE_URL;
+export const isLocalDb = !process.env.DATABASE_URL?.trim();
 
 function createDb(): Db {
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL?.trim();
   if (url) return drizzle({ client: neon(url), schema });
 
   // Sur Vercel le disque est éphémère : PGlite y perdrait les données.
