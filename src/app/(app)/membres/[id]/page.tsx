@@ -1,8 +1,9 @@
-import { ArrowLeft, CalendarDays, CheckCircle2, Clock, ListTodo, Timer } from "lucide-react";
+import { ArrowLeft, CalendarDays, Clock, ListTodo, Timer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { DashboardTaskList } from "@/components/dashboard/dashboard-task-list";
+import { WorkSessionList } from "@/components/members/work-session-list";
 import { TaskRates } from "@/components/tasks/task-rates";
 import { Avatar } from "@/components/ui/avatar";
 import { Card, PageHeader, Section, Stat } from "@/components/ui/misc";
@@ -11,7 +12,10 @@ import { compareByDueThenPriority } from "@/lib/constants";
 import { formatDateTime, formatDuration, formatTime, todayISO } from "@/lib/dates";
 import { getTasks, getTeam, getWorkByProject, getWorkSessions, getWorkSummary, type TaskView } from "@/lib/queries";
 
-type Props = { params: Promise<{ id: string }> };
+type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ historique?: string }> };
+
+/** Périodes affichées dans le journal, sauf avec ?historique=tout. */
+const RECENT_SESSIONS = 20;
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -29,9 +33,10 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  * Fiche d'un membre : temps de travail mesuré au chrono et tâches qui lui sont assignées
  * (projets non archivés). Visible par les administrateurs, et par chacun pour sa propre fiche.
  */
-export default async function MemberPage({ params }: Props) {
+export default async function MemberPage({ params, searchParams }: Props) {
   const me = await requireUser();
   const { id } = await params;
+  const showAll = (await searchParams).historique === "tout";
   if (me.role !== "admin" && me.id !== id) redirect("/");
   const member = await loadMember(id);
   if (!member) notFound();
@@ -40,7 +45,7 @@ export default async function MemberPage({ params }: Props) {
   const [tasks, work, sessions, byProject] = await Promise.all([
     getTasks({ assigneeId: id }),
     getWorkSummary(id, today),
-    getWorkSessions(id),
+    getWorkSessions(id, showAll ? 1000 : RECENT_SESSIONS),
     getWorkByProject(id),
   ]);
 
@@ -124,34 +129,29 @@ export default async function MemberPage({ params }: Props) {
             </ul>
           </Section>
 
-          <Section title="Dernières sessions" count={work.sessions}>
-            {sessions.length === 0 && <p className="p-4 text-sm text-muted">Le chrono n&apos;a encore jamais été lancé.</p>}
-            <ul className="divide-y divide-border empty:hidden">
-              {sessions.map((s) => (
-                <li key={s.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
-                  {s.endedAt ? (
-                    <CheckCircle2 size={14} className="shrink-0 text-muted" />
-                  ) : (
-                    <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-success" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate">
-                      {formatDateTime(s.startedAt)}
-                      {s.endedAt ? ` → ${formatTime(s.endedAt)}` : " → en cours"}
-                    </p>
-                    {s.projectName && (
-                      <p className="flex items-center gap-1.5 text-xs text-muted">
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.projectColor ?? undefined }} />
-                        <span className="truncate">{s.projectName}</span>
-                      </p>
-                    )}
-                  </div>
-                  <span className="shrink-0 text-xs font-medium tabular-nums">
-                    {formatDuration((s.endedAt ? new Date(s.endedAt).getTime() : Date.now()) - new Date(s.startedAt).getTime())}
-                  </span>
-                </li>
-              ))}
-            </ul>
+          <Section
+            title="Journal de bord"
+            count={work.sessions}
+            action={
+              work.sessions > RECENT_SESSIONS && (
+                <Link href={showAll ? `/membres/${id}` : `/membres/${id}?historique=tout`} scroll={false} className="text-xs text-muted hover:text-text">
+                  {showAll ? "Récentes seulement" : "Voir tout l'historique"}
+                </Link>
+              )
+            }
+          >
+            <WorkSessionList
+              editable={me.id === member.id}
+              sessions={sessions.map((s) => ({
+                id: s.id,
+                label: `${formatDateTime(s.startedAt)} → ${s.endedAt ? formatTime(s.endedAt) : "en cours"}`,
+                durationLabel: formatDuration((s.endedAt ? new Date(s.endedAt).getTime() : Date.now()) - new Date(s.startedAt).getTime()),
+                running: !s.endedAt,
+                projectName: s.projectName,
+                projectColor: s.projectColor,
+                note: s.note,
+              }))}
+            />
           </Section>
         </div>
       </div>

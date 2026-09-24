@@ -88,6 +88,8 @@ export type WorkSessionView = {
   endedAt: string | null;
   projectName: string | null;
   projectColor: string | null;
+  /** Journal de bord ("" si rien n'a été rédigé). */
+  note: string;
 };
 
 /**
@@ -337,6 +339,7 @@ export async function getWorkSessions(userId: string, limit = 20): Promise<WorkS
       id: workSessions.id,
       startedAt: workSessions.startedAt,
       endedAt: workSessions.endedAt,
+      note: workSessions.note,
       projectName: projects.name,
       projectColor: projects.color,
     })

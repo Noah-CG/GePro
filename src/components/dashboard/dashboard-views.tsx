@@ -48,7 +48,7 @@ export function MyDashboard({ me, project, work, today, weekEnd, tasks }: Common
   return (
     <>
       <div className="mb-6">
-        <Section title="Mon temps de travail" action={<Link href={`/membres/${me.id}`} className="text-xs text-muted hover:text-text">Mon historique</Link>}>
+        <Section title="Mon temps de travail" action={<Link href={`/membres/${me.id}`} className="text-xs text-muted hover:text-text">Mon journal de bord</Link>}>
           <WorkTimer summary={work} large />
         </Section>
       </div>
@@ -154,7 +154,7 @@ export function TeamDashboard({
         </div>
 
         <div className="space-y-6">
-          <Section title="Mon chrono">
+          <Section title="Mon chrono" action={<Link href={`/membres/${me.id}`} className="text-xs text-muted hover:text-text">Mon journal</Link>}>
             <WorkTimer summary={work} />
           </Section>
 

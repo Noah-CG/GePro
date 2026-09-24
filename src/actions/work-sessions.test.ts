@@ -7,7 +7,7 @@ import { formatClock, formatDuration } from "@/lib/dates";
 import { getProjectTeamWork, getTasks, getWorkByProject, getWorkSessions, getWorkSummary } from "@/lib/queries";
 import { getSelectedProjectId } from "@/lib/selected-project";
 import { insertProject, insertUser, resetDb } from "@/test/db";
-import { startWorkTimer, stopWorkTimer } from "./work-sessions";
+import { saveWorkNote, startWorkTimer, stopWorkTimer } from "./work-sessions";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
@@ -53,8 +53,15 @@ describe("chrono", () => {
     expect(await rows()).toHaveLength(1);
   });
 
+  it("arrêter renvoie la période enregistrée, pour en rédiger le journal", async () => {
+    await startWorkTimer();
+    const res = await stopWorkTimer();
+    const [row] = await rows();
+    expect(res).toEqual({ ok: true, data: { id: row.id, durationMs: row.endedAt!.getTime() - row.startedAt.getTime() } });
+  });
+
   it("arrêter sans chrono en cours ne fait rien", async () => {
-    await stopWorkTimer();
+    expect(await stopWorkTimer()).toEqual({ ok: true, data: null });
     expect(await rows()).toHaveLength(0);
   });
 
@@ -65,6 +72,33 @@ describe("chrono", () => {
     await stopWorkTimer();
     const [otherRow] = await db.select().from(workSessions).where(eq(workSessions.userId, other.id));
     expect(otherRow.endedAt).toBeNull();
+  });
+});
+
+describe("journal de bord", () => {
+  it("enregistre puis modifie le journal d'une période", async () => {
+    await insertSession("2026-09-24T08:00:00Z", 60);
+    const [{ id }] = await rows();
+
+    expect(await saveWorkNote(id, "  Maquettes de l'accueil  ")).toEqual({ ok: true, data: undefined });
+    expect((await getWorkSessions(me.id))[0].note).toBe("Maquettes de l'accueil");
+
+    await saveWorkNote(id, "Maquettes + relecture");
+    expect((await rows())[0].note).toBe("Maquettes + relecture");
+  });
+
+  it("on ne peut pas modifier le journal d'un autre membre", async () => {
+    const other = await insertUser(db, "Léa Dubois");
+    const [{ id }] = await db.insert(workSessions).values({ userId: other.id, endedAt: new Date() }).returning();
+    expect(await saveWorkNote(id, "Piratage")).toEqual({ ok: false, error: "Session introuvable." });
+    expect((await db.select().from(workSessions).where(eq(workSessions.id, id)))[0].note).toBe("");
+  });
+
+  it("refuse un journal trop long ou un identifiant invalide", async () => {
+    await insertSession("2026-09-24T08:00:00Z", 60);
+    const [{ id }] = await rows();
+    expect((await saveWorkNote(id, "x".repeat(5001))).ok).toBe(false);
+    expect(await saveWorkNote("pas-un-id", "Test")).toEqual({ ok: false, error: "Session introuvable." });
   });
 });
 

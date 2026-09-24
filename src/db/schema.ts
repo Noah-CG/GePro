@@ -194,7 +194,7 @@ export const externalResources = pgTable(
 
 /**
  * Temps de travail mesuré au chrono du tableau de bord : une ligne par période démarrée puis
- * arrêtée. `ended_at` nul = chrono en cours ; un membre n'en a jamais qu'un seul à la fois.
+ * arrêtée, avec son compte rendu facultatif. `ended_at` nul = chrono en cours ; un membre n'en a jamais qu'un seul à la fois.
  */
 export const workSessions = pgTable(
   "work_sessions",
@@ -207,6 +207,8 @@ export const workSessions = pgTable(
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
+    /** Journal de bord : ce que le membre a fait pendant la période, rédigé après l'arrêt. */
+    note: text("note").notNull().default(""),
   },
   (t) => [
     index("work_sessions_user_started_idx").on(t.userId, t.startedAt),
