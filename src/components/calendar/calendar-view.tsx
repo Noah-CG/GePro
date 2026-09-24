@@ -11,13 +11,15 @@ import type { CalendarEvent, CalendarItems } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { MonthGrid, WeekGrid } from "./calendar-grid";
 import { DayList } from "./day-list";
+import { EventDialog } from "./event-dialog";
 
 /** Événement en cours de création (date) ou de modification (événement). */
 type EventTarget = { date: string; event?: CalendarEvent } | null;
 
 /**
  * Page Calendrier : en-tête (période, navigation), grille (ordinateur) ou liste des jours
- * (mobile). Les tâches s'ouvrent dans le TaskDialog existant.
+ * (mobile). Les tâches s'ouvrent dans le TaskDialog existant ; un clic sur une zone vide d'un
+ * jour, ou sur un événement, ouvre la fenêtre d'événement.
  */
 export function CalendarView({
   view,
@@ -109,6 +111,15 @@ export function CalendarView({
           {...handlers}
         />
       </div>
+
+      <EventDialog
+        // La clé force un formulaire neuf à chaque ouverture.
+        key={eventTarget ? (eventTarget.event?.id ?? `nouveau-${eventTarget.date}`) : "ferme"}
+        open={eventTarget !== null}
+        onOpenChange={(open) => !open && setEventTarget(null)}
+        date={eventTarget?.date ?? today}
+        event={eventTarget?.event}
+      />
     </div>
   );
 }
