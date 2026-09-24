@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { calendarHref, dayAriaLabel, isSameMonth, monthWeeks, periodTitle, shiftPeriod, type CalendarView, type DayItems } from "@/lib/calendar";
+import { calendarHref, dayAriaLabel, isSameMonth, monthWeeks, periodTitle, shiftPeriod, weekDays, type CalendarView, type DayItems } from "@/lib/calendar";
 import { addDays, endOfWeekISO, formatDayLong, formatWeekdayShort, startOfWeekISO } from "@/lib/dates";
 import type { CalendarEvent, TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -206,6 +206,47 @@ export function MonthGrid({
             })}
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/** Vue Semaine : 7 colonnes hautes, tout le contenu de chaque jour est visible (la colonne défile). */
+export function WeekGrid({
+  date,
+  today,
+  itemsByDay,
+  onCreate,
+  onOpenTask,
+  onOpenEvent,
+}: { date: string; today: string; itemsByDay: Map<string, DayItems> } & GridHandlers) {
+  const days = useMemo(() => weekDays(date), [date]);
+  const { active, cellProps } = useGridNavigation({ view: "semaine", days, date, today, onCreate });
+
+  return (
+    <div role="grid" aria-label={`Calendrier de la semaine du ${periodTitle("semaine", date)}`} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
+      <WeekdayHeader week={days} />
+      <div role="row" className="grid min-h-0 flex-1 grid-cols-7 gap-px bg-border">
+        {days.map((day) => {
+          const items = itemsByDay.get(day);
+          return (
+            <div
+              key={day}
+              role="gridcell"
+              aria-label={dayAriaLabel(day, today, items)}
+              aria-current={day === today ? "date" : undefined}
+              {...cellProps(day)}
+              onClick={() => onCreate(day)}
+              className={cn(
+                "scroll-thin flex min-h-0 min-w-0 cursor-pointer flex-col gap-1.5 overflow-y-auto bg-surface p-2 outline-none hover:bg-surface-2/60",
+                "focus-visible:relative focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset",
+              )}
+            >
+              <DayNumber day={day} today={today} />
+              <DayItemsList items={items} tabIndex={day === active ? 0 : -1} onOpenTask={onOpenTask} onOpenEvent={onOpenEvent} />
+            </div>
+          );
+        })}
       </div>
     </div>
   );

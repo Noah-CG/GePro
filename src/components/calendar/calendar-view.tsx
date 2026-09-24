@@ -6,9 +6,10 @@ import { useMemo, useState } from "react";
 import { useApp } from "@/components/layout/app-provider";
 import { Button, buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/misc";
-import { calendarHref, groupByDay, isSameMonth, monthWeeks, periodTitle, shiftPeriod, type CalendarView as View } from "@/lib/calendar";
+import { calendarHref, groupByDay, isSameMonth, monthWeeks, periodTitle, shiftPeriod, weekDays, type CalendarView as View } from "@/lib/calendar";
 import type { CalendarEvent, CalendarItems } from "@/lib/queries";
-import { MonthGrid } from "./calendar-grid";
+import { cn } from "@/lib/utils";
+import { MonthGrid, WeekGrid } from "./calendar-grid";
 import { DayList } from "./day-list";
 
 /** Événement en cours de création (date) ou de modification (événement). */
@@ -41,6 +42,8 @@ export function CalendarView({
     onOpenEvent: (event: CalendarEvent) => setEventTarget({ date: event.date, event }),
   };
   const unit = view === "mois" ? "Mois" : "Semaine";
+  // Mois : les jours du mois seulement (la grille déborde sur les mois voisins).
+  const visibleDays = useMemo(() => (view === "mois" ? monthWeeks(date).flat().filter((day) => isSameMonth(day, date)) : weekDays(date)), [view, date]);
 
   return (
     <div className="flex flex-col md:h-[calc(100dvh-6.5rem)]">
@@ -60,7 +63,27 @@ export function CalendarView({
                 <ChevronRight size={16} />
               </Link>
             </nav>
-            <Button variant="primary" size="sm" onClick={() => setEventTarget({ date: isSameMonth(today, date) ? today : date })}>
+            <nav aria-label="Vue" className="flex rounded-lg border border-border bg-surface p-0.5">
+              {(
+                [
+                  { value: "mois", label: "Mois" },
+                  { value: "semaine", label: "Semaine" },
+                ] as const
+              ).map((v) => (
+                <Link
+                  key={v.value}
+                  href={calendarHref(v.value, date)}
+                  aria-current={view === v.value ? "page" : undefined}
+                  className={cn(
+                    "flex h-7 items-center rounded-md px-2.5 text-sm",
+                    view === v.value ? "bg-surface-2 font-medium" : "text-muted hover:text-text",
+                  )}
+                >
+                  {v.label}
+                </Link>
+              ))}
+            </nav>
+            <Button variant="primary" size="sm" onClick={() => setEventTarget({ date: visibleDays.includes(today) ? today : date })}>
               <Plus size={14} /> Nouvel événement
             </Button>
           </>
@@ -69,16 +92,20 @@ export function CalendarView({
 
       {/* Ordinateur : grille pleine page */}
       <div className="hidden min-h-0 flex-1 md:flex">
-        <MonthGrid date={date} today={today} itemsByDay={itemsByDay} {...handlers} />
+        {view === "mois" ? (
+          <MonthGrid date={date} today={today} itemsByDay={itemsByDay} {...handlers} />
+        ) : (
+          <WeekGrid date={date} today={today} itemsByDay={itemsByDay} {...handlers} />
+        )}
       </div>
 
-      {/* Mobile : liste des jours qui ont du contenu */}
+      {/* Mobile : liste des jours qui ont du contenu (Mois comme Semaine) */}
       <div className="md:hidden">
         <DayList
-          days={monthWeeks(date).flat().filter((day) => isSameMonth(day, date))}
+          days={visibleDays}
           today={today}
           itemsByDay={itemsByDay}
-          emptyTitle="Rien de prévu ce mois-ci"
+          emptyTitle={view === "mois" ? "Rien de prévu ce mois-ci" : "Rien de prévu cette semaine"}
           {...handlers}
         />
       </div>
