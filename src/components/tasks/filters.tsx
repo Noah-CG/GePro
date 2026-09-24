@@ -1,7 +1,7 @@
 "use client";
 
 import { SlidersHorizontal, Search, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { TaskPriority, TaskStatus } from "@/db/schema";
 import { useApp } from "@/components/layout/app-provider";
 import { PRIORITIES, PRIORITY_RANK, STATUSES, STATUS_RANK } from "@/lib/constants";
@@ -22,6 +22,41 @@ export type TaskFilters = {
 };
 
 export const DEFAULT_FILTERS: TaskFilters = { q: "", assignee: "all", priority: "all", status: "all", due: "all", project: "all" };
+
+const DUE_FILTERS: DueFilter[] = ["overdue", "today", "week", "none"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const oneOf = <T extends string>(value: string | null, allowed: readonly T[]): T | undefined => allowed.find((v) => v === value);
+
+/**
+ * Filtres lus dans l'adresse : ?recherche=…&responsable=moi|aucun|<id>&priorite=…&statut=…
+ * &echeance=…&projet=<id>. Garder les filtres dans l'adresse les conserve d'un onglet à l'autre,
+ * au rechargement, et dans un lien partagé. Toute valeur inconnue est ignorée.
+ */
+export function filtersFromParams(params: URLSearchParams): TaskFilters {
+  const assignee = params.get("responsable");
+  const project = params.get("projet");
+  return {
+    q: params.get("recherche") ?? "",
+    assignee: assignee === "moi" ? "me" : assignee === "aucun" ? "none" : assignee && UUID.test(assignee) ? assignee : "all",
+    priority: oneOf(params.get("priorite"), PRIORITIES.map((p) => p.value)) ?? "all",
+    status: oneOf(params.get("statut"), STATUSES.map((st) => st.value)) ?? "all",
+    due: oneOf(params.get("echeance"), DUE_FILTERS) ?? "all",
+    project: project && UUID.test(project) ? project : "all",
+  };
+}
+
+/** Écrit les filtres dans les paramètres d'adresse (les autres paramètres, comme ?vue, sont gardés). */
+export function filtersToParams(filters: TaskFilters, base: URLSearchParams): URLSearchParams {
+  const next = new URLSearchParams(base);
+  const put = (key: string, value: string, isDefault: boolean) => (isDefault ? next.delete(key) : next.set(key, value));
+  put("recherche", filters.q, filters.q === "");
+  put("responsable", filters.assignee === "me" ? "moi" : filters.assignee === "none" ? "aucun" : filters.assignee, filters.assignee === "all");
+  put("priorite", filters.priority, filters.priority === "all");
+  put("statut", filters.status, filters.status === "all");
+  put("echeance", filters.due, filters.due === "all");
+  put("projet", filters.project, filters.project === "all");
+  return next;
+}
 
 export type SortKey = "dueDate" | "priority" | "status" | "title" | "project";
 export type Sort = { key: SortKey; dir: "asc" | "desc" };
@@ -100,13 +135,29 @@ export function FilterBar({
   // Sur mobile, les listes déroulantes sont repliées derrière un bouton "Filtres".
   const [expanded, setExpanded] = useState(false);
 
+  // Saisie gardée localement : l'adresse, source des filtres, n'est mise à jour qu'après coup.
+  // Sans cela, une frappe rapide pourrait être écrasée par une valeur de l'adresse en retard.
+  const [text, setText] = useState(filters.q);
+  const sentText = useRef(filters.q);
+  useEffect(() => {
+    // Changement venu d'ailleurs (réinitialisation, autre onglet) : on l'affiche.
+    if (filters.q !== sentText.current) {
+      sentText.current = filters.q;
+      setText(filters.q);
+    }
+  }, [filters.q]);
+
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative w-full sm:w-56">
         <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
         <input
-          value={filters.q}
-          onChange={(e) => set("q", e.target.value)}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            sentText.current = e.target.value;
+            set("q", e.target.value);
+          }}
           placeholder="Filtrer…"
           aria-label="Filtrer par texte"
           className="h-8 w-full rounded-lg border border-border bg-surface pr-2 pl-8 text-sm placeholder:text-muted focus:border-accent focus:outline-none"

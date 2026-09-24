@@ -1,11 +1,12 @@
 "use client";
 
 import * as Popover from "@radix-ui/react-popover";
-import { Archive, ArchiveRestore, CalendarRange, MoreHorizontal, Pencil } from "lucide-react";
+import { AppWindow, Archive, ArchiveRestore, CalendarRange, MoreHorizontal, Pencil, Settings } from "lucide-react";
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { setProjectArchived } from "@/actions/projects";
 import { useApp } from "@/components/layout/app-provider";
+import { useTabs } from "@/components/layout/tabs";
 import { ProgressBar } from "@/components/ui/misc";
 import { formatShort } from "@/lib/dates";
 import type { ProjectWithStats } from "@/lib/queries";
@@ -23,9 +24,10 @@ export function ProjectDates({ project, today }: { project: ProjectWithStats; to
   );
 }
 
-/** Menu d'actions d'un projet : modifier, archiver / désarchiver. */
+/** Menu d'actions d'un projet : modifier, paramètres, ouvrir dans un onglet, archiver / désarchiver. */
 export function ProjectMenu({ project }: { project: ProjectWithStats }) {
   const { editProject, toast } = useApp();
+  const { openInNewTab } = useTabs();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
 
@@ -44,7 +46,7 @@ export function ProjectMenu({ project }: { project: ProjectWithStats }) {
         <MoreHorizontal size={16} />
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content align="end" sideOffset={4} className="z-50 w-48 rounded-xl border border-border bg-surface p-1 shadow-xl">
+        <Popover.Content align="end" sideOffset={4} className="z-50 w-60 rounded-xl border border-border bg-surface p-1 shadow-xl">
           <button
             className={row}
             onClick={() => {
@@ -53,6 +55,18 @@ export function ProjectMenu({ project }: { project: ProjectWithStats }) {
             }}
           >
             <Pencil size={14} className="text-muted" /> Modifier
+          </button>
+          <Link href={`/projets/${project.id}/parametres`} className={row} onClick={() => setOpen(false)}>
+            <Settings size={14} className="text-muted" /> Paramètres
+          </Link>
+          <button
+            className={row}
+            onClick={() => {
+              setOpen(false);
+              openInNewTab(`/projets/${project.id}`);
+            }}
+          >
+            <AppWindow size={14} className="text-muted" /> Ouvrir dans un nouvel onglet
           </button>
           <button className={row} onClick={toggleArchive} disabled={pending}>
             {project.archived ? <ArchiveRestore size={14} className="text-muted" /> : <Archive size={14} className="text-muted" />}

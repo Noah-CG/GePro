@@ -3,6 +3,7 @@
 /**
  * Contexte global de l'application (côté client) :
  * - données partagées : utilisateur connecté, équipe, projets, date du jour ;
+ * - projet sélectionné (tout le site n'affiche que lui, voir lib/current-project.ts) ;
  * - ouverture des fenêtres "tâche", "projet" et de la recherche depuis n'importe où ;
  * - raccourcis clavier globaux ;
  * - notifications (toasts).
@@ -10,6 +11,8 @@
 import { usePathname } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { SessionUser } from "@/lib/auth";
+import { projectIdFromPath, resolveSelectedProjectId, SELECTED_PROJECT_COOKIE } from "@/lib/current-project";
+import { savePreferenceCookie } from "@/lib/navigation-prefs";
 import type { Member, ProjectOption, ProjectWithStats, TaskView } from "@/lib/queries";
 import { CommandPalette } from "./command-palette";
 import { ProjectDialog } from "@/components/projects/project-dialog";
@@ -24,6 +27,10 @@ type AppContextValue = {
   membersById: Map<string, Member>;
   projects: ProjectOption[];
   today: string;
+  /** Projet sélectionné (null s'il n'existe aucun projet). */
+  currentProjectId: string | null;
+  /** Change de projet sélectionné (mémorisé ; aux pages de se mettre à jour). */
+  selectProject: (id: string) => void;
   /** Ouvre la création de tâche, éventuellement pré-remplie (projet, statut...). */
   newTask: (defaults?: Partial<TaskDraft>) => void;
   editTask: (task: TaskView) => void;
@@ -52,15 +59,19 @@ export function AppProvider({
   team,
   projects,
   today,
+  selectedProjectId,
   children,
 }: {
   me: SessionUser;
   team: Member[];
   projects: ProjectOption[];
   today: string;
+  /** Projet sélectionné d'après le cookie, au chargement. */
+  selectedProjectId: string | null;
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const [rememberedId, setRememberedId] = useState(selectedProjectId);
   const [taskDialog, setTaskDialog] = useState<{ open: boolean; task?: TaskView; defaults?: Partial<TaskDraft> }>({
     open: false,
   });
@@ -71,13 +82,24 @@ export function AppProvider({
 
   const membersById = useMemo(() => new Map(team.map((m) => [m.id, m])), [team]);
 
-  // Sur une page projet, une nouvelle tâche est rattachée à ce projet par défaut.
-  const currentProjectId = pathname.match(/^\/projets\/([0-9a-f-]{36})/)?.[1];
+  // Projet de l'adresse, sinon le dernier choisi. Une nouvelle tâche y est rattachée par défaut.
+  const currentProjectId = resolveSelectedProjectId({ pathname, rememberedId, projects });
+
+  const selectProject = useCallback((id: string) => {
+    setRememberedId(id);
+    savePreferenceCookie(SELECTED_PROJECT_COOKIE, id);
+  }, []);
+
+  // Ouvrir la page d'un projet le sélectionne : les autres pages le montreront ensuite.
+  const urlProjectId = projectIdFromPath(pathname);
+  useEffect(() => {
+    if (urlProjectId && urlProjectId !== rememberedId && projects.some((p) => p.id === urlProjectId)) selectProject(urlProjectId);
+  }, [urlProjectId, rememberedId, projects, selectProject]);
 
   const newTask = useCallback(
     (defaults?: Partial<TaskDraft>) => {
       setSearchOpen(false);
-      setTaskDialog({ open: true, defaults: { projectId: currentProjectId, ...defaults } });
+      setTaskDialog({ open: true, defaults: { projectId: currentProjectId ?? undefined, ...defaults } });
     },
     [currentProjectId],
   );
@@ -120,6 +142,8 @@ export function AppProvider({
     membersById,
     projects,
     today,
+    currentProjectId,
+    selectProject,
     newTask,
     editTask: (task) => setTaskDialog({ open: true, task }),
     newProject: () => {

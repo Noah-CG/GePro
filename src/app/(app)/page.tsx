@@ -1,4 +1,4 @@
-import { AlertCircle, CalendarClock, CircleDashed, TrendingUp } from "lucide-react";
+import { AlertCircle, CalendarClock, CircleDashed, FolderKanban, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -7,19 +7,37 @@ import { Avatar } from "@/components/ui/avatar";
 import { Card, EmptyState, PageHeader, ProgressBar } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { PRIORITY_RANK } from "@/lib/constants";
-import { endOfWeekISO, formatLong, todayISO } from "@/lib/dates";
+import { endOfWeekISO, formatLong, formatShort, todayISO } from "@/lib/dates";
 import { getProjectsWithStats, getTasks, getTeam } from "@/lib/queries";
+import { getSelectedProjectId } from "@/lib/selected-project";
 import { cn, percent } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Tableau de bord" };
 
+/** Tableau de bord du projet sélectionné (aucune donnée des autres projets). */
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ pour?: string }> }) {
   const me = await requireUser();
   const mine = (await searchParams).pour === "moi";
   const today = todayISO();
   const weekEnd = endOfWeekISO(today);
 
-  const [allTasks, projects, team] = await Promise.all([getTasks(), getProjectsWithStats({ archived: false, today }), getTeam()]);
+  const projectId = await getSelectedProjectId();
+  if (!projectId) {
+    return (
+      <div className="mx-auto max-w-6xl">
+        <PageHeader title={`Bonjour ${me.name.split(" ")[0]} 👋`} subtitle={formatLong(today)} />
+        <EmptyState icon={<FolderKanban size={28} />} title="Aucun projet pour l'instant">
+          Créez votre premier projet avec le bouton en haut de la barre latérale ou la touche P.
+        </EmptyState>
+      </div>
+    );
+  }
+
+  const [allTasks, [project], team] = await Promise.all([
+    getTasks({ projectId }),
+    getProjectsWithStats({ id: projectId, today }),
+    getTeam(),
+  ]);
   const tasks = mine ? allTasks.filter((t) => t.assigneeIds.includes(me.id)) : allTasks;
   const open = tasks.filter((t) => t.status !== "done");
 
@@ -31,7 +49,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const inProgress = open.filter((t) => t.status === "in_progress");
   const totalDone = allTasks.filter((t) => t.status === "done").length;
 
-  // Charge de travail par membre : répond à la question "qui fait quoi ?".
+  // Charge de travail par membre sur ce projet : répond à la question "qui fait quoi ?".
   const workload = team
     .map((m) => {
       const assigned = allTasks.filter((t) => t.status !== "done" && t.assigneeIds.includes(m.id));
@@ -42,6 +60,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         overdue: assigned.filter((t) => t.dueDate && t.dueDate < today).length,
       };
     })
+    .filter((w) => w.open > 0)
     .sort((a, b) => b.open - a.open);
   const maxLoad = Math.max(1, ...workload.map((w) => w.open));
 
@@ -49,7 +68,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     <div className="mx-auto max-w-6xl">
       <PageHeader
         title={`Bonjour ${me.name.split(" ")[0]} 👋`}
-        subtitle={formatLong(today)}
+        subtitle={`${project.name} · ${formatLong(today)}`}
         actions={
           <div className="flex rounded-lg border border-border bg-surface p-0.5 text-sm">
             <Link href="/" className={cn("rounded-md px-3 py-1", !mine ? "bg-surface-2 font-medium" : "text-muted")}>
@@ -63,10 +82,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat icon={<AlertCircle size={16} />} label="En retard" value={overdue.length} tone={overdue.length ? "danger" : undefined} href={`/taches?vue=liste&echeance=overdue${mine ? "&responsable=moi" : ""}`} />
-        <Stat icon={<CalendarClock size={16} />} label="Cette semaine" value={thisWeek.length} tone="warning" href={`/taches?vue=liste&echeance=week${mine ? "&responsable=moi" : ""}`} />
+        <Stat icon={<AlertCircle size={16} />} label="En retard" value={overdue.length} tone={overdue.length ? "danger" : undefined} href={`/projets/${projectId}?vue=liste&echeance=overdue${mine ? "&responsable=moi" : ""}`} />
+        <Stat icon={<CalendarClock size={16} />} label="Cette semaine" value={thisWeek.length} tone="warning" href={`/projets/${projectId}?vue=liste&echeance=week${mine ? "&responsable=moi" : ""}`} />
         <Stat icon={<CircleDashed size={16} />} label="En cours" value={inProgress.length} tone="accent" />
-        <Stat icon={<TrendingUp size={16} />} label="Avancement global" value={`${percent(totalDone, allTasks.length)} %`} tone="success" />
+        <Stat icon={<TrendingUp size={16} />} label="Avancement" value={`${percent(totalDone, allTasks.length)} %`} tone="success" />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -80,38 +99,25 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         <div className="space-y-6">
-          <Section title="Progression des projets" action={<Link href="/projets" className="text-xs text-muted hover:text-text">Tout voir</Link>}>
-            {projects.length === 0 ? (
-              <div className="p-4">
-                <EmptyState title="Aucun projet actif" />
+          <Section title="Progression du projet" action={<Link href={`/projets/${project.id}`} className="text-xs text-muted hover:text-text">Voir les tâches</Link>}>
+            <div className="space-y-2 p-4">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: project.color }} />
+                <span className="flex-1 truncate font-medium">{project.name}</span>
+                <span className="text-xs text-muted tabular-nums">{percent(project.done, project.total)} %</span>
               </div>
-            ) : (
-              <ul className="divide-y divide-border">
-                {projects.map((p) => {
-                  const pct = percent(p.done, p.total);
-                  return (
-                    <li key={p.id}>
-                      <Link href={`/projets/${p.id}`} className="block px-4 py-3 hover:bg-surface-2/60">
-                        <div className="mb-1.5 flex items-center gap-2 text-sm">
-                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.color }} />
-                          <span className="flex-1 truncate font-medium">{p.name}</span>
-                          <span className="text-xs text-muted tabular-nums">{pct} %</span>
-                        </div>
-                        <ProgressBar value={pct} color={p.color} />
-                        <p className="mt-1.5 text-xs text-muted">
-                          {p.done}/{p.total} terminées
-                          {p.overdue > 0 && <span className="text-danger"> · {p.overdue} en retard</span>}
-                        </p>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+              <ProgressBar value={percent(project.done, project.total)} color={project.color} />
+              <p className="text-xs text-muted">
+                {project.done}/{project.total} terminées
+                {project.overdue > 0 && <span className="text-danger"> · {project.overdue} en retard</span>}
+                {project.endDate && ` · fin prévue le ${formatShort(project.endDate)}`}
+              </p>
+            </div>
           </Section>
 
           <Section title="Charge de l'équipe">
-            <ul className="space-y-3 p-4">
+            {workload.length === 0 && <p className="p-4 text-sm text-muted">Aucune tâche ouverte assignée sur ce projet.</p>}
+            <ul className="space-y-3 p-4 empty:hidden">
               {workload.map((w) => (
                 <li key={w.member.id} className="flex items-center gap-3">
                   <Avatar user={w.member} size={26} />

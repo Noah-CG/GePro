@@ -56,6 +56,17 @@ export function formatLong(iso: string): string {
   return longFmt.format(parse(iso));
 }
 
+/**
+ * "12 oct. 2026 à 14:32" pour un instant précis (ISO complet), dans le fuseau de l'équipe.
+ * À appeler côté serveur : APP_TIMEZONE n'est pas exposé au navigateur.
+ */
+export function formatDateTime(isoInstant: string, timeZone: string = APP_TIMEZONE): string {
+  const date = new Date(isoInstant);
+  const day = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "short", year: "numeric", timeZone }).format(date);
+  const time = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone }).format(date);
+  return `${day} à ${time}`;
+}
+
 /** Échéance lisible relative à aujourd'hui : "Aujourd'hui", "Demain", "Hier", "Jeudi", "12 oct.". */
 export function formatDue(iso: string, today: string): string {
   const diff = diffDays(iso, today);
