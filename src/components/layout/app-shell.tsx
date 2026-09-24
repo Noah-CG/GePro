@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderKanban, LayoutDashboard, ListTodo, Plus, Search } from "lucide-react";
+import { FolderKanban, LayoutDashboard, ListTodo, MonitorPlay, Plus, Search } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -20,11 +20,25 @@ function isActive(pathname: string, href: string) {
 }
 
 function Logo() {
+  const pathname = usePathname();
   return (
-    <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
-      <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-sm text-accent-fg">G</span>
-      GePro
-    </Link>
+    <div className="flex items-center gap-1.5">
+      <Link href="/" className="flex items-center gap-2 font-semibold tracking-tight">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-accent text-sm text-accent-fg">G</span>
+        GePro
+      </Link>
+      <Link
+        href="/ecrans"
+        title="Multi-écran vidéo"
+        aria-label="Multi-écran vidéo"
+        className={cn(
+          "flex h-7 w-7 items-center justify-center rounded-lg",
+          isActive(pathname, "/ecrans") ? "bg-surface-2 text-text" : "text-muted hover:bg-surface-2 hover:text-text",
+        )}
+      >
+        <MonitorPlay size={16} />
+      </Link>
+    </div>
   );
 }
 
