@@ -17,7 +17,7 @@ export type Tab = {
 
 export type TabsState = { tabs: Tab[]; activeId: string };
 
-export type TabKind = "dashboard" | "tasks" | "projects" | "project" | "documents" | "document" | "pdf" | "settings" | "members" | "calendar" | "screens" | "page";
+export type TabKind = "dashboard" | "tasks" | "projects" | "project" | "documents" | "document" | "pdf" | "settings" | "members" | "calendar" | "time" | "screens" | "page";
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const KINDS: [RegExp, TabKind][] = [
@@ -31,6 +31,7 @@ const KINDS: [RegExp, TabKind][] = [
   [new RegExp(`^/projets/${UUID}/parametres$`, "i"), "settings"],
   [/^\/membres$/, "members"],
   [/^\/calendrier$/, "calendar"],
+  [/^\/temps$/, "time"],
   [/^\/ecrans$/, "screens"],
 ];
 
@@ -50,6 +51,7 @@ const DEFAULT_TITLES: Record<TabKind, string> = {
   settings: "Paramètres",
   members: "Membres",
   calendar: "Calendrier",
+  time: "Temps de travail",
   screens: "Multi-écran",
   page: "GePro",
 };

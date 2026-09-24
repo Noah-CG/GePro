@@ -102,6 +102,7 @@ export type WorkSummary = {
 /** Période de travail telle qu'affichée dans l'historique d'un membre. */
 export type WorkSessionView = {
   id: string;
+  projectId: string | null;
   startedAt: string;
   endedAt: string | null;
   projectName: string | null;
@@ -370,11 +371,22 @@ export async function getWorkSummary(userId: string, today: string): Promise<Wor
   return { ...totals, runningSince: running?.startedAt.toISOString() ?? null };
 }
 
+/** Début du chrono en cours d'un membre (ISO), ou null s'il ne tourne pas. Pour la barre latérale. */
+export async function getRunningSince(userId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ startedAt: workSessions.startedAt })
+    .from(workSessions)
+    .where(and(eq(workSessions.userId, userId), isNull(workSessions.endedAt)))
+    .limit(1);
+  return row?.startedAt.toISOString() ?? null;
+}
+
 /** Dernières périodes de travail d'un membre, la plus récente d'abord. */
 export async function getWorkSessions(userId: string, limit = 20): Promise<WorkSessionView[]> {
   const rows = await db
     .select({
       id: workSessions.id,
+      projectId: workSessions.projectId,
       startedAt: workSessions.startedAt,
       endedAt: workSessions.endedAt,
       note: workSessions.note,

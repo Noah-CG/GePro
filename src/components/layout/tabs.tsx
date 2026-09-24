@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, FileText, FolderKanban, LayoutDashboard, ListTodo, MonitorPlay, Plus, Settings, SquareKanban, Users, X, type LucideIcon } from "lucide-react";
+import { CalendarDays, FileText, FolderKanban, LayoutDashboard, ListTodo, MonitorPlay, Plus, Settings, SquareKanban, Timer, Users, X, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -266,6 +266,7 @@ const KIND_ICONS: Record<Exclude<TabKind, "document" | "pdf">, LucideIcon> = {
   settings: Settings,
   members: Users,
   calendar: CalendarDays,
+  time: Timer,
   screens: MonitorPlay,
   page: FileText,
 };

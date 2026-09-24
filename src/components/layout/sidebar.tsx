@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Users, X } from "lucide-react";
+import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Timer, Users, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Kbd, SideTooltip } from "@/components/ui/misc";
 import type { SidebarSectionId } from "@/lib/navigation-prefs";
@@ -21,6 +21,8 @@ export type SidebarData = {
   /** PDF importés, tous projets confondus. */
   files: FileLink[];
   google: GoogleSidebarState;
+  /** Le chrono de l'utilisateur connecté tourne (pastille sur « Temps de travail »). */
+  timerRunning: boolean;
 };
 
 /**
@@ -153,6 +155,14 @@ export function Sidebar({
               />
             )}
             <SidebarNavItem href="/calendrier" icon={CalendarDays} label="Calendrier" active={pathname.startsWith("/calendrier")} />
+            <SidebarNavItem
+              href="/temps"
+              icon={Timer}
+              label="Temps de travail"
+              active={pathname.startsWith("/temps")}
+              live={data.timerRunning ? "Chrono en cours" : undefined}
+              tooltip={data.timerRunning ? "Temps de travail (chrono en cours)" : undefined}
+            />
             <SidebarNavItem href="/ecrans" icon={MonitorPlay} label="Multi-écran" active={pathname.startsWith("/ecrans")} />
           </div>
 

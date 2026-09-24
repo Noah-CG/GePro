@@ -6,21 +6,18 @@
 import { AlertCircle, CalendarClock, ListTodo, TrendingUp, UserX } from "lucide-react";
 import Link from "next/link";
 import { DashboardTaskList } from "@/components/dashboard/dashboard-task-list";
-import { LiveDuration } from "@/components/dashboard/live-duration";
-import { WorkTimer } from "@/components/dashboard/work-timer";
 import { TaskRates } from "@/components/tasks/task-rates";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState, ProgressBar, Section, Stat } from "@/components/ui/misc";
 import type { SessionUser } from "@/lib/auth";
 import { compareByDueThenPriority } from "@/lib/constants";
-import { formatDuration, formatShort, formatTime } from "@/lib/dates";
-import type { Member, MemberWork, ProjectWithStats, TaskView, WorkSummary } from "@/lib/queries";
+import { formatShort } from "@/lib/dates";
+import type { Member, ProjectWithStats, TaskView } from "@/lib/queries";
 import { percent } from "@/lib/utils";
 
 type Common = {
   me: SessionUser;
   project: ProjectWithStats;
-  work: WorkSummary;
   today: string;
   weekEnd: string;
 };
@@ -28,8 +25,8 @@ type Common = {
 const isOverdue = (t: TaskView, today: string) => !!t.dueDate && t.dueDate < today;
 const isThisWeek = (t: TaskView, today: string, weekEnd: string) => !!t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd;
 
-/** Vue personnelle : le chrono en avant et toute ma file de travail, échéance ou pas. */
-export function MyDashboard({ me, project, work, today, weekEnd, tasks }: Common & { tasks: TaskView[] }) {
+/** Vue personnelle : toute ma file de travail, échéance ou pas. */
+export function MyDashboard({ project, today, weekEnd, tasks }: Common & { tasks: TaskView[] }) {
   const listUrl = (echeance: string) => `/projets/${project.id}?vue=liste&echeance=${echeance}&responsable=moi`;
   const open = tasks.filter((t) => t.status !== "done").sort(compareByDueThenPriority);
   const todo = open.filter((t) => t.status === "todo");
@@ -47,12 +44,6 @@ export function MyDashboard({ me, project, work, today, weekEnd, tasks }: Common
 
   return (
     <>
-      <div className="mb-6">
-        <Section title="Mon temps de travail" action={<Link href={`/membres/${me.id}`} className="text-xs text-muted hover:text-text">Mon journal de bord</Link>}>
-          <WorkTimer summary={work} large />
-        </Section>
-      </div>
-
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={<ListTodo size={16} />} label="Mes tâches ouvertes" value={open.length} tone="accent" href={`/projets/${project.id}?vue=liste&responsable=moi`} />
         <Stat icon={<AlertCircle size={16} />} label="En retard" value={overdue} tone={overdue ? "danger" : undefined} href={listUrl("overdue")} />
@@ -87,48 +78,24 @@ export function MyDashboard({ me, project, work, today, weekEnd, tasks }: Common
   );
 }
 
-/** Vue d'équipe : ce qui glisse, ce qui n'est pris par personne, qui travaille et combien. */
-export function TeamDashboard({
-  me,
-  project,
-  work,
-  today,
-  weekEnd,
-  tasks,
-  team,
-  teamWork,
-}: Common & { tasks: TaskView[]; team: Member[]; teamWork: MemberWork[] }) {
+/** Vue d'équipe : ce qui glisse, ce qui n'est pris par personne, et la charge de chacun. */
+export function TeamDashboard({ me, project, today, weekEnd, tasks, team }: Common & { tasks: TaskView[]; team: Member[] }) {
   const listUrl = (query: string) => `/projets/${project.id}?vue=liste&${query}`;
   const open = tasks.filter((t) => t.status !== "done").sort(compareByDueThenPriority);
   const overdue = open.filter((t) => isOverdue(t, today));
   const thisWeek = open.filter((t) => isThisWeek(t, today, weekEnd));
   const unassigned = open.filter((t) => t.assigneeIds.length === 0);
 
-  const now = Date.now();
-  const runningMs = (w?: MemberWork) => (w?.runningSince ? now - new Date(w.runningSince).getTime() : 0);
-  const workBy = new Map(teamWork.map((w) => [w.userId, w]));
   const canOpen = (m: Member) => me.role === "admin" || m.id === me.id;
 
-  const workingNow = team
-    .map((member) => ({ member, since: workBy.get(member.id)?.runningSince ?? null }))
-    .filter((w): w is { member: Member; since: string } => w.since !== null)
-    .sort((a, b) => a.since.localeCompare(b.since));
-
-  // Charge par membre : tâches ouvertes et temps passé cette semaine sur ce projet.
+  // Charge par membre : tâches ouvertes sur ce projet (le temps passé est sur la page Temps de travail).
   const workload = team
     .map((m) => {
       const assigned = open.filter((t) => t.assigneeIds.includes(m.id));
-      const w = workBy.get(m.id);
-      return {
-        member: m,
-        open: assigned.length,
-        overdue: assigned.filter((t) => isOverdue(t, today)).length,
-        weekMs: (w?.weekMs ?? 0) + runningMs(w),
-        running: !!w?.runningSince,
-      };
+      return { member: m, open: assigned.length, overdue: assigned.filter((t) => isOverdue(t, today)).length };
     })
-    .filter((w) => w.open > 0 || w.weekMs > 0)
-    .sort((a, b) => b.open - a.open || b.weekMs - a.weekMs);
+    .filter((w) => w.open > 0)
+    .sort((a, b) => b.open - a.open || a.member.name.localeCompare(b.member.name));
   const maxLoad = Math.max(1, ...workload.map((w) => w.open));
 
   return (
@@ -154,38 +121,10 @@ export function TeamDashboard({
         </div>
 
         <div className="space-y-6">
-          <Section title="Mon chrono" action={<Link href={`/membres/${me.id}`} className="text-xs text-muted hover:text-text">Mon journal</Link>}>
-            <WorkTimer summary={work} />
-          </Section>
-
-          <Section title="En ce moment" count={workingNow.length}>
-            {workingNow.length === 0 ? (
-              <p className="p-4 text-sm text-muted">Personne n&apos;a de chrono lancé sur ce projet.</p>
-            ) : (
-              <ul className="space-y-3 p-4">
-                {workingNow.map(({ member, since }) => (
-                  <li key={member.id} className="flex items-center gap-3 text-sm">
-                    <span className="relative">
-                      <Avatar user={member} size={26} />
-                      <span className="absolute -right-0.5 -bottom-0.5 h-2.5 w-2.5 animate-pulse rounded-full bg-success ring-2 ring-surface" />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate">{member.name}</span>
-                    <span className="shrink-0 text-xs text-muted tabular-nums">
-                      depuis {formatTime(since)} ·{" "}
-                      <span className="font-medium text-text">
-                        <LiveDuration since={since} initialMs={now - new Date(since).getTime()} />
-                      </span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Section>
-
           <ProjectProgress project={project} />
 
-          <Section title="Charge de l'équipe" action={<span className="text-xs text-muted">tâches · temps semaine</span>}>
-            {workload.length === 0 && <p className="p-4 text-sm text-muted">Aucune tâche ouverte assignée ni temps enregistré sur ce projet.</p>}
+          <Section title="Charge de l'équipe" action={<Link href="/temps" className="text-xs text-muted hover:text-text">Temps de travail</Link>}>
+            {workload.length === 0 && <p className="p-4 text-sm text-muted">Aucune tâche ouverte assignée sur ce projet.</p>}
             <ul className="space-y-3 p-4 empty:hidden">
               {workload.map((w) => {
                 const name = <span className="truncate">{w.member.name}</span>;
@@ -204,8 +143,6 @@ export function TeamDashboard({
                         <span className="shrink-0 text-xs text-muted tabular-nums">
                           {w.open} ouverte{w.open > 1 ? "s" : ""}
                           {w.overdue > 0 && <span className="text-danger"> · {w.overdue} en retard</span>}
-                          {" · "}
-                          <span className={w.running ? "font-medium text-success" : "font-medium text-text"}>{formatDuration(w.weekMs)}</span>
                         </span>
                       </div>
                       <ProgressBar value={(w.open / maxLoad) * 100} color={w.member.color} className="mt-1" />
