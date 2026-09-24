@@ -79,3 +79,23 @@ export function formatDue(iso: string, today: string): string {
   }
   return formatShort(iso);
 }
+
+/** Durée lisible : "45 s", "12 min", "3 h 05". */
+export function formatDuration(ms: number): string {
+  const totalMin = Math.floor(ms / 60_000);
+  if (totalMin < 1) return `${Math.max(0, Math.floor(ms / 1000))} s`;
+  if (totalMin < 60) return `${totalMin} min`;
+  return `${Math.floor(totalMin / 60)} h ${String(totalMin % 60).padStart(2, "0")}`;
+}
+
+/** Chrono : "0:04:09", "12:30:00". */
+export function formatClock(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${Math.floor(s / 3600)}:${pad(Math.floor(s / 60) % 60)}:${pad(s % 60)}`;
+}
+
+/** "14:32" pour un instant précis, dans le fuseau de l'équipe (à appeler côté serveur). */
+export function formatTime(isoInstant: string, timeZone: string = APP_TIMEZONE): string {
+  return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(isoInstant));
+}

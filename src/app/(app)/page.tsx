@@ -1,14 +1,14 @@
 import { AlertCircle, CalendarClock, CircleDashed, FolderKanban, TrendingUp } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
 import { DashboardTaskList } from "@/components/dashboard/dashboard-task-list";
+import { WorkTimer } from "@/components/dashboard/work-timer";
 import { Avatar } from "@/components/ui/avatar";
-import { Card, EmptyState, PageHeader, ProgressBar } from "@/components/ui/misc";
+import { EmptyState, PageHeader, ProgressBar, Section, Stat } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { PRIORITY_RANK } from "@/lib/constants";
 import { endOfWeekISO, formatLong, formatShort, todayISO } from "@/lib/dates";
-import { getProjectsWithStats, getTasks, getTeam } from "@/lib/queries";
+import { getProjectsWithStats, getTasks, getTeam, getWorkSummary } from "@/lib/queries";
 import { getSelectedProjectId } from "@/lib/selected-project";
 import { cn, percent } from "@/lib/utils";
 
@@ -33,10 +33,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     );
   }
 
-  const [allTasks, [project], team] = await Promise.all([
+  const [allTasks, [project], team, work] = await Promise.all([
     getTasks({ projectId }),
     getProjectsWithStats({ id: projectId, today }),
     getTeam(),
+    getWorkSummary(me.id, today),
   ]);
   const tasks = mine ? allTasks.filter((t) => t.assigneeIds.includes(me.id)) : allTasks;
   const open = tasks.filter((t) => t.status !== "done");
@@ -99,6 +100,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         <div className="space-y-6">
+          <Section title="Temps de travail" action={<Link href={`/membres/${me.id}`} className="text-xs text-muted hover:text-text">Historique</Link>}>
+            <WorkTimer summary={work} />
+          </Section>
+
           <Section title="Progression du projet" action={<Link href={`/projets/${project.id}`} className="text-xs text-muted hover:text-text">Voir les tâches</Link>}>
             <div className="space-y-2 p-4">
               <div className="flex items-center gap-2 text-sm">
@@ -138,40 +143,5 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
       </div>
     </div>
-  );
-}
-
-const TONES = {
-  danger: "text-danger bg-danger-soft",
-  warning: "text-warning bg-warning-soft",
-  accent: "text-accent bg-accent-soft",
-  success: "text-success bg-success-soft",
-};
-
-function Stat({ icon, label, value, tone, href }: { icon: ReactNode; label: string; value: ReactNode; tone?: keyof typeof TONES; href?: string }) {
-  const body = (
-    <Card className="flex items-center gap-3 p-4">
-      <span className={cn("flex h-9 w-9 items-center justify-center rounded-lg", tone ? TONES[tone] : "bg-surface-2 text-muted")}>{icon}</span>
-      <div>
-        <p className="text-xl font-semibold tabular-nums">{value}</p>
-        <p className="text-xs text-muted">{label}</p>
-      </div>
-    </Card>
-  );
-  return href ? <Link href={href}>{body}</Link> : body;
-}
-
-function Section({ title, count, tone, action, children }: { title: string; count?: number; tone?: "danger"; action?: ReactNode; children: ReactNode }) {
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {count !== undefined && count > 0 && (
-          <span className={cn("rounded-full px-1.5 text-xs font-medium", tone === "danger" ? "bg-danger-soft text-danger" : "bg-surface-2 text-muted")}>{count}</span>
-        )}
-        <span className="ml-auto">{action}</span>
-      </div>
-      {children}
-    </Card>
   );
 }
