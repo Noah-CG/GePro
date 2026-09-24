@@ -1,0 +1,23 @@
+# Dépendances et builds (réinstallés / reconstruits dans l'image)
+node_modules
+.next
+out
+*.tsbuildinfo
+next-env.d.ts
+
+# Secrets : les variables sont passées au conteneur à l'exécution
+.env*
+!.env.example
+
+# Base locale de démo (PGlite)
+.pglite
+
+# Divers
+.git
+.gitignore
+.vercel
+.vscode
+.idea
+*.log
+Dockerfile
+.dockerignore

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Serveur autonome dans .next/standalone : l'image Docker n'embarque que les fichiers utiles.
+  output: "standalone",
   // PGlite (base locale de démo) embarque du WebAssembly : on le laisse hors du bundle.
   serverExternalPackages: ["@electric-sql/pglite"],
   // Fichiers annexes du lecteur PDF, lus à l'exécution par la route /api/pdfjs (Vercel ne
