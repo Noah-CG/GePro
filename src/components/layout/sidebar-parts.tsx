@@ -1,8 +1,9 @@
 "use client";
 
 import { ChevronDown, type LucideIcon } from "lucide-react";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { createContext, useContext, type ReactNode } from "react";
+import { Spinner } from "@/components/ui/button";
 import { SideTooltip } from "@/components/ui/misc";
 import type { SidebarSectionId } from "@/lib/navigation-prefs";
 import { cn } from "@/lib/utils";
@@ -44,6 +45,7 @@ export function SidebarNavItem({
   active,
   badge,
   tooltip,
+  live,
 }: {
   href: string;
   icon: LucideIcon;
@@ -53,6 +55,8 @@ export function SidebarNavItem({
   badge?: number;
   /** Texte de l'info-bulle en mode réduit (par défaut : le libellé). */
   tooltip?: string;
+  /** Pastille verte animée sur l'icône (ex. chrono en cours), avec son texte pour les lecteurs d'écran. */
+  live?: string;
 }) {
   const { collapsed } = useSidebar();
   return (
@@ -62,7 +66,7 @@ export function SidebarNavItem({
       aria-label={collapsed ? (tooltip ?? label) : undefined}
       className={itemClass({ active, collapsed })}
     >
-      <Icon size={collapsed ? 18 : 16} className="shrink-0" />
+      <NavIcon icon={Icon} size={collapsed ? 18 : 16} live={live} />
       {collapsed ? (
         <SideTooltip label={tooltip ?? label} />
       ) : (
@@ -127,5 +131,23 @@ export function SidebarSection({
         {children}
       </div>
     </div>
+  );
+}
+
+/**
+ * Icône d'un lien de la barre : remplacée par un spinner le temps que la page demandée se
+ * charge (retour immédiat au clic), avec la pastille `live` éventuelle.
+ */
+function NavIcon({ icon: Icon, size, live }: { icon: LucideIcon; size: number; live?: string }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span className="relative flex shrink-0">
+      {pending ? <Spinner size={size} /> : <Icon size={size} />}
+      {live && (
+        <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface motion-safe:animate-pulse">
+          <span className="sr-only">{live}</span>
+        </span>
+      )}
+    </span>
   );
 }

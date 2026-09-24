@@ -30,6 +30,8 @@ export function DatePicker({
   onChange,
   placeholder = "Aucune date",
   min,
+  max,
+  clearable = true,
   "aria-label": ariaLabel,
 }: {
   id?: string;
@@ -39,6 +41,10 @@ export function DatePicker({
   placeholder?: string;
   /** Première date sélectionnable ("YYYY-MM-DD"), ex. la date de début pour une date de fin. */
   min?: string;
+  /** Dernière date sélectionnable ("YYYY-MM-DD"), ex. aujourd'hui pour une période déjà passée. */
+  max?: string;
+  /** Faux : pas de bouton « Effacer » (date obligatoire). */
+  clearable?: boolean;
   "aria-label"?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -70,19 +76,19 @@ export function DatePicker({
             selected={selected}
             defaultMonth={selected ?? (min ? fromISO(min) : undefined)}
             onSelect={(date) => pick(date ? toISO(date) : "")}
-            disabled={min ? { before: fromISO(min) } : undefined}
+            disabled={[...(min ? [{ before: fromISO(min) }] : []), ...(max ? [{ after: fromISO(max) }] : [])]}
             autoFocus
           />
           <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs">
             <button
               type="button"
               onClick={() => pick(toISO(new Date()))}
-              disabled={!!min && toISO(new Date()) < min}
+              disabled={(!!min && toISO(new Date()) < min) || (!!max && toISO(new Date()) > max)}
               className="font-medium text-accent hover:underline disabled:pointer-events-none disabled:opacity-40"
             >
               Aujourd&apos;hui
             </button>
-            {value && (
+            {value && clearable && (
               <button type="button" onClick={() => pick("")} className="text-muted hover:text-text">
                 Effacer
               </button>

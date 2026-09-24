@@ -1,3 +1,4 @@
+import { Loader2 } from "lucide-react";
 import { forwardRef, type ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +18,12 @@ const sizes: Record<Size, string> = {
   icon: "h-8 w-8 justify-center",
 };
 
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size };
+export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: Variant;
+  size?: Size;
+  /** Action en cours : spinner à la place de l'icône, bouton désactivé et signalé occupé. */
+  loading?: boolean;
+};
 
 /** Classes d'un bouton, pour donner le même aspect à un lien. */
 export function buttonClass({ variant = "secondary", size = "md", className }: { variant?: Variant; size?: Size; className?: string } = {}) {
@@ -30,8 +36,26 @@ export function buttonClass({ variant = "secondary", size = "md", className }: {
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "md", className, type = "button", ...props },
+  { variant = "secondary", size = "md", className, type = "button", loading = false, disabled, children, ...props },
   ref,
 ) {
-  return <button ref={ref} type={type} className={buttonClass({ variant, size, className })} {...props} />;
+  return (
+    <button
+      ref={ref}
+      type={type}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      // Pendant le chargement, le spinner remplace l'icône de tête (s'il y en a une).
+      className={buttonClass({ variant, size, className: cn(loading && "cursor-progress [&>svg:first-child:not([data-spinner])]:hidden", className) })}
+      {...props}
+    >
+      {children}
+      {loading && <Spinner size={size === "icon" ? 15 : 14} />}
+    </button>
+  );
 });
+
+/** Indicateur de chargement (décoratif : le bouton ou la zone parente porte `aria-busy`). */
+export function Spinner({ size = 14, className }: { size?: number; className?: string }) {
+  return <Loader2 data-spinner aria-hidden size={size} className={cn("order-first shrink-0 motion-safe:animate-spin", className)} />;
+}

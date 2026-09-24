@@ -45,7 +45,9 @@ export function EventDialog({
   });
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [saving, startSaving] = useTransition();
+  const [deleting, startDeleting] = useTransition();
+  const pending = saving || deleting;
   const set = (key: keyof typeof draft, value: string) => setDraft((d) => ({ ...d, [key]: value }));
 
   // Projets proposés : les actifs, plus celui de l'événement s'il a été archivé depuis.
@@ -61,7 +63,7 @@ export function EventDialog({
     if (!canEdit) return;
     setError(null);
     const input = { ...draft, projectId: draft.projectId === TEAM ? null : draft.projectId };
-    startTransition(async () => {
+    startSaving(async () => {
       const res = event ? await updateEvent(event.id, input) : await createEvent(input);
       if (!res.ok) return setError(res.error);
       toast(event ? "Événement mis à jour" : "Événement créé");
@@ -72,7 +74,7 @@ export function EventDialog({
   function remove() {
     if (!event) return;
     if (!confirmDelete) return setConfirmDelete(true);
-    startTransition(async () => {
+    startDeleting(async () => {
       const res = await deleteEvent(event.id);
       if (!res.ok) {
         setConfirmDelete(false);
@@ -150,7 +152,7 @@ export function EventDialog({
 
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
           {event && canEdit && (
-            <Button variant={confirmDelete ? "danger" : "ghost"} size="sm" onClick={remove} onBlur={() => setConfirmDelete(false)} disabled={pending}>
+            <Button variant={confirmDelete ? "danger" : "ghost"} size="sm" onClick={remove} onBlur={() => setConfirmDelete(false)} disabled={pending} loading={deleting}>
               <Trash2 size={14} />
               {confirmDelete ? "Confirmer la suppression" : "Supprimer"}
             </Button>
@@ -165,7 +167,7 @@ export function EventDialog({
               {canEdit ? "Annuler" : "Fermer"}
             </Button>
             {canEdit && (
-              <Button type="submit" variant="primary" disabled={pending || !draft.title.trim() || !draft.eventDate}>
+              <Button type="submit" variant="primary" disabled={pending || !draft.title.trim() || !draft.eventDate} loading={saving}>
                 {event ? "Enregistrer" : "Créer l'événement"}
               </Button>
             )}

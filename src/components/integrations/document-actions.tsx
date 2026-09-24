@@ -25,8 +25,8 @@ export function DocumentActions({ projectId, url }: { projectId: string; url: st
 
   return (
     <div className="flex shrink-0 items-center gap-2">
-      <Button size="sm" onClick={refresh} disabled={refreshing} aria-label="Actualiser le document">
-        <RefreshCw size={14} className={cn(refreshing && "animate-spin")} /> {refreshing ? "Actualisation…" : "Actualiser"}
+      <Button size="sm" onClick={refresh} loading={refreshing} aria-label="Actualiser le document">
+        <RefreshCw size={14} /> {refreshing ? "Actualisation…" : "Actualiser"}
       </Button>
       <a href={url} target="_blank" rel="noopener noreferrer" className={buttonClass({ size: "sm", variant: "primary" })}>
         <ExternalLink size={14} /> Ouvrir dans Google Docs

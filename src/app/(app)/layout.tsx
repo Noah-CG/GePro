@@ -6,19 +6,20 @@ import { resolveSelectedProjectId, SELECTED_PROJECT_COOKIE } from "@/lib/current
 import { todayISO } from "@/lib/dates";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { COLLAPSED_SECTIONS_COOKIE, parseCollapsedSections, SIDEBAR_COLLAPSED_COOKIE } from "@/lib/navigation-prefs";
-import { getConnectionView, getFileLinks, getProjectOptions, getProjectsWithStats, getResourceLinks, getTeam } from "@/lib/queries";
+import { getConnectionView, getFileLinks, getProjectOptions, getProjectsWithStats, getResourceLinks, getRunningSince, getTeam } from "@/lib/queries";
 
 /** Toutes les pages de ce groupe nécessitent d'être connecté. */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireUser();
   const today = todayISO();
-  const [team, projects, projectStats, resources, files, googleConnection, cookieStore] = await Promise.all([
+  const [team, projects, projectStats, resources, files, googleConnection, runningSince, cookieStore] = await Promise.all([
     getTeam(),
     getProjectOptions(),
     getProjectsWithStats({ today }),
     getResourceLinks(),
     getFileLinks(),
     getConnectionView(me.id, "google"),
+    getRunningSince(me.id),
     cookies(),
   ]);
 
@@ -26,6 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     projects: projectStats,
     resources,
     files,
+    timerRunning: runningSince !== null,
     google: { configured: isGoogleConfigured(), connection: googleConnection },
   };
   // Le layout ne connaît pas l'adresse : l'interface privilégie ensuite le projet de l'URL.

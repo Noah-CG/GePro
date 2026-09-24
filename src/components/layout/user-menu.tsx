@@ -118,7 +118,7 @@ function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         </Field>
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={pending || !current || !next}>
+          <Button type="submit" variant="primary" disabled={!current || !next} loading={pending}>
             Enregistrer
           </Button>
         </div>

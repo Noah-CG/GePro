@@ -78,6 +78,26 @@ export const docSearchQuery = z.string().trim().max(100, "Recherche trop longue"
 /** Journal de bord d'une période de travail. */
 export const workNote = z.string().trim().max(5000, "Le journal est limité à 5 000 caractères.");
 
+const clockTime = z
+  .string()
+  .trim()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Heure invalide (ex. 09:30)");
+
+/**
+ * Période de travail saisie ou corrigée à la main : une date et deux heures dans le fuseau de
+ * l'équipe. Une fin antérieure (ou égale) au début tombe le lendemain.
+ */
+export const workSessionInput = z
+  .object({
+    date: requiredDate,
+    start: clockTime,
+    end: clockTime,
+    projectId: z.uuid("Projet invalide").nullable().or(z.literal("").transform(() => null)).default(null),
+    note: workNote.default(""),
+  })
+  .refine((v) => v.start !== v.end, { message: "L'heure de fin doit être différente de l'heure de début.", path: ["end"] });
+export type WorkSessionInput = z.input<typeof workSessionInput>;
+
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Données invalides";
 }

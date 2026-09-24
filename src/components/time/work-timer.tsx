@@ -3,7 +3,7 @@
 import { CheckCircle2, NotebookPen, Play, Square, X } from "lucide-react";
 import { useEffect, useOptimistic, useState, useTransition } from "react";
 import { startWorkTimer, stopWorkTimer, type StoppedSession } from "@/actions/work-sessions";
-import { WorkNoteDialog, type NoteTarget } from "@/components/dashboard/work-note-dialog";
+import { WorkNoteDialog, type NoteTarget } from "@/components/time/work-note-dialog";
 import { useApp } from "@/components/layout/app-provider";
 import { Button } from "@/components/ui/button";
 import { formatClock, formatDuration } from "@/lib/dates";

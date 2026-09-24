@@ -7,7 +7,7 @@ import { formatClock, formatDuration } from "@/lib/dates";
 import { getProjectTeamWork, getTasks, getWorkByProject, getWorkSessions, getWorkSummary } from "@/lib/queries";
 import { getSelectedProjectId } from "@/lib/selected-project";
 import { insertProject, insertUser, resetDb } from "@/test/db";
-import { saveWorkNote, startWorkTimer, stopWorkTimer } from "./work-sessions";
+import { createWorkSession, deleteWorkSession, saveWorkNote, startWorkTimer, stopWorkTimer, updateWorkSession } from "./work-sessions";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
@@ -184,4 +184,81 @@ describe("affichage des durées", () => {
   ])("formatDuration(%i) = %s", (ms, expected) => expect(formatDuration(ms)).toBe(expected));
 
   it("formatClock", () => expect(formatClock((4 * 60 + 9) * 1000)).toBe("0:04:09"));
+});
+
+describe("saisie manuelle du temps de travail", () => {
+  const input = { date: "2026-09-21", start: "09:00", end: "12:30", projectId, note: "Maquettes" };
+  const create = (patch: Partial<typeof input> = {}, userId = me.id) => createWorkSession(userId, { ...input, projectId, ...patch });
+
+  it("ajoute une période, lue dans le fuseau de l'équipe", async () => {
+    const res = await create();
+    expect(res.ok).toBe(true);
+    const [row] = await rows();
+    expect(row).toMatchObject({ projectId, note: "Maquettes", startedAt: new Date("2026-09-21T07:00:00Z"), endedAt: new Date("2026-09-21T10:30:00Z") });
+  });
+
+  it("fait finir le lendemain une période dont la fin précède le début", async () => {
+    await create({ start: "22:00", end: "01:30" });
+    const [row] = await rows();
+    expect(row.endedAt!.toISOString()).toBe("2026-09-21T23:30:00.000Z");
+  });
+
+  it.each([
+    ["une heure invalide", { start: "25:00" }, "Heure invalide (ex. 09:30)"],
+    ["une fin égale au début", { end: "09:00" }, "L'heure de fin doit être différente de l'heure de début."],
+    ["une période dans le futur", { date: "2099-01-01" }, "Une période de travail ne peut pas se terminer dans le futur."],
+    ["un projet inconnu", { projectId: "00000000-0000-4000-8000-000000000000" }, "Projet introuvable."],
+  ])("refuse %s", async (_, patch, error) => {
+    expect(await create(patch)).toEqual({ ok: false, error });
+  });
+
+  it("refuse une période qui en chevauche une autre", async () => {
+    await insertSession("2026-09-21T08:00:00Z", 60); // 10:00 → 11:00, heure de Paris
+    const res = await create();
+    expect(res).toEqual({ ok: false, error: "Cette période chevauche une autre période de travail (21 sept. 2026 à 10:00 → 11:00)." });
+  });
+
+  it("corrige une période, et arrête un chrono oublié", async () => {
+    await startWorkTimer();
+    const [running] = await rows();
+    const res = await updateWorkSession(running.id, { ...input, projectId });
+    expect(res.ok).toBe(true);
+    const [row] = await rows();
+    expect(row).toMatchObject({ id: running.id, endedAt: new Date("2026-09-21T10:30:00Z"), note: "Maquettes" });
+  });
+
+  it("une correction ne se compte pas elle-même comme chevauchement", async () => {
+    await create();
+    const [row] = await rows();
+    expect((await updateWorkSession(row.id, { ...input, projectId, end: "13:00" })).ok).toBe(true);
+  });
+
+  it("supprime une période", async () => {
+    await create();
+    const [row] = await rows();
+    expect(await deleteWorkSession(row.id)).toEqual({ ok: true, data: undefined });
+    expect(await rows()).toEqual([]);
+  });
+
+  it("interdit de toucher au temps d'un autre membre, sauf pour un administrateur", async () => {
+    const other = await insertUser(db, "Léa Dubois");
+    const forbidden = { ok: false, error: "Seul le membre concerné ou un administrateur peut modifier ce temps de travail." };
+    expect(await create({}, other.id)).toEqual(forbidden);
+
+    vi.mocked(requireUser).mockResolvedValue({ ...me, role: "admin" });
+    const res = await create({}, other.id);
+    expect(res.ok).toBe(true);
+    const id = (res as { data: { id: string } }).data.id;
+
+    vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
+    expect(await updateWorkSession(id, { ...input, projectId })).toEqual(forbidden);
+    expect(await deleteWorkSession(id)).toEqual(forbidden);
+  });
+
+  it("signale une période ou un membre inconnus", async () => {
+    expect(await updateWorkSession("00000000-0000-4000-8000-000000000000", { ...input, projectId })).toEqual({ ok: false, error: "Période introuvable." });
+    expect(await deleteWorkSession("pas-un-uuid")).toEqual({ ok: false, error: "Période introuvable." });
+    vi.mocked(requireUser).mockResolvedValue({ ...me, role: "admin" });
+    expect(await create({}, "00000000-0000-4000-8000-000000000000")).toEqual({ ok: false, error: "Membre introuvable." });
+  });
 });

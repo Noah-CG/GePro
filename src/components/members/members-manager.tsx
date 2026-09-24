@@ -60,6 +60,7 @@ export function MembersManager({ team }: { team: Member[] }) {
                   onClick={() => remove(m)}
                   onBlur={() => setConfirmDelete(null)}
                   disabled={pending}
+                  loading={pending && confirmDelete === m.id}
                   aria-label={`Supprimer ${m.name}`}
                 >
                   <Trash2 size={15} />
@@ -121,7 +122,7 @@ function CreateMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         </Field>
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={pending}>
+          <Button type="submit" variant="primary" loading={pending}>
             Créer le compte
           </Button>
         </div>
@@ -155,7 +156,7 @@ function ResetPasswordDialog({ member, onClose }: { member: Member | null; onClo
         </Field>
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
         <div className="flex justify-end">
-          <Button type="submit" variant="primary" disabled={pending}>
+          <Button type="submit" variant="primary" loading={pending}>
             Enregistrer
           </Button>
         </div>
