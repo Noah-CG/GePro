@@ -16,6 +16,7 @@ import {
   type ReactNode,
   type WheelEvent,
 } from "react";
+import { PdfIcon } from "@/components/files/pdf-icon";
 import { GoogleDocsIcon } from "@/components/integrations/google-docs-icon";
 import {
   activateTab,
@@ -256,7 +257,7 @@ export function TabPanel({ children }: { children: ReactNode }) {
   );
 }
 
-const KIND_ICONS: Record<Exclude<TabKind, "document">, LucideIcon> = {
+const KIND_ICONS: Record<Exclude<TabKind, "document" | "pdf">, LucideIcon> = {
   dashboard: LayoutDashboard,
   tasks: ListTodo,
   projects: FolderKanban,
@@ -272,6 +273,7 @@ const KIND_ICONS: Record<Exclude<TabKind, "document">, LucideIcon> = {
 function TabIcon({ url }: { url: string }) {
   const kind = tabKind(url);
   if (kind === "document") return <GoogleDocsIcon size={13} className="shrink-0" />;
+  if (kind === "pdf") return <PdfIcon size={13} className="shrink-0" />;
   const Icon = KIND_ICONS[kind];
   return <Icon size={14} className="shrink-0" aria-hidden />;
 }

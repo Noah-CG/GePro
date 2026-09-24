@@ -17,7 +17,7 @@ export type Tab = {
 
 export type TabsState = { tabs: Tab[]; activeId: string };
 
-export type TabKind = "dashboard" | "tasks" | "projects" | "project" | "documents" | "document" | "settings" | "members" | "calendar" | "screens" | "page";
+export type TabKind = "dashboard" | "tasks" | "projects" | "project" | "documents" | "document" | "pdf" | "settings" | "members" | "calendar" | "screens" | "page";
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const KINDS: [RegExp, TabKind][] = [
@@ -27,6 +27,7 @@ const KINDS: [RegExp, TabKind][] = [
   [new RegExp(`^/projets/${UUID}$`, "i"), "project"],
   [new RegExp(`^/projets/${UUID}/documents$`, "i"), "documents"],
   [new RegExp(`^/projets/${UUID}/documents/${UUID}$`, "i"), "document"],
+  [new RegExp(`^/projets/${UUID}/documents/pdf/${UUID}$`, "i"), "pdf"],
   [new RegExp(`^/projets/${UUID}/parametres$`, "i"), "settings"],
   [/^\/membres$/, "members"],
   [/^\/calendrier$/, "calendar"],
@@ -45,6 +46,7 @@ const DEFAULT_TITLES: Record<TabKind, string> = {
   project: "Projet",
   documents: "Documents",
   document: "Document",
+  pdf: "PDF",
   settings: "Paramètres",
   members: "Membres",
   calendar: "Calendrier",
