@@ -209,7 +209,7 @@ De haut en bas :
 
 - le **sélecteur de projet** ;
 - **Nouvelle tâche** et **Rechercher** ;
-- **Tableau de bord**, **Tâches** (avec le nombre de tâches ouvertes) et **Calendrier** du projet, puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
+- **Tableau de bord**, **Tâches** (avec le nombre de tâches ouvertes) et **Calendrier** du projet, **Temps de travail** (pastille verte quand votre chrono tourne), puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
 - **Documents** : les Google Docs et les PDF du projet, le **+** pour importer un PDF ou lier un Google Doc, et un lien vers la page de gestion ;
 - **Administration** (admin) : membres ;
 - tout en bas, **Paramètres du projet** et le menu du compte (thème, mot de passe, déconnexion).
@@ -226,6 +226,24 @@ Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bu
 - Au clavier, la grille n'a qu'un arrêt de tabulation : flèches pour changer de jour, `Début` / `Fin` pour le lundi / dimanche, `Page préc.` / `Page suiv.` pour la période voisine, `Tab` pour atteindre les éléments du jour.
 - Sous 768 px, le calendrier devient la liste des jours qui ont du contenu.
 - Chaque vue ne fait qu'une requête, bornée sur les jours affichés (`getCalendarItems`).
+
+### Temps de travail
+
+La page **Temps de travail** (`/temps`) regroupe tout ce qui concerne le chrono :
+
+- le **chrono** : un clic pour démarrer, un clic pour arrêter. La période est rattachée au projet sélectionné, et à l'arrêt un bandeau propose d'en rédiger le journal ;
+- le temps **du jour**, **de la semaine** et **au total** ;
+- le **journal de bord** : chaque période avec ce qui y a été fait ;
+- le **temps par projet** ;
+- le temps de **l'équipe** sur le projet sélectionné cette semaine, avec les chronos en cours.
+
+Le temps se corrige depuis le journal. **Ajouter une période** couvre un chrono oublié, et le crayon d'une période en corrige la date, les heures, le projet et le journal, ou la supprime. Corriger un chrono en cours l'arrête à l'heure saisie.
+
+- Les heures se tapent librement (« 9h30 », « 930 », « 18:15 ») et sont lues dans le fuseau de l'équipe (`APP_TIMEZONE`).
+- Une fin antérieure au début tombe le lendemain.
+- Une période ne peut ni se terminer dans le futur ni chevaucher une autre période du même membre.
+
+Chacun corrige son propre temps. Un administrateur peut consulter et corriger celui de tous les membres, avec le sélecteur de membre en haut de la page (`/temps?membre=<id>`).
 
 ### Onglets
 
@@ -246,6 +264,7 @@ src/
 │       ├── page.tsx          Tableau de bord du projet sélectionné
 │       ├── taches/           Redirige vers les tâches du projet sélectionné (anciens liens)
 │       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
+│       ├── temps/            Temps de travail : chrono, journal de bord corrigeable, temps de l'équipe
 │       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres
 │       └── membres/          Gestion des comptes (admin)
 │   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur)
@@ -258,6 +277,7 @@ src/
 │   ├── integrations/         Connexion Google, page Documents, fenêtre de rattachement, lecture Markdown
 │   ├── calendar/             Grilles Mois / Semaine, liste mobile, tâches et événements, fenêtre d'événement
 │   ├── files/                Lecteur PDF (pdf.js), import par morceaux, liste des PDF du projet
+│   ├── time/                 Chrono, journal de bord, fenêtre d'ajout / correction d'une période
 │   └── dashboard/, members/
 ├── db/                       Schéma Drizzle + client (Neon ou PGlite)
 ├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, fichiers (découpage, plages d'octets), constantes, chiffrement, onglets, préférences de navigation
@@ -270,6 +290,7 @@ drizzle/                      Migrations SQL générées
 
 Principes :
 - **Lectures** dans les Server Components (`lib/queries.ts`), **écritures** via les Server Actions (`actions/`), validées par Zod. Après chaque écriture, `revalidatePath` rafraîchit l'affichage.
+- **Retour visuel** : un bouton qui lance une action affiche un spinner et se désactive jusqu'à la réponse (`loading` de `components/ui/button.tsx`), et les liens de la barre latérale tournent le temps que la page se charge. Chaque page a un squelette (`loading.tsx`, briques dans `components/ui/skeleton.tsx`) affiché dès le clic : il annonce le chargement aux lecteurs d'écran et ne s'anime pas si le système demande moins de mouvement.
 - **Mises à jour optimistes** pour le glisser-déposer et les changements de statut : l'écran réagit immédiatement et revient en arrière en cas d'erreur.
 - **Filtres et tri côté client** : une équipe de 15 personnes a au plus quelques centaines de tâches actives, donc filtrer est instantané, sans aller-retour serveur.
 - **Recherche** côté serveur (`ILIKE` sur titres et descriptions, y compris les projets archivés).
