@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderPlus, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Users, X } from "lucide-react";
+import { FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Users, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Kbd, SideTooltip } from "@/components/ui/misc";
 import type { SidebarSectionId } from "@/lib/navigation-prefs";
@@ -150,6 +150,7 @@ export function Sidebar({
                 badge={project.total - project.done}
               />
             )}
+            <SidebarNavItem href="/ecrans" icon={MonitorPlay} label="Multi-écran" active={pathname.startsWith("/ecrans")} />
           </div>
 
           {project && (

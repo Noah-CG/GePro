@@ -189,7 +189,7 @@ De haut en bas :
 
 - le **sélecteur de projet** ;
 - **Nouvelle tâche** et **Rechercher** ;
-- **Tableau de bord** et **Tâches** (avec le nombre de tâches ouvertes) du projet ;
+- **Tableau de bord** et **Tâches** (avec le nombre de tâches ouvertes) du projet, puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
 - **Documents** : les Google Docs liés au projet, le **+** pour en lier un, et un lien vers la page de gestion ;
 - **Administration** (admin) : membres ;
 - tout en bas, **Paramètres du projet** et le menu du compte (thème, mot de passe, déconnexion).
