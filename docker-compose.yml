@@ -1,0 +1,39 @@
+# Lancement : docker compose up -d --build
+# Les variables sont lues dans .env.local puis .env (voir .env.example) ; DATABASE_URL est obligatoire.
+# Créer un compte : docker compose run --rm migrate npm run user:create -- --name "..." --email ... --password "..." --admin
+
+x-env: &env
+  env_file:
+    - path: .env.local
+      required: false
+    - path: .env
+      required: false
+
+services:
+  # Applique les migrations puis s'arrête ; l'application attend qu'elles aient réussi.
+  migrate:
+    <<: *env
+    build:
+      context: .
+      target: tools
+    image: gepro-tools
+    command: ["sh", "-c", "test -n \"$$DATABASE_URL\" || { echo 'DATABASE_URL manquant (.env.local ou .env)' >&2; exit 1; }; npm run db:migrate"]
+    restart: "no"
+
+  app:
+    <<: *env
+    build:
+      context: .
+    image: gepro
+    ports:
+      - "3000:3000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:3000/login"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
