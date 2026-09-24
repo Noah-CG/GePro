@@ -142,3 +142,45 @@ export function formatClock(ms: number): string {
 export function formatTime(isoInstant: string, timeZone: string = APP_TIMEZONE): string {
   return new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone }).format(new Date(isoInstant));
 }
+
+/** Écart (ms) entre l'heure affichée dans `timeZone` et l'heure UTC, à l'instant donné. */
+function timeZoneOffset(instant: number, timeZone: string): number {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+      .formatToParts(new Date(instant))
+      .map((p) => [p.type, Number(p.value)]),
+  );
+  const shown = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return shown - Math.floor(instant / 1000) * 1000;
+}
+
+/**
+ * Instant correspondant à une date "YYYY-MM-DD" et une heure "HH:MM" lues dans le fuseau de
+ * l'équipe (saisie manuelle d'une période de travail). Changement d'heure compris.
+ */
+export function zonedInstant(isoDate: string, time: string, timeZone: string = APP_TIMEZONE): Date {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  const [h, min] = time.split(":").map(Number);
+  const wall = Date.UTC(y, m - 1, d, h, min);
+  // Deux passes : l'écart peut changer entre l'estimation et le résultat (changement d'heure).
+  const first = wall - timeZoneOffset(wall, timeZone);
+  return new Date(wall - timeZoneOffset(first, timeZone));
+}
+
+/** Date "YYYY-MM-DD" et heure "HH:MM" d'un instant, dans le fuseau de l'équipe (à appeler côté serveur). */
+export function zonedParts(isoInstant: string, timeZone: string = APP_TIMEZONE): { date: string; time: string } {
+  const date = new Date(isoInstant);
+  return {
+    date: new Intl.DateTimeFormat("en-CA", { timeZone }).format(date),
+    time: new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZone }).format(date),
+  };
+}
