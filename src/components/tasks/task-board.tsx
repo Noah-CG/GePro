@@ -2,18 +2,18 @@
 
 import { Columns3, List } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useApp } from "@/components/layout/app-provider";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
-import { applyFilters, DEFAULT_FILTERS, FilterBar, type DueFilter, type TaskFilters } from "./filters";
+import { applyFilters, FilterBar, filtersFromParams, filtersToParams, type TaskFilters } from "./filters";
 import { KanbanBoard } from "./kanban-board";
 import { TaskList } from "./task-list";
 
 /**
  * Bloc "tâches" réutilisé sur la page Tâches et sur chaque page projet :
- * bascule Kanban / Liste (mémorisée dans l'URL), filtres, et ouverture directe
- * d'une tâche via ?tache=<id> (liens de la recherche et du tableau de bord).
+ * bascule Kanban / Liste et filtres (mémorisés dans l'URL, donc par onglet), et ouverture
+ * directe d'une tâche via ?tache=<id> (liens de la recherche et du tableau de bord).
  */
 export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?: string }) {
   const { me, today, editTask } = useApp();
@@ -21,15 +21,15 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
   const pathname = usePathname();
   const params = useSearchParams();
   const view = params.get("vue") === "liste" ? "liste" : "kanban";
-  // Filtres initiaux possibles depuis l'URL (liens du tableau de bord) : ?echeance=overdue&responsable=moi
-  const [filters, setFilters] = useState<TaskFilters>(() => {
-    const due = params.get("echeance");
-    return {
-      ...DEFAULT_FILTERS,
-      due: (["overdue", "today", "week", "none"] as DueFilter[]).find((d) => d === due) ?? "all",
-      assignee: params.get("responsable") === "moi" ? "me" : "all",
-    };
-  });
+  // Les filtres vivent dans l'URL (ex. liens du tableau de bord : ?echeance=overdue&responsable=moi).
+  const filters = useMemo(() => filtersFromParams(params), [params]);
+
+  // history.replaceState : Next met à jour useSearchParams sans aller-retour serveur ni entrée
+  // d'historique à chaque frappe.
+  const setFilters = (next: TaskFilters) => {
+    const query = filtersToParams(next, new URLSearchParams(params.toString()));
+    window.history.replaceState(null, "", `${pathname}${query.size ? `?${query}` : ""}`);
+  };
 
   const filtered = useMemo(() => applyFilters(tasks, filters, { meId: me.id, today }), [tasks, filters, me.id, today]);
 

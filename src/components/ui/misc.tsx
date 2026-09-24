@@ -52,3 +52,18 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
     </div>
   );
 }
+
+/**
+ * Info-bulle affichée à droite d'un élément (barre latérale réduite), au survol comme au focus
+ * clavier. Le parent doit porter les classes `group relative` et un `aria-label` équivalent.
+ */
+export function SideTooltip({ label }: { label: string }) {
+  return (
+    <span
+      role="tooltip"
+      className="pointer-events-none absolute top-1/2 left-full z-50 ml-3 -translate-y-1/2 rounded-md bg-text px-2 py-1 text-xs font-medium whitespace-nowrap text-bg opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+    >
+      {label}
+    </span>
+  );
+}

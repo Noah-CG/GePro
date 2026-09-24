@@ -8,7 +8,17 @@
  */
 import "./env";
 import { db, isLocalDb } from "../src/db";
-import { projects, sessions, taskAssignees, tasks, users, type TaskPriority, type TaskStatus } from "../src/db/schema";
+import {
+  externalConnections,
+  externalResources,
+  projects,
+  sessions,
+  taskAssignees,
+  tasks,
+  users,
+  type TaskPriority,
+  type TaskStatus,
+} from "../src/db/schema";
 import { hashPassword } from "../src/lib/password";
 import { addDays, todayISO } from "../src/lib/dates";
 
@@ -127,6 +137,8 @@ async function main() {
 
   if (reset) {
     console.log("Suppression des données existantes…");
+    await db.delete(externalResources);
+    await db.delete(externalConnections);
     await db.delete(taskAssignees);
     await db.delete(tasks);
     await db.delete(projects);

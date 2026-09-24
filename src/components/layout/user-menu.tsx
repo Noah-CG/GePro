@@ -13,8 +13,11 @@ import { Field, Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useApp } from "./app-provider";
 
-/** Menu du compte : thème, mot de passe, membres (admin), déconnexion. */
-export function UserMenu({ compact }: { compact?: boolean }) {
+/**
+ * Menu du compte : thème, mot de passe, membres (admin), déconnexion.
+ * `side` : côté d'ouverture du menu (à droite quand la barre latérale est réduite).
+ */
+export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side?: "bottom" | "right" }) {
   const { me } = useApp();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
@@ -43,7 +46,7 @@ export function UserMenu({ compact }: { compact?: boolean }) {
           )}
         </Popover.Trigger>
         <Popover.Portal>
-          <Popover.Content sideOffset={8} align={compact ? "end" : "start"} className="z-50 w-60 rounded-xl border border-border bg-surface p-1.5 shadow-xl">
+          <Popover.Content side={side} sideOffset={8} align={compact ? "end" : "start"} className="z-50 w-60 rounded-xl border border-border bg-surface p-1.5 shadow-xl">
             <div className="mb-1 flex rounded-lg bg-surface-2 p-0.5" role="radiogroup" aria-label="Thème">
               {themes.map((t) => (
                 <button

@@ -7,6 +7,7 @@ import { createProject, updateProject } from "@/actions/projects";
 import { useApp } from "@/components/layout/app-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { COLORS } from "@/lib/constants";
 import type { ProjectWithStats } from "@/lib/queries";
@@ -63,10 +64,10 @@ export function ProjectDialog({
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Début" htmlFor="project-start">
-            <Input id="project-start" type="date" value={draft.startDate} onChange={(e) => set("startDate", e.target.value)} />
+            <DatePicker id="project-start" value={draft.startDate} onChange={(v) => set("startDate", v)} />
           </Field>
           <Field label="Fin" htmlFor="project-end">
-            <Input id="project-end" type="date" value={draft.endDate} onChange={(e) => set("endDate", e.target.value)} />
+            <DatePicker id="project-end" value={draft.endDate} onChange={(v) => set("endDate", v)} min={draft.startDate || undefined} />
           </Field>
         </div>
         <Field label="Couleur">

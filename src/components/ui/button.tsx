@@ -19,21 +19,19 @@ const sizes: Record<Size, string> = {
 
 export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size };
 
+/** Classes d'un bouton, pour donner le même aspect à un lien. */
+export function buttonClass({ variant = "secondary", size = "md", className }: { variant?: Variant; size?: Size; className?: string } = {}) {
+  return cn(
+    "inline-flex shrink-0 items-center rounded-lg font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
+    variants[variant],
+    sizes[size],
+    className,
+  );
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
   { variant = "secondary", size = "md", className, type = "button", ...props },
   ref,
 ) {
-  return (
-    <button
-      ref={ref}
-      type={type}
-      className={cn(
-        "inline-flex shrink-0 items-center rounded-lg font-medium transition-colors disabled:pointer-events-none disabled:opacity-50",
-        variants[variant],
-        sizes[size],
-        className,
-      )}
-      {...props}
-    />
-  );
+  return <button ref={ref} type={type} className={buttonClass({ variant, size, className })} {...props} />;
 });

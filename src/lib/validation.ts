@@ -44,6 +44,16 @@ export type MemberInput = z.input<typeof memberInput>;
 
 export const password = z.string().min(8, "8 caractères minimum");
 
+export const isUuid = (value: string) => z.uuid().safeParse(value).success;
+
+/** Rattachement d'un Google Doc : lien collé ou identifiant choisi dans la recherche. */
+export const attachDocInput = z.object({
+  projectId: z.uuid("Projet invalide"),
+  link: z.string().trim().min(1, "Collez le lien d'un Google Doc ou choisissez-en un").max(500, "Lien trop long"),
+});
+
+export const docSearchQuery = z.string().trim().max(100, "Recherche trop longue");
+
 /** Premier message d'erreur lisible d'une validation Zod. */
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Données invalides";

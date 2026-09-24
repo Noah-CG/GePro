@@ -2,7 +2,7 @@
 
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { Command } from "cmdk";
-import { FolderKanban, FolderPlus, LayoutDashboard, ListTodo, Moon, Plus, Search, Sun } from "lucide-react";
+import { FolderKanban, FolderPlus, LayoutDashboard, Moon, Plus, Search, SquareKanban, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
@@ -16,7 +16,7 @@ const EMPTY: SearchResults = { projects: [], tasks: [] };
 /** Recherche rapide + actions (Ctrl/Cmd + K). */
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const router = useRouter();
-  const { newTask, newProject } = useApp();
+  const { newTask, newProject, currentProjectId } = useApp();
   const { resolvedTheme, setTheme } = useTheme();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResults>(EMPTY);
@@ -32,7 +32,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     let cancelled = false;
     setLoading(true);
     const timer = setTimeout(async () => {
-      const res = await search(q);
+      const res = await search(q, currentProjectId);
       if (!cancelled) {
         setResults(res);
         setLoading(false);
@@ -42,7 +42,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, currentProjectId]);
 
   // Réinitialise la saisie à la fermeture.
   useEffect(() => {
@@ -59,8 +59,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     { label: "Nouvelle tâche", icon: <Plus size={16} />, shortcut: "N", run: () => newTask() },
     { label: "Nouveau projet", icon: <FolderPlus size={16} />, shortcut: "P", run: () => newProject() },
     { label: "Tableau de bord", icon: <LayoutDashboard size={16} />, run: () => router.push("/") },
-    { label: "Toutes les tâches", icon: <ListTodo size={16} />, run: () => router.push("/taches") },
-    { label: "Projets", icon: <FolderKanban size={16} />, run: () => router.push("/projets") },
+    ...(currentProjectId ? [{ label: "Tâches du projet", icon: <SquareKanban size={16} />, run: () => router.push(`/projets/${currentProjectId}`) }] : []),
+    { label: "Tous les projets", icon: <FolderKanban size={16} />, run: () => router.push("/projets") },
     {
       label: resolvedTheme === "dark" ? "Passer en mode clair" : "Passer en mode sombre",
       icon: resolvedTheme === "dark" ? <Sun size={16} /> : <Moon size={16} />,
@@ -115,7 +115,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               )}
 
               {results.projects.length > 0 && (
-                <Command.Group heading="Projets" className="mb-2 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-muted">
+                <Command.Group heading="Changer de projet" className="mb-2 [&_[cmdk-group-heading]]:px-3 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-muted">
                   {results.projects.map((p) => (
                     <Command.Item key={p.id} value={`project-${p.id}`} onSelect={() => run(() => router.push(`/projets/${p.id}`))} className={item}>
                       <span className="h-2.5 w-2.5 rounded-full" style={{ background: p.color }} />

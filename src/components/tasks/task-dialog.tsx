@@ -8,8 +8,10 @@ import { useApp } from "@/components/layout/app-provider";
 import { PRIORITY_DOT } from "@/components/ui/badges";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Field, Input, Segmented, Select, Textarea } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Field, Input, Segmented, Textarea } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/misc";
+import { SimpleSelect } from "@/components/ui/select";
 import { PRIORITIES, STATUSES } from "@/lib/constants";
 import { addDays, endOfWeekISO } from "@/lib/dates";
 import type { TaskView } from "@/lib/queries";
@@ -120,16 +122,15 @@ export function TaskDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Projet" htmlFor="task-project">
-              <Select id="task-project" value={draft.projectId} onChange={(e) => set("projectId", e.target.value)}>
-                {activeProjects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </Select>
+              <SimpleSelect
+                id="task-project"
+                value={draft.projectId}
+                onValueChange={(v) => set("projectId", v)}
+                options={activeProjects.map((p) => ({ value: p.id, label: p.name, dot: p.color }))}
+              />
             </Field>
             <Field label="Échéance" htmlFor="task-due">
-              <Input id="task-due" type="date" value={draft.dueDate} onChange={(e) => set("dueDate", e.target.value)} />
+              <DatePicker id="task-due" value={draft.dueDate} onChange={(v) => set("dueDate", v)} placeholder="Sans échéance" />
             </Field>
           </div>
           <div className="-mt-2 flex flex-wrap gap-1.5 sm:justify-end">

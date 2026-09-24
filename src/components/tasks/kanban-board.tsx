@@ -17,11 +17,12 @@ import {
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Plus } from "lucide-react";
-import { useEffect, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, useTransition, type KeyboardEvent, type ReactNode } from "react";
 import { createTask, moveTask } from "@/actions/tasks";
 import type { TaskStatus } from "@/db/schema";
 import { useApp } from "@/components/layout/app-provider";
 import { StatusIcon } from "@/components/ui/badges";
+import { Input } from "@/components/ui/input";
 import { STATUSES } from "@/lib/constants";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,9 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
   const [byId, setById] = useState(() => new Map(tasks.map((t) => [t.id, t])));
   const [columns, setColumns] = useState<Columns>(() => toColumns(tasks));
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Sans id, dnd-kit numérote ses attributs aria avec un compteur global qui diffère entre
+  // le serveur et le navigateur (erreur d'hydratation) ; useId est identique des deux côtés.
+  const dndId = useId();
 
   // Resynchronise quand les données serveur changent (hors glisser en cours).
   useEffect(() => {
@@ -128,6 +132,7 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
 
   return (
     <DndContext
+      id={dndId}
       sensors={sensors}
       collisionDetection={closestCorners}
       onDragStart={onDragStart}
@@ -242,7 +247,7 @@ function QuickAdd({ projectId, status }: { projectId: string; status: TaskStatus
   };
 
   return editing ? (
-    <input
+    <Input
       autoFocus
       value={title}
       disabled={pending}
@@ -250,7 +255,8 @@ function QuickAdd({ projectId, status }: { projectId: string; status: TaskStatus
       onKeyDown={onKeyDown}
       onBlur={() => !title.trim() && setEditing(false)}
       placeholder="Titre puis Entrée…"
-      className="m-1 h-9 rounded-lg border border-accent bg-surface px-3 text-sm outline-none"
+      aria-label="Titre de la nouvelle tâche"
+      className="m-1 w-auto border-accent"
     />
   ) : (
     <button onClick={() => setEditing(true)} className="m-1 flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-sm text-muted hover:bg-surface hover:text-text">

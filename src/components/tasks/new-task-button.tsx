@@ -9,7 +9,7 @@ import { Kbd } from "@/components/ui/misc";
 export function NewTaskButton() {
   const { newTask } = useApp();
   return (
-    // Masqué sur mobile : le bouton flottant "+" de la barre du bas le remplace.
+    // Masqué sur mobile : le bouton "+" de l'en-tête le remplace.
     <span className="hidden md:block">
       <Button variant="primary" onClick={() => newTask()}>
         <Plus size={16} /> Nouvelle tâche
