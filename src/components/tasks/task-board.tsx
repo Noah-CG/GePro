@@ -1,18 +1,21 @@
 "use client";
 
-import { Columns3, List } from "lucide-react";
+import { ChartGantt, Columns3, List } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo } from "react";
 import { useApp } from "@/components/layout/app-provider";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { applyFilters, FilterBar, filtersFromParams, filtersToParams, type TaskFilters } from "./filters";
+import { GanttChart } from "./gantt-chart";
 import { KanbanBoard } from "./kanban-board";
 import { TaskList } from "./task-list";
 
+type View = "kanban" | "liste" | "gantt";
+
 /**
  * Bloc "tâches" réutilisé sur la page Tâches et sur chaque page projet :
- * bascule Kanban / Liste et filtres (mémorisés dans l'URL, donc par onglet), et ouverture
+ * bascule Kanban / Liste / Gantt et filtres (mémorisés dans l'URL, donc par onglet), et ouverture
  * directe d'une tâche via ?tache=<id> (liens de la recherche et du tableau de bord).
  */
 export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?: string }) {
@@ -20,7 +23,8 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const view = params.get("vue") === "liste" ? "liste" : "kanban";
+  const vue = params.get("vue");
+  const view: View = vue === "liste" || vue === "gantt" ? vue : "kanban";
   // Les filtres vivent dans l'URL (ex. liens du tableau de bord : ?echeance=overdue&responsable=moi).
   const filters = useMemo(() => filtersFromParams(params), [params]);
 
@@ -33,7 +37,7 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
 
   const filtered = useMemo(() => applyFilters(tasks, filters, { meId: me.id, today }), [tasks, filters, me.id, today]);
 
-  const setView = (v: "kanban" | "liste") => {
+  const setView = (v: View) => {
     const next = new URLSearchParams(params);
     if (v === "kanban") next.delete("vue");
     else next.set("vue", v);
@@ -55,12 +59,13 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <FilterBar filters={filters} onChange={setFilters} showProject={!projectId} showStatus={view === "liste"} />
+        <FilterBar filters={filters} onChange={setFilters} showProject={!projectId} showStatus={view !== "kanban"} />
         <div className="flex rounded-lg border border-border bg-surface p-0.5" role="tablist" aria-label="Vue">
           {(
             [
               { v: "kanban", label: "Kanban", icon: Columns3 },
               { v: "liste", label: "Liste", icon: List },
+              { v: "gantt", label: "Gantt", icon: ChartGantt },
             ] as const
           ).map(({ v, label, icon: Icon }) => (
             <button
@@ -81,6 +86,8 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
 
       {view === "kanban" ? (
         <KanbanBoard tasks={filtered} projectId={projectId} showProject={!projectId} />
+      ) : view === "gantt" ? (
+        <GanttChart tasks={filtered} showProject={!projectId} />
       ) : (
         <TaskList tasks={filtered} showProject={!projectId} />
       )}

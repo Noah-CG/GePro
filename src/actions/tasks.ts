@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { taskAssignees, tasks, type TaskStatus } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { firstError, taskInput, type TaskInput } from "@/lib/validation";
+import { firstError, isUuid, taskDatesInput, taskInput, type TaskDatesInput, type TaskInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
 /** Rafraîchit toutes les pages (tableau de bord, listes, projets) après une modification. */
@@ -90,6 +90,19 @@ export async function moveTask(id: string, status: TaskStatus, position?: number
       ...(current.status !== status && { completedAt: status === "done" ? new Date() : null }),
     })
     .where(eq(tasks.id, id));
+  refresh();
+  return ok(undefined);
+}
+
+/** Nouvelles dates d'une tâche (glisser-déposer ou clavier dans le diagramme de Gantt). */
+export async function setTaskDates(id: string, input: TaskDatesInput): Promise<ActionResult> {
+  await requireUser();
+  if (!isUuid(id)) return fail("Tâche introuvable.");
+  const parsed = taskDatesInput.safeParse(input);
+  if (!parsed.success) return fail(firstError(parsed.error));
+
+  const [row] = await db.update(tasks).set(parsed.data).where(eq(tasks.id, id)).returning({ id: tasks.id });
+  if (!row) return fail("Tâche introuvable.");
   refresh();
   return ok(undefined);
 }

@@ -1,3 +1,4 @@
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { projectEvents, taskAssignees, tasks } from "@/db/schema";
@@ -52,6 +53,7 @@ describe("getCalendarItems", () => {
 
   it("renvoie des tâches au format TaskView, dates \"YYYY-MM-DD\" et responsables compris", async () => {
     const task = await addTask("Maquettes", "2026-09-29");
+    await db.update(tasks).set({ startDate: "2026-09-21" }).where(eq(tasks.id, task.id));
     const lea = await insertUser(db, "Léa Dubois");
     await db.insert(taskAssignees).values([
       { taskId: task.id, userId },
@@ -66,6 +68,7 @@ describe("getCalendarItems", () => {
       title: "Maquettes",
       status: "todo",
       priority: "medium",
+      startDate: "2026-09-21",
       dueDate: "2026-09-29",
       position: 0,
     });

@@ -23,6 +23,7 @@ export type TaskDraft = {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
+  startDate: string;
   dueDate: string;
   assigneeIds: string[];
 };
@@ -52,6 +53,7 @@ export function TaskDialog({
     description: task?.description ?? "",
     status: task?.status ?? defaults?.status ?? "todo",
     priority: task?.priority ?? defaults?.priority ?? "medium",
+    startDate: task?.startDate ?? defaults?.startDate ?? "",
     dueDate: task?.dueDate ?? defaults?.dueDate ?? "",
     assigneeIds: task?.assigneeIds ?? defaults?.assigneeIds ?? [],
   }));
@@ -122,14 +124,18 @@ export function TaskDialog({
             className="min-h-20"
           />
 
+          <Field label="Projet" htmlFor="task-project">
+            <SimpleSelect
+              id="task-project"
+              value={draft.projectId}
+              onValueChange={(v) => set("projectId", v)}
+              options={activeProjects.map((p) => ({ value: p.id, label: p.name, dot: p.color }))}
+            />
+          </Field>
+
           <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Projet" htmlFor="task-project">
-              <SimpleSelect
-                id="task-project"
-                value={draft.projectId}
-                onValueChange={(v) => set("projectId", v)}
-                options={activeProjects.map((p) => ({ value: p.id, label: p.name, dot: p.color }))}
-              />
+            <Field label="Début" htmlFor="task-start">
+              <DatePicker id="task-start" value={draft.startDate} onChange={(v) => set("startDate", v)} placeholder="Sans date de début" />
             </Field>
             <Field label="Échéance" htmlFor="task-due">
               <DatePicker id="task-due" value={draft.dueDate} onChange={(v) => set("dueDate", v)} placeholder="Sans échéance" />

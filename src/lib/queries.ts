@@ -39,6 +39,8 @@ export type TaskView = {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
+  /** Début prévu (diagramme de Gantt). */
+  startDate: string | null;
   dueDate: string | null;
   position: number;
   assigneeIds: string[];
@@ -208,6 +210,7 @@ export async function getTasks(opts: { projectId?: string; assigneeId?: string }
       description: tasks.description,
       status: tasks.status,
       priority: tasks.priority,
+      startDate: tasks.startDate,
       dueDate: tasks.dueDate,
       position: tasks.position,
     })
@@ -485,6 +488,7 @@ type CalendarRow = {
   title: string;
   description: string;
   date: string;
+  start_date: string | null;
   status: TaskStatus | null;
   priority: TaskPriority | null;
   position: number | null;
@@ -518,7 +522,7 @@ export async function getCalendarItems({
   projectId: string | null;
 }): Promise<CalendarItems> {
   const { rows } = await db.execute<CalendarRow>(sql`
-    select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date,
+    select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date, t.start_date::text as start_date,
            t.status::text as status, t.priority::text as priority, t.position,
            t.project_id, p.name as project_name, p.color as project_color,
            coalesce((select json_agg(a.user_id) from ${taskAssignees} a where a.task_id = t.id), '[]'::json) as assignee_ids,
@@ -528,7 +532,7 @@ export async function getCalendarItems({
      where t.project_id = ${projectId}::uuid
        and t.due_date between ${from}::date and ${to}::date
     union all
-    select 'event', e.id, e.title, e.description, e.event_date::text,
+    select 'event', e.id, e.title, e.description, e.event_date::text, null,
            null, null, null,
            e.project_id, p.name, p.color,
            null, e.color, e.created_by
@@ -551,6 +555,7 @@ export async function getCalendarItems({
         description: r.description,
         status: r.status!,
         priority: r.priority!,
+        startDate: r.start_date,
         dueDate: r.date,
         position: Number(r.position),
         assigneeIds: jsonArray(r.assignee_ids),

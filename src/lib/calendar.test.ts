@@ -21,6 +21,7 @@ const task = (id: string, dueDate: string, status: TaskView["status"] = "todo"):
   description: "",
   status,
   priority: "medium",
+  startDate: null,
   dueDate,
   position: 0,
   assigneeIds: [],
