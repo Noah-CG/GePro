@@ -5,9 +5,10 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { externalConnections, externalResources, projectEvents, projects, taskAssignees, tasks, users } from "@/db/schema";
+import { externalConnections, externalResources, projectEvents, projectFiles, projects, taskAssignees, tasks, users } from "@/db/schema";
 import type { IntegrationProvider, TaskPriority, TaskStatus } from "@/db/schema";
 import { formatDateTime } from "@/lib/dates";
+import { fileTitle, formatFileSize } from "@/lib/files";
 import { isIntegrationErrorCode, type IntegrationErrorCode } from "@/lib/integrations/errors";
 
 export type Member = { id: string; name: string; email: string; role: "admin" | "member"; color: string };
@@ -84,6 +85,26 @@ export type ResourceView = {
 
 /** Ressource telle que listée dans la barre latérale. */
 export type ResourceLink = { id: string; projectId: string; externalId: string; title: string; hasProblem: boolean };
+
+/** Fichier PDF importé, tel qu'affiché dans la page Documents et la page de lecture. */
+export type FileView = {
+  id: string;
+  projectId: string;
+  /** Nom du fichier, extension comprise (téléchargement). */
+  name: string;
+  /** Nom sans l'extension .pdf. */
+  title: string;
+  size: number;
+  /** « 1,2 Mo ». */
+  sizeLabel: string;
+  /** "12 oct. 2026 à 14:32", déjà formaté dans le fuseau de l'équipe. */
+  uploadedLabel: string;
+  uploadedBy: string | null;
+  uploadedByName: string | null;
+};
+
+/** Fichier tel que listé dans la barre latérale. */
+export type FileLink = { id: string; projectId: string; title: string };
 
 /** Au-delà, les métadonnées en cache sont rafraîchies à l'affichage de la page projet. */
 const RESOURCE_TTL_MS = 15 * 60_000;
@@ -270,6 +291,55 @@ export async function getResourceLinks(): Promise<ResourceLink[]> {
     .from(externalResources)
     .orderBy(asc(externalResources.createdAt));
   return rows.map(({ connectionId, syncError, ...r }) => ({ ...r, hasProblem: resourceProblem({ connectionId, syncError }) !== null }));
+}
+
+/** Fichiers importés d'un projet (imports terminés seulement), du plus ancien au plus récent. */
+export async function getProjectFiles(projectId: string): Promise<FileView[]> {
+  const rows = await selectFiles()
+    .where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.status, "ready")))
+    .orderBy(asc(projectFiles.createdAt));
+  return rows.map(toFileView);
+}
+
+/** Un fichier importé d'un projet (page de lecture). */
+export async function getProjectFile(projectId: string, fileId: string): Promise<FileView | null> {
+  const [row] = await selectFiles()
+    .where(and(eq(projectFiles.projectId, projectId), eq(projectFiles.id, fileId), eq(projectFiles.status, "ready")))
+    .limit(1);
+  return row ? toFileView(row) : null;
+}
+
+/** Tous les fichiers importés, pour la barre latérale (une seule requête pour tous les projets). */
+export async function getFileLinks(): Promise<FileLink[]> {
+  const rows = await db
+    .select({ id: projectFiles.id, projectId: projectFiles.projectId, name: projectFiles.name })
+    .from(projectFiles)
+    .where(eq(projectFiles.status, "ready"))
+    .orderBy(asc(projectFiles.createdAt));
+  return rows.map(({ name, ...r }) => ({ ...r, title: fileTitle(name) }));
+}
+
+const selectFiles = () =>
+  db
+    .select({
+      id: projectFiles.id,
+      projectId: projectFiles.projectId,
+      name: projectFiles.name,
+      size: projectFiles.size,
+      createdAt: projectFiles.createdAt,
+      uploadedBy: projectFiles.uploadedBy,
+      uploadedByName: users.name,
+    })
+    .from(projectFiles)
+    .leftJoin(users, eq(users.id, projectFiles.uploadedBy));
+
+function toFileView({ createdAt, ...r }: Awaited<ReturnType<typeof selectFiles>>[number]): FileView {
+  return {
+    ...r,
+    title: fileTitle(r.name),
+    sizeLabel: formatFileSize(r.size),
+    uploadedLabel: formatDateTime(createdAt.toISOString()),
+  };
 }
 
 type CalendarRow = {

@@ -41,12 +41,12 @@ export const connectionStatus = pgEnum("connection_status", ["active", "needs_re
 export const fileStatus = pgEnum("file_status", ["uploading", "ready"]);
 
 /**
- * Octets bruts. Envoyés au format hexadécimal de Postgres (`\x…`) : le même texte convient au
- * driver HTTP de Neon et à PGlite, qui ne sérialisent pas les octets de la même façon.
+ * Octets bruts. Les deux drivers acceptent un Uint8Array (Neon l'envoie en hexadécimal, PGlite en
+ * binaire) et renvoient des octets ; le texte hexadécimal (`\x…`) est accepté en lecture par sécurité.
  */
 const bytea = customType<{ data: Uint8Array; driverData: string | Uint8Array }>({
   dataType: () => "bytea",
-  toDriver: (value) => `\\x${Buffer.from(value.buffer, value.byteOffset, value.byteLength).toString("hex")}`,
+  toDriver: (value) => value,
   fromDriver: (value) => (typeof value === "string" ? Buffer.from(value.slice(2), "hex") : value),
 });
 
