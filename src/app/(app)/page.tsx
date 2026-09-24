@@ -1,0 +1,171 @@
+import { AlertCircle, CalendarClock, CircleDashed, TrendingUp } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+import type { ReactNode } from "react";
+import { DashboardTaskList } from "@/components/dashboard/dashboard-task-list";
+import { Avatar } from "@/components/ui/avatar";
+import { Card, EmptyState, PageHeader, ProgressBar } from "@/components/ui/misc";
+import { requireUser } from "@/lib/auth";
+import { PRIORITY_RANK } from "@/lib/constants";
+import { endOfWeekISO, formatLong, todayISO } from "@/lib/dates";
+import { getProjectsWithStats, getTasks, getTeam } from "@/lib/queries";
+import { cn, percent } from "@/lib/utils";
+
+export const metadata: Metadata = { title: "Tableau de bord" };
+
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ pour?: string }> }) {
+  const me = await requireUser();
+  const mine = (await searchParams).pour === "moi";
+  const today = todayISO();
+  const weekEnd = endOfWeekISO(today);
+
+  const [allTasks, projects, team] = await Promise.all([getTasks(), getProjectsWithStats({ archived: false, today }), getTeam()]);
+  const tasks = mine ? allTasks.filter((t) => t.assigneeIds.includes(me.id)) : allTasks;
+  const open = tasks.filter((t) => t.status !== "done");
+
+  const byDueThenPriority = (a: (typeof tasks)[0], b: (typeof tasks)[0]) =>
+    a.dueDate! < b.dueDate! ? -1 : a.dueDate! > b.dueDate! ? 1 : PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority];
+
+  const overdue = open.filter((t) => t.dueDate && t.dueDate < today).sort(byDueThenPriority);
+  const thisWeek = open.filter((t) => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).sort(byDueThenPriority);
+  const inProgress = open.filter((t) => t.status === "in_progress");
+  const totalDone = allTasks.filter((t) => t.status === "done").length;
+
+  // Charge de travail par membre : répond à la question "qui fait quoi ?".
+  const workload = team
+    .map((m) => {
+      const assigned = allTasks.filter((t) => t.status !== "done" && t.assigneeIds.includes(m.id));
+      return {
+        member: m,
+        open: assigned.length,
+        inProgress: assigned.filter((t) => t.status === "in_progress").length,
+        overdue: assigned.filter((t) => t.dueDate && t.dueDate < today).length,
+      };
+    })
+    .sort((a, b) => b.open - a.open);
+  const maxLoad = Math.max(1, ...workload.map((w) => w.open));
+
+  return (
+    <div className="mx-auto max-w-6xl">
+      <PageHeader
+        title={`Bonjour ${me.name.split(" ")[0]} 👋`}
+        subtitle={formatLong(today)}
+        actions={
+          <div className="flex rounded-lg border border-border bg-surface p-0.5 text-sm">
+            <Link href="/" className={cn("rounded-md px-3 py-1", !mine ? "bg-surface-2 font-medium" : "text-muted")}>
+              Équipe
+            </Link>
+            <Link href="/?pour=moi" className={cn("rounded-md px-3 py-1", mine ? "bg-surface-2 font-medium" : "text-muted")}>
+              Mes tâches
+            </Link>
+          </div>
+        }
+      />
+
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat icon={<AlertCircle size={16} />} label="En retard" value={overdue.length} tone={overdue.length ? "danger" : undefined} href={`/taches?vue=liste&echeance=overdue${mine ? "&responsable=moi" : ""}`} />
+        <Stat icon={<CalendarClock size={16} />} label="Cette semaine" value={thisWeek.length} tone="warning" href={`/taches?vue=liste&echeance=week${mine ? "&responsable=moi" : ""}`} />
+        <Stat icon={<CircleDashed size={16} />} label="En cours" value={inProgress.length} tone="accent" />
+        <Stat icon={<TrendingUp size={16} />} label="Avancement global" value={`${percent(totalDone, allTasks.length)} %`} tone="success" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-6">
+          <Section title="En retard" count={overdue.length} tone="danger">
+            <DashboardTaskList tasks={overdue} empty="Aucune tâche en retard. Bravo !" />
+          </Section>
+          <Section title="À faire cette semaine" count={thisWeek.length}>
+            <DashboardTaskList tasks={thisWeek} empty="Rien d'autre d'ici dimanche." />
+          </Section>
+        </div>
+
+        <div className="space-y-6">
+          <Section title="Progression des projets" action={<Link href="/projets" className="text-xs text-muted hover:text-text">Tout voir</Link>}>
+            {projects.length === 0 ? (
+              <div className="p-4">
+                <EmptyState title="Aucun projet actif" />
+              </div>
+            ) : (
+              <ul className="divide-y divide-border">
+                {projects.map((p) => {
+                  const pct = percent(p.done, p.total);
+                  return (
+                    <li key={p.id}>
+                      <Link href={`/projets/${p.id}`} className="block px-4 py-3 hover:bg-surface-2/60">
+                        <div className="mb-1.5 flex items-center gap-2 text-sm">
+                          <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: p.color }} />
+                          <span className="flex-1 truncate font-medium">{p.name}</span>
+                          <span className="text-xs text-muted tabular-nums">{pct} %</span>
+                        </div>
+                        <ProgressBar value={pct} color={p.color} />
+                        <p className="mt-1.5 text-xs text-muted">
+                          {p.done}/{p.total} terminées
+                          {p.overdue > 0 && <span className="text-danger"> · {p.overdue} en retard</span>}
+                        </p>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Section>
+
+          <Section title="Charge de l'équipe">
+            <ul className="space-y-3 p-4">
+              {workload.map((w) => (
+                <li key={w.member.id} className="flex items-center gap-3">
+                  <Avatar user={w.member} size={26} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline justify-between gap-2 text-sm">
+                      <span className="truncate">{w.member.name}</span>
+                      <span className="shrink-0 text-xs text-muted tabular-nums">
+                        {w.open} ouverte{w.open > 1 ? "s" : ""}
+                        {w.overdue > 0 && <span className="text-danger"> · {w.overdue} en retard</span>}
+                      </span>
+                    </div>
+                    <ProgressBar value={(w.open / maxLoad) * 100} color={w.member.color} className="mt-1" />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const TONES = {
+  danger: "text-danger bg-danger-soft",
+  warning: "text-warning bg-warning-soft",
+  accent: "text-accent bg-accent-soft",
+  success: "text-success bg-success-soft",
+};
+
+function Stat({ icon, label, value, tone, href }: { icon: ReactNode; label: string; value: ReactNode; tone?: keyof typeof TONES; href?: string }) {
+  const body = (
+    <Card className="flex items-center gap-3 p-4">
+      <span className={cn("flex h-9 w-9 items-center justify-center rounded-lg", tone ? TONES[tone] : "bg-surface-2 text-muted")}>{icon}</span>
+      <div>
+        <p className="text-xl font-semibold tabular-nums">{value}</p>
+        <p className="text-xs text-muted">{label}</p>
+      </div>
+    </Card>
+  );
+  return href ? <Link href={href}>{body}</Link> : body;
+}
+
+function Section({ title, count, tone, action, children }: { title: string; count?: number; tone?: "danger"; action?: ReactNode; children: ReactNode }) {
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {count !== undefined && count > 0 && (
+          <span className={cn("rounded-full px-1.5 text-xs font-medium", tone === "danger" ? "bg-danger-soft text-danger" : "bg-surface-2 text-muted")}>{count}</span>
+        )}
+        <span className="ml-auto">{action}</span>
+      </div>
+      {children}
+    </Card>
+  );
+}
