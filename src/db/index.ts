@@ -20,6 +20,11 @@ function createDb(): Db {
   const url = process.env.DATABASE_URL;
   if (url) return drizzle({ client: neon(url), schema });
 
+  // Sur Vercel le disque est éphémère : PGlite y perdrait les données.
+  if (process.env.VERCEL) {
+    throw new Error("DATABASE_URL manquant : ajoutez-le dans Vercel > Settings > Environment Variables.");
+  }
+
   // Chargé à la demande pour ne jamais embarquer PGlite quand Neon est utilisé.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { PGlite } = require("@electric-sql/pglite");
