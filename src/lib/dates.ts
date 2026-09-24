@@ -27,6 +27,30 @@ export function addDays(iso: string, days: number): string {
   return toISO(d);
 }
 
+/** Lundi de la semaine (semaine du lundi au dimanche). */
+export function startOfWeekISO(iso: string): string {
+  const day = parse(iso).getUTCDay(); // 0 = dimanche
+  return addDays(iso, day === 0 ? -6 : 1 - day);
+}
+
+/**
+ * Même jour, `months` mois plus tard (ou plus tôt), ramené au dernier jour du mois si besoin :
+ * 31 janvier + 1 mois → 28 février.
+ */
+export function addMonths(iso: string, months: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const target = new Date(Date.UTC(y, m - 1 + months, 1));
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(d, lastDay));
+  return toISO(target);
+}
+
+/** Premier jour du mois. */
+export const startOfMonthISO = (iso: string) => `${iso.slice(0, 7)}-01`;
+
+/** Dernier jour du mois. */
+export const endOfMonthISO = (iso: string) => addDays(addMonths(startOfMonthISO(iso), 1), -1);
+
 /** Dimanche de la semaine en cours (semaine du lundi au dimanche). */
 export function endOfWeekISO(iso: string): string {
   const day = parse(iso).getUTCDay(); // 0 = dimanche
@@ -45,6 +69,25 @@ const longFmt = new Intl.DateTimeFormat("fr-FR", {
   year: "numeric",
   timeZone: "UTC",
 });
+
+const monthYearFmt = new Intl.DateTimeFormat("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
+const dayLongFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+const weekdayShortFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", timeZone: "UTC" });
+
+/** "septembre 2026" */
+export function formatMonthYear(iso: string): string {
+  return monthYearFmt.format(parse(iso));
+}
+
+/** "jeudi 24 septembre 2026" */
+export function formatDayLong(iso: string): string {
+  return dayLongFmt.format(parse(iso));
+}
+
+/** "jeu." */
+export function formatWeekdayShort(iso: string): string {
+  return weekdayShortFmt.format(parse(iso));
+}
 
 /** "12 oct." */
 export function formatShort(iso: string): string {
