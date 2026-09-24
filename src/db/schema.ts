@@ -111,6 +111,8 @@ export const tasks = pgTable(
     description: text("description").notNull().default(""),
     status: taskStatus("status").notNull().default("todo"),
     priority: taskPriority("priority").notNull().default("medium"),
+    /** Début prévu (diagramme de Gantt). Facultatif, jamais après l'échéance. */
+    startDate: date("start_date", { mode: "string" }),
     dueDate: date("due_date", { mode: "string" }),
     /**
      * Ordre dans une colonne Kanban. Nombre flottant : insérer une carte entre deux autres

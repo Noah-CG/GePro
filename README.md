@@ -179,7 +179,7 @@ projects ──< project_files ──< project_file_chunks
 | **users** | `id`, `name`, `email` (unique, minuscules), `password_hash` (bcrypt), `role` (`admin`/`member`), `color` | Comptes créés par un admin, pas d'inscription publique |
 | **sessions** | `id` = SHA-256 du jeton, `user_id`, `expires_at` | Le cookie contient le jeton, la base ne stocke que son hash (30 jours) |
 | **projects** | `id`, `name`, `description`, `color`, `start_date`, `end_date`, `archived_at`, `created_by` | Archivé si `archived_at` est renseigné |
-| **tasks** | `id`, `project_id`, `title`, `description`, `status` (`todo`/`in_progress`/`done`), `priority` (`low`/`medium`/`high`), `due_date`, `position`, `completed_at`, `created_by` | `position` est un flottant : insérer une carte revient à prendre la moyenne de ses voisines |
+| **tasks** | `id`, `project_id`, `title`, `description`, `status` (`todo`/`in_progress`/`done`), `priority` (`low`/`medium`/`high`), `start_date`, `due_date`, `position`, `completed_at`, `created_by` | `position` est un flottant : insérer une carte revient à prendre la moyenne de ses voisines. `start_date` (facultatif, jamais après `due_date`) sert au diagramme de Gantt |
 | **task_assignees** | `task_id`, `user_id` (clé composite) | Plusieurs responsables par tâche |
 | **project_events** | `id`, `project_id` (facultatif), `title`, `description`, `event_date`, `color`, `created_by` | Événements du calendrier. Sans projet : événement d'équipe, visible dans tous les projets. Modifiables par leur créateur ou un admin |
 | **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un admin |
@@ -215,6 +215,16 @@ De haut en bas :
 - tout en bas, **Paramètres du projet** et le menu du compte (thème, mot de passe, déconnexion).
 
 Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bulles, au survol comme au clavier). Les sections se replient d'un clic sur leur titre. Ces choix sont mémorisés dans les cookies `gepro_sidebar_reduite` et `gepro_sections_repliees`. Sur mobile, la barre s'ouvre en tiroir depuis le bouton ☰ de l'en-tête.
+
+### Diagramme de Gantt
+
+Sur la page d'un projet, la bascule **Kanban / Liste / Gantt** propose une troisième vue (`?vue=gantt`) : une ligne par tâche, une barre de sa **date de début** à son **échéance** (champ *Début* de la fenêtre de tâche). Une tâche qui n'a qu'une des deux dates occupe un seul jour ; celles qui n'en ont aucune sont listées sous le diagramme, « Sans dates ».
+
+- **Glisser** une barre la déplace ; tirer sur son **bord gauche ou droit** change le début ou l'échéance. Un simple clic ouvre la tâche.
+- Au clavier, sur une barre : `←` / `→` déplacent la tâche d'un jour, `Maj + ←` / `→` changent son échéance, `Entrée` l'ouvre.
+- Échelles **Jours**, **Semaines** et **Mois**, bouton **Aujourd'hui** (ligne rouge). Les filtres de la page s'appliquent.
+- Couleur de la barre selon le statut (à faire, en cours, terminée) ; contour rouge si la tâche est en retard.
+- Les changements s'affichent aussitôt et sont enregistrés en arrière-plan (`setTaskDates`), avec retour en arrière en cas d'erreur. Les calculs (période, positions, déplacements) sont dans `lib/gantt.ts`.
 
 ### Calendrier
 
@@ -272,7 +282,7 @@ src/
 ├── components/
 │   ├── ui/                   Briques génériques : Button, Dialog, Input, Select, DatePicker, Calendar, Badges, Avatar…
 │   ├── layout/               AppProvider (contexte, raccourcis, toasts), AppShell, barre latérale (sidebar*), onglets, sélecteur de projet, palette de recherche
-│   ├── tasks/                TaskBoard, KanbanBoard, TaskList, TaskDialog, filtres
+│   ├── tasks/                TaskBoard, KanbanBoard, TaskList, GanttChart, TaskDialog, filtres
 │   ├── projects/             ProjectCard, ProjectDialog
 │   ├── integrations/         Connexion Google, page Documents, fenêtre de rattachement, lecture Markdown
 │   ├── calendar/             Grilles Mois / Semaine, liste mobile, tâches et événements, fenêtre d'événement

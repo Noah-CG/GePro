@@ -9,16 +9,29 @@ const isoDate = z
 
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Couleur invalide");
 
-export const taskInput = z.object({
-  projectId: z.uuid("Choisissez un projet"),
-  title: z.string().trim().min(1, "Le titre est obligatoire").max(200),
-  description: z.string().max(5000).default(""),
-  status: z.enum(["todo", "in_progress", "done"]).default("todo"),
-  priority: z.enum(["low", "medium", "high"]).default("medium"),
-  dueDate: isoDate.default(null),
-  assigneeIds: z.array(z.uuid()).max(20).default([]),
-});
+const START_AFTER_DUE = "Le début doit précéder l'échéance";
+const startBeforeDue = (t: { startDate: string | null; dueDate: string | null }) =>
+  !t.startDate || !t.dueDate || t.startDate <= t.dueDate;
+
+export const taskInput = z
+  .object({
+    projectId: z.uuid("Choisissez un projet"),
+    title: z.string().trim().min(1, "Le titre est obligatoire").max(200),
+    description: z.string().max(5000).default(""),
+    status: z.enum(["todo", "in_progress", "done"]).default("todo"),
+    priority: z.enum(["low", "medium", "high"]).default("medium"),
+    startDate: isoDate.default(null),
+    dueDate: isoDate.default(null),
+    assigneeIds: z.array(z.uuid()).max(20).default([]),
+  })
+  .refine(startBeforeDue, { message: START_AFTER_DUE, path: ["startDate"] });
 export type TaskInput = z.input<typeof taskInput>;
+
+/** Déplacement ou redimensionnement d'une barre du diagramme de Gantt. */
+export const taskDatesInput = z
+  .object({ startDate: isoDate, dueDate: isoDate })
+  .refine(startBeforeDue, { message: START_AFTER_DUE, path: ["startDate"] });
+export type TaskDatesInput = z.input<typeof taskDatesInput>;
 
 export const projectInput = z
   .object({

@@ -184,6 +184,8 @@ async function main() {
           description: description ?? "",
           status,
           priority,
+          // Durées variées (1 à 10 jours) pour le diagramme de Gantt.
+          startDate: due === null ? null : addDays(today, due - ((i * 3) % 10)),
           dueDate: due === null ? null : addDays(today, due),
           position: (i + 1) * 1024,
           completedAt: status === "done" ? new Date() : null,
