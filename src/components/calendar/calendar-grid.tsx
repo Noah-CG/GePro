@@ -84,7 +84,8 @@ export function DayNumber({ day, today, muted }: { day: string; today: string; m
     <span
       aria-hidden
       className={cn(
-        "flex h-6 min-w-6 items-center justify-center rounded-full px-1 text-xs tabular-nums",
+        // self-start : dans la case (colonne flex), la pastille garde sa taille au lieu de s'étirer.
+        "flex h-6 min-w-6 items-center justify-center self-start rounded-full px-1 text-xs tabular-nums",
         day === today ? "bg-accent font-semibold text-accent-fg" : muted ? "text-muted" : "text-text",
       )}
     >

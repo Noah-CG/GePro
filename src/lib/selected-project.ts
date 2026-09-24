@@ -5,10 +5,16 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { resolveSelectedProjectId, SELECTED_PROJECT_COOKIE } from "./current-project";
-import { getProjectOptions } from "./queries";
+import { getProjectOptions, type ProjectOption } from "./queries";
+
+/** Projet sélectionné, ou null s'il n'existe encore aucun projet. */
+export async function getSelectedProject(): Promise<ProjectOption | null> {
+  const [store, projects] = await Promise.all([cookies(), getProjectOptions()]);
+  const id = resolveSelectedProjectId({ pathname: "", rememberedId: store.get(SELECTED_PROJECT_COOKIE)?.value, projects });
+  return projects.find((p) => p.id === id) ?? null;
+}
 
 /** Id du projet sélectionné, ou null s'il n'existe encore aucun projet. */
 export async function getSelectedProjectId(): Promise<string | null> {
-  const [store, projects] = await Promise.all([cookies(), getProjectOptions()]);
-  return resolveSelectedProjectId({ pathname: "", rememberedId: store.get(SELECTED_PROJECT_COOKIE)?.value, projects });
+  return (await getSelectedProject())?.id ?? null;
 }

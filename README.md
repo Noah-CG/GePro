@@ -191,12 +191,23 @@ De haut en bas :
 
 - le **sélecteur de projet** ;
 - **Nouvelle tâche** et **Rechercher** ;
-- **Tableau de bord** et **Tâches** (avec le nombre de tâches ouvertes) du projet, puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
+- **Tableau de bord**, **Tâches** (avec le nombre de tâches ouvertes) et **Calendrier** du projet, puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
 - **Documents** : les Google Docs liés au projet, le **+** pour en lier un, et un lien vers la page de gestion ;
 - **Administration** (admin) : membres ;
 - tout en bas, **Paramètres du projet** et le menu du compte (thème, mot de passe, déconnexion).
 
 Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bulles, au survol comme au clavier). Les sections se replient d'un clic sur leur titre. Ces choix sont mémorisés dans les cookies `gepro_sidebar_reduite` et `gepro_sections_repliees`. Sur mobile, la barre s'ouvre en tiroir depuis le bouton ☰ de l'en-tête.
+
+### Calendrier
+
+`/calendrier` affiche, pour le projet sélectionné, les **tâches à leur échéance** et les **événements** (réunions, jalons…), plus les événements d'équipe (sans projet).
+
+- Vues **Mois** (au plus 3 éléments par jour, puis « +N autres » qui ouvre la semaine) et **Semaine** (tout le contenu), flèches précédent / suivant et « Aujourd'hui ». La vue et la date sont dans l'adresse (`?vue=mois&date=2026-09-24`) : la page est partageable et rechargeable.
+- Une tâche s'ouvre dans la fenêtre de tâche habituelle ; terminée, elle est barrée et atténuée ; en retard, elle porte une icône d'alerte.
+- Un clic sur une zone vide d'un jour (ou Entrée) crée un événement à cette date. Un événement n'est modifiable ou supprimable que par son créateur ou un admin.
+- Au clavier, la grille n'a qu'un arrêt de tabulation : flèches pour changer de jour, `Début` / `Fin` pour le lundi / dimanche, `Page préc.` / `Page suiv.` pour la période voisine, `Tab` pour atteindre les éléments du jour.
+- Sous 768 px, le calendrier devient la liste des jours qui ont du contenu.
+- Chaque vue ne fait qu'une requête, bornée sur les jours affichés (`getCalendarItems`).
 
 ### Onglets
 
@@ -216,6 +227,7 @@ src/
 │   └── (app)/                Pages protégées : layout = barre latérale + contexte global
 │       ├── page.tsx          Tableau de bord du projet sélectionné
 │       ├── taches/           Redirige vers les tâches du projet sélectionné (anciens liens)
+│       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
 │       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId]) = documents et lecture, [id]/parametres
 │       └── membres/          Gestion des comptes (admin)
 │   └── api/integrations/     Routes OAuth (connect → Google → callback)
@@ -226,9 +238,10 @@ src/
 │   ├── tasks/                TaskBoard, KanbanBoard, TaskList, TaskDialog, filtres
 │   ├── projects/             ProjectCard, ProjectDialog
 │   ├── integrations/         Connexion Google, page Documents, fenêtre de rattachement, lecture Markdown
+│   ├── calendar/             Grilles Mois / Semaine, liste mobile, tâches et événements, fenêtre d'événement
 │   └── dashboard/, members/
 ├── db/                       Schéma Drizzle + client (Neon ou PGlite)
-├── lib/                      auth, requêtes de lecture, validation (Zod), dates, constantes, chiffrement, onglets, préférences de navigation
+├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, constantes, chiffrement, onglets, préférences de navigation
 │   └── integrations/         Client Google (OAuth + Drive, export Markdown), jetons, état OAuth, lecture des documents, erreurs
 ├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google
 └── proxy.ts                  Redirection rapide vers /login sans cookie

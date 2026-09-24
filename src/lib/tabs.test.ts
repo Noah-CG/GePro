@@ -35,6 +35,7 @@ describe("type de page et titre", () => {
     [`/projets/${P}/documents/${D}`, "document"],
     [`/projets/${P}/parametres`, "settings"],
     ["/membres", "members"],
+    ["/calendrier?vue=semaine&date=2026-09-24", "calendar"],
     ["/ecrans", "screens"],
     ["/inconnu", "page"],
   ])("%s → %s", (url, kind) => {
