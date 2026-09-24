@@ -12,6 +12,7 @@ import {
   externalConnections,
   externalResources,
   projectEvents,
+  projectFiles,
   projects,
   sessions,
   taskAssignees,
@@ -138,6 +139,7 @@ async function main() {
 
   if (reset) {
     console.log("Suppression des données existantes…");
+    await db.delete(projectFiles);
     await db.delete(projectEvents);
     await db.delete(externalResources);
     await db.delete(externalConnections);
