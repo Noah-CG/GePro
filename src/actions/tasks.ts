@@ -182,6 +182,20 @@ export async function setTaskDates(id: string, input: TaskDatesInput): Promise<A
   return ok(undefined);
 }
 
+/** Rattache une tâche à une parente, ou la détache (`parentId` nul) : glisser-déposer de la vue liste. */
+export async function setTaskParent(id: string, parentId: string | null): Promise<ActionResult> {
+  await requireUser();
+  if (!isUuid(id) || (parentId !== null && !isUuid(parentId))) return fail("Tâche introuvable.");
+  const [current] = await db.select({ projectId: tasks.projectId }).from(tasks).where(eq(tasks.id, id));
+  if (!current) return fail("Tâche introuvable.");
+  const invalid = await checkLinks(id, current.projectId, parentId, []);
+  if (invalid) return fail(invalid);
+
+  await db.update(tasks).set({ parentId }).where(eq(tasks.id, id));
+  refresh();
+  return ok(undefined);
+}
+
 export async function deleteTask(id: string): Promise<ActionResult> {
   await requireUser();
   await db.delete(tasks).where(eq(tasks.id, id));

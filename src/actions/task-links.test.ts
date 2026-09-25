@@ -5,7 +5,7 @@ import { taskDependencies, tasks } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { getCalendarItems, getTasks } from "@/lib/queries";
 import { insertProject, insertUser, resetDb } from "@/test/db";
-import { createTask, deleteTask, getTaskOptions, updateTask } from "./tasks";
+import { createTask, deleteTask, getTaskOptions, setTaskParent, updateTask } from "./tasks";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
@@ -69,6 +69,23 @@ describe("sous-tâches", () => {
     await updateTask(parent, { projectId: otherProject, title: "Parente" });
     const [row] = await db.select().from(tasks).where(eq(tasks.id, sub));
     expect(row.projectId).toBe(otherProject);
+  });
+  it("rattache puis détache une sous-tâche par glisser-déposer", async () => {
+    const parent = await add("Parente");
+    const task = await add("Tâche");
+    await expect(setTaskParent(task, parent)).resolves.toMatchObject({ ok: true });
+    expect(await view(task)).toMatchObject({ parentId: parent, parentTitle: "Parente" });
+    await expect(setTaskParent(task, null)).resolves.toMatchObject({ ok: true });
+    expect((await view(task)).parentId).toBeNull();
+  });
+
+  it("le glisser-déposer applique les mêmes règles que la fenêtre de tâche", async () => {
+    const parent = await add("Parente");
+    const sub = await add("Sous-tâche", { parentId: parent });
+    const other = await add("Autre");
+    await expect(setTaskParent(other, sub)).resolves.toMatchObject({ ok: false });
+    await expect(setTaskParent(parent, other)).resolves.toMatchObject({ ok: false });
+    await expect(setTaskParent(other, other)).resolves.toMatchObject({ ok: false });
   });
 });
 
