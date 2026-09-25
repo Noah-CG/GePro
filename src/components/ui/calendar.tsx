@@ -33,14 +33,16 @@ export function Calendar({ className, classNames, ...props }: ComponentProps<typ
         weekdays: "flex",
         weekday: "w-9 text-center text-xs font-normal text-muted capitalize",
         week: "mt-1 flex w-full",
-        day: "group/jour relative h-9 w-9 p-0 text-center text-sm",
+        day: "relative h-9 w-9 p-0 text-center text-sm",
         day_button: cn(
           "inline-flex h-9 w-9 items-center justify-center rounded-lg tabular-nums transition-colors hover:bg-surface-2",
           "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-          // Aujourd'hui (hors sélection) en couleur d'accent ; le jour choisi, sur fond d'accent.
-          "group-data-[today]/jour:font-semibold group-data-[today]/jour:text-accent",
-          "group-data-[selected]/jour:bg-accent group-data-[selected]/jour:font-medium group-data-[selected]/jour:text-accent-fg",
         ),
+        // Aujourd'hui en couleur d'accent ; le jour choisi, sur fond d'accent. `!` : le jour choisi
+        // doit l'emporter sur le survol et sur « aujourd'hui », sinon son numéro devient invisible
+        // (texte clair sur fond clair, ou texte d'accent sur fond d'accent).
+        today: "[&>button]:font-semibold [&>button]:text-accent",
+        selected: "[&>button]:bg-accent! [&>button]:font-medium [&>button]:text-accent-fg!",
         outside: "text-muted opacity-50",
         disabled: "pointer-events-none opacity-30",
         hidden: "invisible",

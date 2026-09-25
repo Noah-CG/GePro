@@ -1,15 +1,16 @@
 "use client";
 
 import * as Popover from "@radix-ui/react-popover";
-import { Check, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { useApp } from "@/components/layout/app-provider";
-import { cn } from "@/lib/utils";
 
-/** Sélection multiple des responsables : pastilles retirables + liste à cocher. */
+/** Sélection multiple des responsables : pastilles retirables + liste des membres pas encore assignés. */
 export function AssigneePicker({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
   const { team, membersById, me } = useApp();
-  const toggle = (id: string) => onChange(value.includes(id) ? value.filter((v) => v !== id) : [...value, id]);
+  const add = (id: string) => onChange([...value, id]);
+  const remove = (id: string) => onChange(value.filter((v) => v !== id));
+  const available = team.filter((m) => !value.includes(m.id));
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
@@ -20,7 +21,7 @@ export function AssigneePicker({ value, onChange }: { value: string[]; onChange:
           <span key={id} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-2 py-0.5 pr-1 pl-0.5 text-xs">
             <Avatar user={m} size={20} />
             {m.name}
-            <button type="button" onClick={() => toggle(id)} className="rounded-full p-0.5 text-muted hover:text-text" aria-label={`Retirer ${m.name}`}>
+            <button type="button" onClick={() => remove(id)} className="rounded-full p-0.5 text-muted hover:text-text" aria-label={`Retirer ${m.name}`}>
               <X size={12} />
             </button>
           </span>
@@ -40,27 +41,24 @@ export function AssigneePicker({ value, onChange }: { value: string[]; onChange:
             {!value.includes(me.id) && (
               <button
                 type="button"
-                onClick={() => toggle(me.id)}
+                onClick={() => add(me.id)}
                 className="mb-1 w-full rounded-lg px-2 py-1.5 text-left text-xs font-medium text-accent hover:bg-accent-soft"
               >
                 M'assigner
               </button>
             )}
-            {team.map((m) => {
-              const selected = value.includes(m.id);
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => toggle(m.id)}
-                  className={cn("flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2", selected && "font-medium")}
-                >
-                  <Avatar user={m} size={22} />
-                  <span className="flex-1 truncate">{m.name}</span>
-                  {selected && <Check size={14} className="text-accent" />}
-                </button>
-              );
-            })}
+            {available.length === 0 && <p className="px-2 py-3 text-center text-xs text-muted">Tout le monde est déjà assigné.</p>}
+            {available.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => add(m.id)}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2"
+              >
+                <Avatar user={m} size={22} />
+                <span className="flex-1 truncate">{m.name}</span>
+              </button>
+            ))}
           </Popover.Content>
         </Popover.Portal>
       </Popover.Root>
