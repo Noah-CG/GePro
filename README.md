@@ -125,7 +125,7 @@ Chaque document est lu et synchronisé avec le compte Google de la personne qui 
 
 ## Intégration Discord
 
-Chaque projet peut être relié à un salon Discord : le logo Discord de l'en-tête du projet ouvre un panneau latéral pour lire le salon et y écrire, et une pastille rouge signale les nouveaux messages. Un bot lit le salon (jeton côté serveur uniquement) ; les messages sont publiés par un webhook « GePro » sous le nom du membre, sans notifier personne. Pas de WebSocket (Vercel est serverless) : le panneau interroge l'API REST de Discord via les routes de GePro, avec un cache de 3 s partagé.
+Chaque projet peut être relié à un salon Discord : l'onglet fixe au logo Discord, tout à gauche de la barre d'onglets, ouvre un panneau latéral redimensionnable pour lire le salon et y écrire (ou l'affiche dans un onglet GePro), et une pastille rouge signale les nouveaux messages. Un bot lit le salon (jeton côté serveur uniquement) ; les messages sont publiés par un webhook « GePro » sous le nom du membre, sans notifier personne. Pas de WebSocket (Vercel est serverless) : le panneau interroge l'API REST de Discord via les routes de GePro, avec un cache de 3 s partagé.
 
 Facultative : il faut `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY`. Création du bot, **Message Content Intent**, permissions, URL d'invitation, variables et rattachement d'un salon : **[docs/discord.md](docs/discord.md)**.
 
@@ -271,6 +271,7 @@ Au-dessus du contenu, une barre d'onglets permet de garder plusieurs pages ouver
 - **Ouvrir** : `Ctrl/⌘ + clic` ou clic du milieu sur n'importe quel lien interne, **Ouvrir dans un nouvel onglet** dans le menu ⋯ d'un projet, ou le **+** de la barre d'onglets. Un vrai onglet du navigateur reste accessible par clic droit → *Ouvrir le lien dans un nouvel onglet*.
 - **Documents** : un Google Doc ou un PDF s'ouvre toujours dans un onglet à lui, sans quitter la page en cours ; s'il est déjà ouvert, son onglet est simplement réactivé.
 - **Fermer** : la croix, le clic du milieu, ou `Suppr` sur l'onglet sélectionné. Le dernier onglet ne se ferme pas.
+- **Discord** : tout à gauche, un onglet fixe réduit au logo Discord ouvre le salon du projet sélectionné dans un panneau latéral ; depuis le panneau, **Ouvrir dans un onglet** l'affiche dans un onglet GePro, après les autres (voir [docs/discord.md](docs/discord.md)).
 - 10 onglets au maximum. Ils sont mémorisés dans ce navigateur (`localStorage`, par utilisateur) et retrouvés au prochain passage.
 
 ## Architecture
@@ -284,7 +285,7 @@ src/
 │       ├── taches/           Redirige vers les tâches du projet sélectionné (anciens liens)
 │       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
 │       ├── temps/            Temps de travail : chrono, journal de bord corrigeable, temps de l'équipe
-│       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres
+│       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres, [id]/discord = salon Discord en onglet
 │       └── membres/          Gestion des comptes (admin)
 │   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur), projects/[id]/discord/ (salon Discord : status, messages, read)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
@@ -297,7 +298,7 @@ src/
 │   ├── calendar/             Grilles Mois / Semaine, liste mobile, tâches et événements, fenêtre d'événement
 │   ├── files/                Lecteur PDF (pdf.js), import par morceaux, liste des PDF du projet
 │   ├── time/                 Chrono, journal de bord, fenêtre d'ajout / correction d'une période
-│   ├── discord/              Bouton et pastille, panneau du salon, fil de messages, saisie, interrogation périodique
+│   ├── discord/              Onglet fixe et pastille, panneau redimensionnable, salon en onglet, fil de messages, saisie, interrogation périodique
 │   └── dashboard/, members/
 ├── db/                       Schéma Drizzle + client (Neon ou PGlite)
 ├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, fichiers (découpage, plages d'octets), constantes, chiffrement, onglets, préférences de navigation

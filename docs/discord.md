@@ -1,8 +1,8 @@
 # Intégration Discord
 
-Chaque projet GePro peut être relié à **un salon Discord**. Un logo Discord apparaît alors dans l'en-tête de la page du projet : il ouvre un panneau latéral pour lire le salon et y écrire sans quitter GePro. Une pastille rouge sur le logo signale les nouveaux messages.
+Chaque projet GePro peut être relié à **un salon Discord**. Un onglet fixe, réduit au logo Discord, se trouve tout à gauche de la barre d'onglets : il ouvre un panneau latéral pour lire le salon et y écrire sans quitter GePro, ou le salon peut s'ouvrir dans un onglet GePro à part entière. Une pastille rouge sur le logo signale les nouveaux messages.
 
-L'intégration est facultative. Tant que `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY` ne sont pas tous deux renseignés, elle est désactivée et le logo n'apparaît pas.
+L'intégration est facultative. Tant que `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY` ne sont pas tous deux renseignés, elle est désactivée et l'onglet Discord n'apparaît pas.
 
 ## Fonctionnement
 
@@ -82,7 +82,9 @@ Si le webhook est supprimé côté Discord, GePro le recrée automatiquement au 
 
 ## Utilisation
 
-- **Logo Discord** dans l'en-tête de la page du projet. Sans salon relié, il mène aux paramètres. Sinon, il ouvre ou ferme le panneau, qui se ferme aussi avec **✕**, avec **Échap**, ou en recliquant sur le logo (répété dans l'en-tête du panneau, qui recouvre celui de la page).
+- **Onglet fixe Discord**, tout à gauche de la barre d'onglets, sur toutes les pages : il concerne le projet sélectionné et ne se ferme pas. Sans salon relié, il mène aux paramètres du projet. Sinon, il ouvre ou ferme le panneau, qui se ferme aussi avec **✕** ou **Échap**.
+- **Largeur du panneau** : tirez son bord gauche (ou, la poignée ayant le focus, ← pour élargir et → pour rétrécir ; double-clic pour revenir à 380 px). La largeur est mémorisée dans ce navigateur.
+- **Ouvrir dans un onglet** (icône à côté de « Ouvrir dans Discord ») : le salon s'affiche en pleine page dans un onglet GePro, placé après les autres (ou réactivé s'il est déjà ouvert). Son adresse est `/projets/<id>/discord`.
 - **Pastille rouge** : le dernier message du salon est plus récent que le dernier lu (comparaison en BigInt). Le salon est marqué comme lu à l'ouverture du panneau, puis à chaque nouveau message affiché. Vos propres messages ne déclenchent pas la pastille.
 - **Écrire** : Entrée envoie, Maj + Entrée va à la ligne. Discord limite un message à 2 000 caractères (compteur affiché à partir de 1 800). Le message apparaît grisé le temps de l'envoi ; en cas d'échec, **Réessayer** ou **Supprimer**.
 - **Rendu** : gras, italique, souligné, barré, spoilers, code, citations, liens, mentions de membres, de rôles et de salons, emojis personnalisés, horodatages `<t:…>`, images jointes, autres fichiers en lien, embeds simples. Aucun HTML n'est interprété : le markdown est analysé en arbre (`src/lib/discord/markdown.ts`) puis rendu en composants React.
@@ -115,7 +117,8 @@ Tout membre connecté à GePro peut lire et écrire dans le salon d'un projet (G
 | `src/lib/discord/api.ts` | Socle des routes : session, projet, erreurs |
 | `src/app/api/projects/[id]/discord/` | Routes `status`, `messages` (GET, POST), `read` |
 | `src/actions/discord.ts` | Server Actions de rattachement |
-| `src/components/discord/` | Bouton, panneau, fil, saisie, interrogation périodique |
+| `src/components/discord/` | Onglet fixe et contexte (`discord-provider.tsx`), panneau redimensionnable, page en onglet, fil, saisie, interrogation périodique |
+| `src/app/(app)/projets/[id]/discord/` | Salon en pleine page (onglet GePro) |
 
 Tests : `npm test`. Discord y est simulé en remplaçant `fetch` (`src/test/discord.ts`).
 
