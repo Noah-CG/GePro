@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useApp } from "@/components/layout/app-provider";
 import { Button, buttonClass } from "@/components/ui/button";
 import { PageHeader } from "@/components/ui/misc";
@@ -27,12 +27,15 @@ export function CalendarView({
   today,
   items,
   projectName,
+  sync,
 }: {
   view: View;
   date: string;
   today: string;
   items: CalendarItems;
   projectName: string | null;
+  /** Bouton de synchronisation avec Google Agenda, affiché dans l'en-tête. */
+  sync?: ReactNode;
 }) {
   const { editTask } = useApp();
   const [eventTarget, setEventTarget] = useState<EventTarget>(null);
@@ -85,6 +88,7 @@ export function CalendarView({
                 </Link>
               ))}
             </nav>
+            {sync}
             <Button variant="primary" size="sm" onClick={() => setEventTarget({ date: visibleDays.includes(today) ? today : date })}>
               <Plus size={14} /> Nouvel événement
             </Button>

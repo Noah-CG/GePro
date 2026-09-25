@@ -10,12 +10,20 @@ import { IntegrationError } from "./errors";
 
 /** Lecture seule sur Drive : suffit pour lire titre, lien et date de modification. */
 export const GOOGLE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+/**
+ * Google Agenda, limité aux agendas créés par GePro : l'app crée son agenda « GePro » et y écrit,
+ * sans jamais voir les autres agendas du compte. Demandé seulement pour la synchronisation.
+ */
+export const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.app.created";
+/** Identité du compte (id et e-mail), quand Drive n'est pas accordé : `about` n'est alors pas lisible. */
+export const IDENTITY_SCOPES = ["openid", "email"];
 export const GOOGLE_DOC_MIME = "application/vnd.google-apps.document";
 
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const REVOKE_URL = "https://oauth2.googleapis.com/revoke";
 const DRIVE_URL = "https://www.googleapis.com/drive/v3";
+const USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo";
 
 const TIMEOUT_MS = 10_000;
 /** Une seule nouvelle tentative sur 429 / 5xx : au-delà, l'utilisateur attend trop. */
@@ -47,13 +55,23 @@ function requireConfig(): GoogleConfig {
 
 export type GoogleTokens = { accessToken: string; refreshToken: string | null; expiresAt: Date; scope: string };
 
-export function buildAuthUrl({ state, codeChallenge }: { state: string; codeChallenge: string }): string {
+export function buildAuthUrl({
+  state,
+  codeChallenge,
+  scopes = [GOOGLE_SCOPE],
+}: {
+  state: string;
+  codeChallenge: string;
+  scopes?: string[];
+}): string {
   const { clientId, redirectUri } = requireConfig();
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: GOOGLE_SCOPE,
+    scope: scopes.join(" "),
+    // Autorisation incrémentale : les droits déjà accordés (Drive) sont conservés et renvoyés.
+    include_granted_scopes: "true",
     // "offline" pour obtenir un refresh token ; Google ne le renvoie qu'au premier consentement,
     // "consent" le redemande à chaque connexion. "select_account" laisse choisir le compte.
     access_type: "offline",
@@ -66,7 +84,9 @@ export function buildAuthUrl({ state, codeChallenge }: { state: string; codeChal
 }
 
 /** L'écran de consentement permet de décocher un scope : on vérifie ce qui a été accordé. */
-export const hasDriveScope = (scope: string) => scope.split(" ").includes(GOOGLE_SCOPE);
+export const hasScope = (granted: string, scope: string) => granted.split(" ").includes(scope);
+export const hasDriveScope = (granted: string) => hasScope(granted, GOOGLE_SCOPE);
+export const hasCalendarScope = (granted: string) => hasScope(granted, CALENDAR_SCOPE);
 
 export function exchangeCode(code: string, codeVerifier: string): Promise<GoogleTokens> {
   return tokenRequest({
@@ -153,6 +173,19 @@ export async function getAccount(accessToken: string): Promise<GoogleAccount> {
   return { id: body.user.permissionId, email: body.user.emailAddress ?? "" };
 }
 
+/**
+ * Identité du compte à partir des droits accordés : via Drive (`about`) si possible, sinon via
+ * OpenID (connexion faite pour l'agenda seul). L'id sert seulement à reconnaître le même compte.
+ */
+export async function getAccountFromGrant(accessToken: string, grantedScopes: string): Promise<GoogleAccount> {
+  if (hasDriveScope(grantedScopes)) return getAccount(accessToken);
+  const res = await send(USERINFO_URL, { headers: { Authorization: `Bearer ${accessToken}` } });
+  const body = (await readJson(res)) as { sub?: unknown; email?: unknown } | null;
+  if (!res.ok) throw toIntegrationError(res.status, body);
+  if (typeof body?.sub !== "string") throw new IntegrationError("unknown", "userinfo sans sub");
+  return { id: body.sub, email: typeof body.email === "string" ? body.email : "" };
+}
+
 /** Métadonnées d'un Google Doc. Lève `not_a_doc` pour tout autre type de fichier. */
 export async function getDoc(accessToken: string, fileId: string): Promise<GoogleDoc> {
   const file = await drive<DriveFile>(accessToken, `/files/${encodeURIComponent(fileId)}`, {
@@ -216,8 +249,8 @@ async function drive<T>(accessToken: string, path: string, params: Record<string
   return (await (await driveRequest(accessToken, path, params)).json()) as T;
 }
 
-/** fetch avec délai maximal, et une nouvelle tentative sur 429 / 5xx. */
-async function send(url: string, init: RequestInit, attempt = 0): Promise<Response> {
+/** fetch avec délai maximal, et une nouvelle tentative sur 429 / 5xx. Partagé avec google-calendar.ts. */
+export async function send(url: string, init: RequestInit, attempt = 0): Promise<Response> {
   let res: Response;
   try {
     res = await fetch(url, { ...init, cache: "no-store", signal: AbortSignal.timeout(TIMEOUT_MS) });
@@ -237,7 +270,7 @@ function retryDelay(res: Response, attempt: number): number {
   return Math.min(retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt, 2000);
 }
 
-async function readJson(res: Response): Promise<unknown> {
+export async function readJson(res: Response): Promise<unknown> {
   try {
     return await res.json();
   } catch {
@@ -267,15 +300,15 @@ export function toIntegrationError(status: number, body: unknown): IntegrationEr
   const detail = `HTTP ${status} ${reasons.join(",")}`.trim();
   const has = (set: Set<string>) => reasons.some((r) => set.has(r));
 
-  if (status === 401) return new IntegrationError("unauthorized", detail);
-  if (status === 429 || has(QUOTA_REASONS)) return new IntegrationError("quota", detail);
-  if (status === 403 && has(SETUP_REASONS)) return new IntegrationError("misconfigured", detail);
-  if (status === 403 && has(SIZE_REASONS)) return new IntegrationError("too_large", detail);
-  if (status === 403 && has(SCOPE_REASONS)) return new IntegrationError("missing_scope", detail);
-  if (status === 403) return new IntegrationError("forbidden", detail);
-  if (status === 404) return new IntegrationError("not_found", detail);
-  if (status >= 500) return new IntegrationError("unavailable", detail);
-  return new IntegrationError("unknown", detail);
+  if (status === 401) return new IntegrationError("unauthorized", detail, status);
+  if (status === 429 || has(QUOTA_REASONS)) return new IntegrationError("quota", detail, status);
+  if (status === 403 && has(SETUP_REASONS)) return new IntegrationError("misconfigured", detail, status);
+  if (status === 403 && has(SIZE_REASONS)) return new IntegrationError("too_large", detail, status);
+  if (status === 403 && has(SCOPE_REASONS)) return new IntegrationError("missing_scope", detail, status);
+  if (status === 403) return new IntegrationError("forbidden", detail, status);
+  if (status === 404) return new IntegrationError("not_found", detail, status);
+  if (status >= 500) return new IntegrationError("unavailable", detail, status);
+  return new IntegrationError("unknown", detail, status);
 }
 
 /**

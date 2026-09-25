@@ -2,6 +2,7 @@
 
 import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { scheduleCalendarSync, taskWithSubtasks } from "@/lib/integrations/calendar-sync";
 import { db } from "@/db";
 import { taskAssignees, taskDependencies, tasks, type TaskStatus } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -101,6 +102,7 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
 
   await setAssignees(task.id, assigneeIds);
   await setDependencies(task.id, dependsOnIds);
+  await scheduleCalendarSync([{ kind: "task", id: task.id }]);
   refresh();
   return ok({ id: task.id });
 }
@@ -141,6 +143,8 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
         and (a.id = ${id} or b.id = ${id} or a.parent_id = ${id} or b.parent_id = ${id})
     `);
   }
+  // Les sous-tâches aussi : elles ont pu changer de projet avec leur parente.
+  await scheduleCalendarSync(() => taskWithSubtasks(id));
   refresh();
   return ok(undefined);
 }
@@ -165,6 +169,7 @@ export async function moveTask(id: string, status: TaskStatus, position?: number
       ...(current.status !== status && { completedAt: status === "done" ? new Date() : null }),
     })
     .where(eq(tasks.id, id));
+  await scheduleCalendarSync([{ kind: "task", id }]);
   refresh();
   return ok(undefined);
 }
@@ -178,6 +183,7 @@ export async function setTaskDates(id: string, input: TaskDatesInput): Promise<A
 
   const [row] = await db.update(tasks).set(parsed.data).where(eq(tasks.id, id)).returning({ id: tasks.id });
   if (!row) return fail("Tâche introuvable.");
+  await scheduleCalendarSync([{ kind: "task", id }]);
   refresh();
   return ok(undefined);
 }
@@ -198,6 +204,8 @@ export async function setTaskParent(id: string, parentId: string | null): Promis
 
 export async function deleteTask(id: string): Promise<ActionResult> {
   await requireUser();
+  // Avant la suppression : ses sous-tâches disparaissent avec elle (cascade).
+  await scheduleCalendarSync(() => taskWithSubtasks(id));
   await db.delete(tasks).where(eq(tasks.id, id));
   refresh();
   return ok(undefined);

@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 import type { NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { saveGoogleConnection } from "@/lib/integrations/connections";
+import { getConnection, saveGoogleConnection } from "@/lib/integrations/connections";
 import { reportIntegrationError, type IntegrationErrorCode } from "@/lib/integrations/errors";
-import { exchangeCode, getAccount, hasDriveScope, revokeToken } from "@/lib/integrations/google";
+import { CALENDAR_SCOPE, exchangeCode, getAccountFromGrant, hasScope, revokeToken } from "@/lib/integrations/google";
 import { takeOAuthFlow } from "@/lib/integrations/oauth";
 
 /**
@@ -36,11 +36,14 @@ async function connect(
 
   try {
     const tokens = await exchangeCode(code, flow.verifier);
-    if (!hasDriveScope(tokens.scope)) {
-      await revokeToken(tokens.refreshToken ?? tokens.accessToken);
-      return "missing_scope";
+    const missing = flow.requiredScopes.find((scope) => !hasScope(tokens.scope, scope));
+    if (missing) {
+      // Autorisation incrémentale : la révoquer retirerait aussi les droits accordés auparavant
+      // (Google Docs). On ne la révoque que si le membre n'avait pas encore de connexion.
+      if (!(await getConnection(userId, "google"))) await revokeToken(tokens.refreshToken ?? tokens.accessToken);
+      return missing === CALENDAR_SCOPE ? "missing_calendar_scope" : "missing_scope";
     }
-    await saveGoogleConnection(userId, tokens, await getAccount(tokens.accessToken));
+    await saveGoogleConnection(userId, tokens, await getAccountFromGrant(tokens.accessToken, tokens.scope));
     return null;
   } catch (e) {
     const reason = reportIntegrationError(e);

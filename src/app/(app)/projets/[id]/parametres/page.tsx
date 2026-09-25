@@ -2,9 +2,12 @@ import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { DiscordChannelCard } from "@/components/discord/discord-channel-card";
 import { GoogleConnectionCard, type Notice } from "@/components/integrations/google-connection-card";
 import { PageHeader } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
+import { isDiscordConfigured } from "@/lib/discord/client";
+import { getDiscordChannelView } from "@/lib/discord/service";
 import { integrationErrorMessage, isIntegrationErrorCode } from "@/lib/integrations/errors";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { getConnectionView, getProjectsWithStats } from "@/lib/queries";
@@ -39,7 +42,7 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
   const project = await loadProject(id);
   if (!project) notFound();
   const { google, reason } = await searchParams;
-  const connection = await getConnectionView(me.id, "google");
+  const [connection, discordChannel] = await Promise.all([getConnectionView(me.id, "google"), getDiscordChannelView(project.id)]);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -50,13 +53,16 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
 
       <section>
         <h2 className="mb-1 text-sm font-semibold">Intégrations</h2>
-        <p className="mb-3 text-sm text-muted">Reliez vos outils pour retrouver les documents du projet au même endroit.</p>
+        <p className="mb-3 text-sm text-muted">Reliez vos outils pour retrouver les documents et les discussions du projet au même endroit.</p>
         <GoogleConnectionCard
           projectId={project.id}
           configured={isGoogleConfigured()}
           connection={connection}
           notice={oauthNotice(google, reason)}
         />
+        <div className="mt-3">
+          <DiscordChannelCard projectId={project.id} configured={isDiscordConfigured()} channel={discordChannel} />
+        </div>
       </section>
     </div>
   );

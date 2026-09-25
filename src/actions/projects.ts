@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { projects } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
+import { scheduleProjectCalendarSync } from "@/lib/integrations/calendar-sync";
 import { firstError, projectInput, type ProjectInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -29,6 +30,8 @@ export async function updateProject(id: string, input: ProjectInput): Promise<Ac
   if (!parsed.success) return fail(firstError(parsed.error));
 
   await db.update(projects).set(parsed.data).where(eq(projects.id, id));
+  // Nom et couleur figurent dans les agendas Google.
+  await scheduleProjectCalendarSync(id);
   refresh();
   return ok(undefined);
 }
@@ -39,6 +42,8 @@ export async function setProjectArchived(id: string, archived: boolean): Promise
     .update(projects)
     .set({ archivedAt: archived ? new Date() : null })
     .where(eq(projects.id, id));
+  // Projet archivé : ses éléments quittent les agendas Google (et y reviennent au désarchivage).
+  await scheduleProjectCalendarSync(id);
   refresh();
   return ok(undefined);
 }

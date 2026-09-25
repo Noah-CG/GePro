@@ -16,6 +16,7 @@ import {
   type ReactNode,
   type WheelEvent,
 } from "react";
+import { DiscordIcon } from "@/components/discord/discord-icon";
 import { PdfIcon } from "@/components/files/pdf-icon";
 import { GoogleDocsIcon } from "@/components/integrations/google-docs-icon";
 import {
@@ -33,6 +34,7 @@ import {
   tabTitleFromDocument,
   type Tab,
   type TabKind,
+  type TabPosition,
   type TabsState,
 } from "@/lib/tabs";
 import { cn } from "@/lib/utils";
@@ -43,8 +45,11 @@ type TabsContextValue = {
   state: TabsState | null;
   /** Ouvre `url` dans un nouvel onglet. */
   openInNewTab: (url: string) => void;
-  /** Affiche `url` sans quitter l'onglet actuel : onglet existant réactivé, sinon nouvel onglet. */
-  showInTab: (url: string) => void;
+  /**
+   * Affiche `url` sans quitter l'onglet actuel : onglet existant réactivé, sinon nouvel onglet
+   * (juste après l'actif, ou après tous les autres avec `position: "end"`).
+   */
+  showInTab: (url: string, position?: TabPosition) => void;
   activate: (id: string) => void;
   close: (id: string) => void;
 };
@@ -166,10 +171,10 @@ export function TabsProvider({ children }: { children: ReactNode }) {
 
   /** Applique une transition d'onglets (ouverture…) puis affiche l'onglet devenu actif. */
   const open = useCallback(
-    (url: string, transition: typeof openTab) => {
+    (url: string, transition: typeof openTab, position?: TabPosition) => {
       const current = stateRef.current;
       if (!current || !isTabbableUrl(url)) return;
-      const next = transition(current, url, crypto.randomUUID(), window.scrollY);
+      const next = transition(current, url, crypto.randomUUID(), window.scrollY, position);
       if (!next) return toast(`${MAX_TABS} onglets au maximum : fermez-en un pour en ouvrir un autre.`, "error");
       update(next);
       if (next.activeId !== current.activeId) go(activeTab(next));
@@ -178,7 +183,7 @@ export function TabsProvider({ children }: { children: ReactNode }) {
   );
 
   const openInNewTab = useCallback((url: string) => open(url, openTab), [open]);
-  const showInTabFn = useCallback((url: string) => open(url, showInTab), [open]);
+  const showInTabFn = useCallback((url: string, position?: TabPosition) => open(url, showInTab, position), [open]);
 
   const activate = (id: string) => {
     const current = stateRef.current;
@@ -257,7 +262,7 @@ export function TabPanel({ children }: { children: ReactNode }) {
   );
 }
 
-const KIND_ICONS: Record<Exclude<TabKind, "document" | "pdf">, LucideIcon> = {
+const KIND_ICONS: Record<Exclude<TabKind, "document" | "pdf" | "discord">, LucideIcon> = {
   dashboard: LayoutDashboard,
   tasks: ListTodo,
   projects: FolderKanban,
@@ -275,16 +280,21 @@ function TabIcon({ url }: { url: string }) {
   const kind = tabKind(url);
   if (kind === "document") return <GoogleDocsIcon size={13} className="shrink-0" />;
   if (kind === "pdf") return <PdfIcon size={13} className="shrink-0" />;
+  if (kind === "discord") return <DiscordIcon size={14} className="shrink-0 text-[#5865F2]" />;
   const Icon = KIND_ICONS[kind];
   return <Icon size={14} className="shrink-0" aria-hidden />;
 }
 
-/** Barre d'onglets : ←/→ (et Début/Fin) déplacent le focus, Entrée ouvre, Suppr ferme. */
-export function TabBar() {
+/**
+ * Barre d'onglets : ←/→ (et Début/Fin) déplacent le focus, Entrée ouvre, Suppr ferme.
+ * `pinned` : onglet fixe affiché tout à droite, hors de la liste (Discord).
+ */
+export function TabBar({ pinned }: { pinned?: ReactNode }) {
+  const pinnedSlot = pinned && <div className="ml-auto flex shrink-0 items-end pl-1">{pinned}</div>;
   const { state, activate, close, openInNewTab } = useTabs();
   const bar = "sticky top-14 z-20 flex h-10 shrink-0 items-end gap-1 border-b border-border bg-bg px-2 md:top-0 md:px-4";
-  // Avant le montage : barre vide de même hauteur (pas de décalage du contenu).
-  if (!state) return <div className={bar} aria-hidden />;
+  // Avant le montage : barre de même hauteur, avec l'onglet fixe seulement (pas de décalage du contenu).
+  if (!state) return <div className={bar}>{pinnedSlot}</div>;
 
   const canClose = state.tabs.length > 1;
 
@@ -365,6 +375,7 @@ export function TabBar() {
       >
         <Plus size={15} />
       </button>
+      {pinnedSlot}
     </div>
   );
 }

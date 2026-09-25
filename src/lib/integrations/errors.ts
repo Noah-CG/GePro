@@ -13,6 +13,9 @@ export const INTEGRATION_ERROR_MESSAGES = {
   not_connected: "Connectez d'abord votre compte Google dans les paramètres du projet.",
   reauth_required: "La connexion Google a expiré ou a été révoquée. Reconnectez votre compte dans les paramètres du projet.",
   missing_scope: "L'accès en lecture à Google Drive n'a pas été autorisé. Reconnectez votre compte en cochant cette autorisation.",
+  missing_calendar_scope:
+    "L'accès à Google Agenda n'a pas été autorisé. Recommencez en cochant l'autorisation « agendas secondaires » sur l'écran de Google.",
+  calendar_deleted: "L'agenda « GePro » a été supprimé dans Google Agenda : il sera recréé à la prochaine synchronisation.",
   access_denied: "Connexion à Google annulée.",
   invalid_state: "La demande de connexion a expiré ou n'est pas valide. Réessayez.",
   unauthorized: "Google a refusé l'accès. Reconnectez votre compte dans les paramètres du projet.",
@@ -39,6 +42,8 @@ export class IntegrationError extends Error {
     readonly code: IntegrationErrorCode,
     /** Détail technique, pour les journaux serveur uniquement. */
     detail?: string,
+    /** Statut HTTP de la réponse du fournisseur, s'il y en a une. */
+    readonly httpStatus?: number,
   ) {
     super(detail ? `${code}: ${detail}` : code);
     this.name = "IntegrationError";

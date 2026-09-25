@@ -50,6 +50,20 @@
       "when": 1790321726016,
       "tag": "0006_task_hierarchy",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790327180292,
+      "tag": "0007_discord",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790327217119,
+      "tag": "0008_google_agenda",
+      "breakpoints": true
     }
   ]
 }

@@ -52,6 +52,7 @@ describe("projectSwitchHref", () => {
     [`/projets/${A}/documents`, `/projets/${B}/documents`],
     [`/projets/${A}/documents/${C}`, `/projets/${B}/documents`],
     [`/projets/${A}/parametres`, `/projets/${B}/parametres`],
+    [`/projets/${A}/discord`, `/projets/${B}/discord`],
   ])("depuis %s → %s", (from, expected) => {
     expect(projectSwitchHref(from, B)).toBe(expected);
   });

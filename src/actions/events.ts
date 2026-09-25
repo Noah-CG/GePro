@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import { projectEvents, projects } from "@/db/schema";
 import { requireUser, type SessionUser } from "@/lib/auth";
+import { scheduleCalendarSync } from "@/lib/integrations/calendar-sync";
 import { eventInput, firstError, isUuid, type EventInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -38,6 +39,7 @@ export async function createEvent(input: EventInput): Promise<ActionResult<{ id:
     .insert(projectEvents)
     .values({ ...parsed.data, createdBy: me.id })
     .returning({ id: projectEvents.id });
+  await scheduleCalendarSync([{ kind: "event", id: event.id }]);
   refresh();
   return ok({ id: event.id });
 }
@@ -52,6 +54,7 @@ export async function updateEvent(id: string, input: EventInput): Promise<Action
   if (!(await projectExists(parsed.data.projectId))) return fail("Projet introuvable.");
 
   await db.update(projectEvents).set(parsed.data).where(eq(projectEvents.id, id));
+  await scheduleCalendarSync([{ kind: "event", id }]);
   refresh();
   return ok(undefined);
 }
@@ -62,6 +65,7 @@ export async function deleteEvent(id: string): Promise<ActionResult> {
   if (denied) return fail(denied);
 
   await db.delete(projectEvents).where(eq(projectEvents.id, id));
+  await scheduleCalendarSync([{ kind: "event", id }]);
   refresh();
   return ok(undefined);
 }

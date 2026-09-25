@@ -59,7 +59,7 @@ Les libellés ci-dessous sont ceux de la console en français ; l'équivalent an
      - **Interne** (*Internal*) si toute l'équipe utilise des comptes Google Workspace de votre organisation. **C'est le choix recommandé** : pas de vérification Google, et les autorisations n'expirent pas au bout de 7 jours.
      - **Externe** (*External*) dans les autres cas (comptes @gmail.com, par exemple). L'application reste en mode **Test** : ajoutez chaque membre dans **Audience → Utilisateurs test** (*Test users*, 100 au maximum).
    - **Coordonnées** (*Contact information*) : votre adresse e-mail. Acceptez les conditions, puis **Créer**.
-4. **Scope** : **Accès aux données** (*Data Access*) → **Ajouter ou supprimer des champs d'application** (*Add or remove scopes*). Cochez `https://www.googleapis.com/auth/drive.readonly` (*Google Drive API, afficher et télécharger tous vos fichiers Google Drive*), puis **Mettre à jour** et **Enregistrer**. C'est le seul scope demandé par GePro.
+4. **Scope** : **Accès aux données** (*Data Access*) → **Ajouter ou supprimer des champs d'application** (*Add or remove scopes*). Cochez `https://www.googleapis.com/auth/drive.readonly` (*Google Drive API, afficher et télécharger tous vos fichiers Google Drive*), puis **Mettre à jour** et **Enregistrer**. Pour la [synchronisation avec Google Agenda](#synchronisation-avec-google-agenda), ajoutez aussi `calendar.app.created`, `openid` et `email`.
 5. **Client OAuth** : **Clients** → **Créer un client** (*Create client*) :
    - Type d'application : **Application Web** (*Web application*). Nom : `GePro`.
    - **URI de redirection autorisés** (*Authorized redirect URIs*) : ajoutez une URI par environnement, en respectant exactement la valeur de `APP_URL` :
@@ -123,6 +123,37 @@ Chaque document est lu et synchronisé avec le compte Google de la personne qui 
 | Il faut se reconnecter chaque semaine | Application Externe en mode Test : les autorisations expirent au bout de 7 jours (voir plus haut). |
 | « Non configurée sur ce serveur » dans les paramètres du projet | Une des quatre variables manque, ou `INTEGRATIONS_ENCRYPTION_KEY` ne fait pas 32 octets. Redémarrez le serveur après toute modification. |
 
+## Intégration Discord
+
+Chaque projet peut être relié à un salon Discord : l'onglet fixe au logo Discord, tout à droite de la barre d'onglets, ouvre un panneau latéral redimensionnable pour lire le salon et y écrire (ou l'affiche dans un onglet GePro), et une pastille rouge signale les nouveaux messages. Un bot lit le salon (jeton côté serveur uniquement) ; les messages sont publiés par un webhook « GePro » sous le nom du membre, sans notifier personne. Pas de WebSocket (Vercel est serverless) : le panneau interroge l'API REST de Discord via les routes de GePro, avec un cache de 3 s partagé.
+
+Facultative : il faut `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY`. Création du bot, **Message Content Intent**, permissions, URL d'invitation, variables et rattachement d'un salon : **[docs/discord.md](docs/discord.md)**.
+
+## Synchronisation avec Google Agenda
+
+Chaque membre peut retrouver l'agenda de GePro dans son **Google Agenda** : bouton **Google Agenda** de la page **Calendrier**.
+
+- GePro crée dans le compte Google du membre un agenda nommé **« GePro »** et le remplit : **événements d'équipe** (toujours), **événements des projets cochés**, et **échéances des tâches** non terminées de ces projets (*Mes tâches*, *Toutes* ou *Aucune*). Projets archivés exclus.
+- **Sens unique** : GePro est la référence. Une modification faite dans Google Agenda sur un événement GePro sera écrasée ; les événements ajoutés à la main dans l'agenda « GePro » sont laissés tels quels.
+- Les événements sont « toute la journée », sans rappel, et n'occupent pas l'agenda (disponibilité inchangée). La couleur est celle de l'événement, ou du projet pour une échéance (au plus proche des 11 couleurs de Google). Chacun renvoie vers GePro.
+- **Au fil de l'eau** : chaque création, modification ou suppression d'un événement ou d'une tâche est envoyée quelques secondes après, pour chaque membre concerné (`after()` : l'action n'est pas ralentie).
+- **Synchronisation complète** : à l'activation, à chaque changement de réglages, avec **Synchroniser maintenant**, et automatiquement à l'ouverture du calendrier si la dernière date de plus de 6 h. Elle rattrape tout écart : modification manquée, projet renommé ou archivé, agenda « GePro » supprimé dans Google (il est recréé).
+- **Arrêter la synchronisation** conserve l'agenda dans Google, sauf si vous cochez « Supprimer aussi l'agenda GePro ».
+
+### Configuration
+
+En plus de la configuration Google Docs ci-dessus (même client OAuth, mêmes variables) :
+
+1. **Activer l'API Google Calendar** : **API et services → Bibliothèque**, recherchez **Google Calendar API**, puis **Activer**.
+2. **Scopes** : **Google Auth Platform → Accès aux données** → **Ajouter ou supprimer des champs d'application**, cochez :
+   - `https://www.googleapis.com/auth/calendar.app.created` (*Créer des agendas secondaires et gérer leurs événements*) : GePro ne voit **que les agendas qu'il a créés**, jamais les autres agendas ni les rendez-vous du membre ;
+   - `openid` et `…/auth/userinfo.email` : identifient le compte quand le membre n'a pas autorisé Google Drive.
+3. Appliquez la migration (`npm run db:migrate`, automatique sur Vercel).
+
+Chaque membre clique ensuite sur **Google Agenda → Autoriser l'accès à Google Agenda**. L'autorisation est **incrémentale** : un accès Google Drive déjà accordé est conservé (une seule connexion Google par membre). Refuser l'accès à l'agenda ne touche pas à la connexion existante.
+
+En mode **Test** (application Externe), Google fait expirer les autorisations au bout de 7 jours : la synchronisation s'interrompt et la fenêtre propose de reconnecter le compte.
+
 ## Documents PDF
 
 Chaque projet peut aussi recevoir des **PDF importés depuis l'ordinateur**, lisibles par toute l'équipe dans GePro, en lecture seule. Aucune configuration n'est nécessaire.
@@ -143,7 +174,7 @@ Fonctionnement :
 | Commande | Rôle |
 |---|---|
 | `npm run dev` / `build` / `start` | Développement, build, production |
-| `npm run lint` | Vérification TypeScript |
+| `npm run lint` / `npm run typecheck` | Vérification TypeScript |
 | `npm test` / `npm run test:watch` | Tests (Vitest) |
 | `npm run db:generate` | Génère une migration SQL après modification de `src/db/schema.ts` |
 | `npm run db:migrate` | Applique les migrations (Neon ou base locale) |
@@ -172,6 +203,8 @@ users ──< task_assignees >── tasks >── projects
 users ──< external_connections ──< external_resources >── projects
 projects ──< project_events
 projects ──< project_files ──< project_file_chunks
+projects ──o project_discord            users ──< discord_read_state
+users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
 ```
 
 | Table | Champs principaux | Notes |
@@ -185,6 +218,10 @@ projects ──< project_files ──< project_file_chunks
 | **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un admin |
 | **project_file_chunks** | `file_id`, `position` (clé composite), `data` (`bytea`) | Contenu des fichiers, en morceaux de 960 Ko |
 | **external_connections** | `user_id`, `provider` (`google`/`github`), `account_email`, `access_token_enc`, `refresh_token_enc`, `access_token_expires_at`, `status` (`active`/`needs_reauth`) | Un compte externe par utilisateur et par fournisseur ; jetons chiffrés |
+| **project_discord** | `project_id` (clé), `guild_id`, `channel_id`, `channel_name`, `webhook_id`, `webhook_token_enc`, `linked_by` | Salon Discord relié au projet (un au plus). Jeton du webhook chiffré |
+| **discord_read_state** | `user_id`, `channel_id` (clé composite), `last_read_message_id` | Dernier message lu par membre et par salon. Identifiants Discord (snowflakes) en texte, comparés en `numeric` / `BigInt` |
+| **google_calendar_syncs** | `user_id` (clé), `calendar_id`, `tasks_mode` (`mine`/`all`/`none`), `last_synced_at`, `last_error` | Synchronisation vers Google Agenda d'un membre : id de l'agenda « GePro » créé dans son compte |
+| **google_calendar_sync_projects** | `user_id`, `project_id` (clé composite) | Projets choisis pour la synchronisation |
 | **external_resources** | `project_id`, `provider`, `kind` (`google_doc`…), `external_id`, `title`, `url`, `external_updated_at`, `metadata` (JSON), `connection_id`, `attached_by`, `synced_at`, `sync_error` | Ressources externes rattachées à un projet (copie en cache), uniques par (`project_id`, `provider`, `external_id`) |
 
 Règles :
@@ -236,6 +273,7 @@ Sur la page d'un projet, la bascule **Kanban / Liste / Gantt** propose une trois
 - Au clavier, la grille n'a qu'un arrêt de tabulation : flèches pour changer de jour, `Début` / `Fin` pour le lundi / dimanche, `Page préc.` / `Page suiv.` pour la période voisine, `Tab` pour atteindre les éléments du jour.
 - Sous 768 px, le calendrier devient la liste des jours qui ont du contenu.
 - Chaque vue ne fait qu'une requête, bornée sur les jours affichés (`getCalendarItems`).
+- **Google Agenda** : le bouton du même nom envoie événements et échéances dans l'agenda Google de chaque membre qui l'active (voir [Synchronisation avec Google Agenda](#synchronisation-avec-google-agenda)).
 
 ### Temps de travail
 
@@ -262,6 +300,7 @@ Au-dessus du contenu, une barre d'onglets permet de garder plusieurs pages ouver
 - **Ouvrir** : `Ctrl/⌘ + clic` ou clic du milieu sur n'importe quel lien interne, **Ouvrir dans un nouvel onglet** dans le menu ⋯ d'un projet, ou le **+** de la barre d'onglets. Un vrai onglet du navigateur reste accessible par clic droit → *Ouvrir le lien dans un nouvel onglet*.
 - **Documents** : un Google Doc ou un PDF s'ouvre toujours dans un onglet à lui, sans quitter la page en cours ; s'il est déjà ouvert, son onglet est simplement réactivé.
 - **Fermer** : la croix, le clic du milieu, ou `Suppr` sur l'onglet sélectionné. Le dernier onglet ne se ferme pas.
+- **Discord** : tout à droite, un onglet fixe réduit au logo Discord ouvre le salon du projet sélectionné dans un panneau latéral ; depuis le panneau, **Ouvrir dans un onglet** l'affiche dans un onglet GePro, après les autres (voir [docs/discord.md](docs/discord.md)).
 - 10 onglets au maximum. Ils sont mémorisés dans ce navigateur (`localStorage`, par utilisateur) et retrouvés au prochain passage.
 
 ## Architecture
@@ -275,9 +314,9 @@ src/
 │       ├── taches/           Redirige vers les tâches du projet sélectionné (anciens liens)
 │       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
 │       ├── temps/            Temps de travail : chrono, journal de bord corrigeable, temps de l'équipe
-│       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres
+│       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres, [id]/discord = salon Discord en onglet
 │       └── membres/          Gestion des comptes (admin)
-│   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur)
+│   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur), projects/[id]/discord/ (salon Discord : status, messages, read)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/
 │   ├── ui/                   Briques génériques : Button, Dialog, Input, Select, DatePicker, Calendar, Badges, Avatar…
@@ -288,11 +327,13 @@ src/
 │   ├── calendar/             Grilles Mois / Semaine, liste mobile, tâches et événements, fenêtre d'événement
 │   ├── files/                Lecteur PDF (pdf.js), import par morceaux, liste des PDF du projet
 │   ├── time/                 Chrono, journal de bord, fenêtre d'ajout / correction d'une période
+│   ├── discord/              Onglet fixe et pastille, panneau redimensionnable, salon en onglet, fil de messages, saisie, interrogation périodique
 │   └── dashboard/, members/
 ├── db/                       Schéma Drizzle + client (Neon ou PGlite)
 ├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, fichiers (découpage, plages d'octets), constantes, chiffrement, onglets, préférences de navigation
-│   └── integrations/         Client Google (OAuth + Drive, export Markdown), jetons, état OAuth, lecture des documents, erreurs
-├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google
+│   ├── integrations/         Client Google (OAuth + Drive, export Markdown, Agenda), jetons, état OAuth, lecture des documents, synchronisation Google Agenda, erreurs
+│   └── discord/              Client REST Discord, rattachement et webhook, normalisation, markdown Discord, snowflakes
+├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google (Drive, Agenda), faux Discord
 └── proxy.ts                  Redirection rapide vers /login sans cookie
 scripts/                      migrate, seed, create-user
 drizzle/                      Migrations SQL générées
@@ -306,11 +347,11 @@ Principes :
 - **Recherche** côté serveur (`ILIKE` sur titres et descriptions, y compris les projets archivés).
 - **Thème** clair, sombre ou automatique (`next-themes`), construit sur des variables CSS.
 - **Champs de formulaire** : aucun contrôle natif du navigateur pour les listes et les dates. `components/ui/select.tsx` (Radix Select) et `components/ui/date-picker.tsx` (calendrier `react-day-picker` en français, semaine du lundi) reprennent les composants de shadcn/ui, recopiés et adaptés aux couleurs de l'app plutôt qu'installés via `npx shadcn init`, qui remplacerait le thème existant.
-- **Intégrations** : appels REST directs à Google, sans SDK. Chaque erreur est traduite en code (`lib/integrations/errors.ts`), et le code en message lisible au moment de l'affichage.
+- **Intégrations** : appels REST directs à Google et Discord, sans SDK. Chaque erreur est traduite en code (`lib/integrations/errors.ts`), et le code en message lisible au moment de l'affichage.
 
 ## Tests
 
 `npm test` lance Vitest. Les tests sont placés à côté du code testé (`*.test.ts`, `*.test.tsx` pour les composants rendus avec `react-dom/server`) :
 - la base de données est une instance PGlite **en mémoire**, créée avec les vraies migrations (`src/test/db.ts`) ;
-- Google est simulé en remplaçant `fetch` (`src/test/google.ts`) : aucun appel réseau, aucun identifiant réel ;
+- Google et Discord sont simulés en remplaçant `fetch` (`src/test/google.ts`, `src/test/discord.ts`) : aucun appel réseau, aucun identifiant réel ;
 - les modules propres à Next.js (`next/headers`, `next/cache`, `next/navigation`) et la session (`@/lib/auth`) sont remplacés par `vi.mock` dans les tests qui en ont besoin.

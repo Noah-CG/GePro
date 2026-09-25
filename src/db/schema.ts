@@ -9,6 +9,8 @@
  *   projects ──< project_events (projet facultatif : sans projet, événement d'équipe)
  *   projects ──< project_files ──< project_file_chunks (PDF importés, découpés en morceaux)
  *   users ──< work_sessions >── projects
+ *   projects ──< project_discord (salon Discord relié) ; users ──< discord_read_state
+ *   users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
  * - Une tâche peut avoir des sous-tâches (un seul niveau) et dépendre d'autres tâches du même
@@ -47,6 +49,8 @@ export const integrationProvider = pgEnum("integration_provider", ["google", "gi
 export const connectionStatus = pgEnum("connection_status", ["active", "needs_reauth"]);
 /** "uploading" tant que tous les morceaux du fichier ne sont pas arrivés. */
 export const fileStatus = pgEnum("file_status", ["uploading", "ready"]);
+/** Échéances envoyées dans Google Agenda : tâches du membre, toutes celles des projets choisis, ou aucune. */
+export const calendarTasksMode = pgEnum("calendar_tasks_mode", ["mine", "all", "none"]);
 
 /**
  * Octets bruts. Les deux drivers acceptent un Uint8Array (Neon l'envoie en hexadécimal, PGlite en
@@ -320,6 +324,76 @@ export const workSessions = pgTable(
   ],
 );
 
+/**
+ * Salon Discord relié à un projet (un au plus). Le bot lit le salon ; le webhook « GePro », créé
+ * ou réutilisé au rattachement, y publie les messages écrits dans GePro. Son jeton est chiffré
+ * (voir lib/crypto.ts) et ne quitte jamais le serveur. Les identifiants Discord sont des
+ * snowflakes (entiers 64 bits) : stockés en texte, comparés en BigInt.
+ */
+export const projectDiscord = pgTable("project_discord", {
+  projectId: uuid("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  guildId: text("guild_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  /** Copie du nom du salon au moment du rattachement (sans le #). */
+  channelName: text("channel_name").notNull(),
+  webhookId: text("webhook_id").notNull(),
+  webhookTokenEnc: text("webhook_token_enc").notNull(),
+  linkedBy: uuid("linked_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Dernier message lu par un membre dans un salon Discord : le salon est « non lu » quand son
+ * dernier message est plus récent. Par salon et non par projet : deux projets reliés au même
+ * salon partagent l'état de lecture.
+ */
+export const discordReadState = pgTable(
+  "discord_read_state",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channelId: text("channel_id").notNull(),
+    lastReadMessageId: text("last_read_message_id").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.channelId] })],
+);
+
+/**
+ * Synchronisation vers Google Agenda d'un membre (une au plus) : GePro écrit dans un agenda
+ * « GePro » qu'il a créé dans le compte Google du membre (connexion `external_connections`).
+ * Sens unique : GePro reste la référence, l'agenda Google n'est qu'une copie.
+ */
+export const googleCalendarSyncs = pgTable("google_calendar_syncs", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Id Google de l'agenda « GePro ». Nul tant qu'il n'est pas créé (ou s'il a été supprimé dans Google). */
+  calendarId: text("calendar_id"),
+  tasksMode: calendarTasksMode("tasks_mode").notNull().default("mine"),
+  /** Dernière synchronisation complète réussie. */
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  /** Code d'erreur de la dernière synchronisation (voir lib/integrations/errors.ts), nul si OK. */
+  lastError: text("last_error"),
+  ...timestamps,
+});
+
+/** Projets choisis par le membre (les événements d'équipe, sans projet, sont toujours inclus). */
+export const googleCalendarSyncProjects = pgTable(
+  "google_calendar_sync_projects",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => googleCalendarSyncs.userId, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("google_calendar_sync_projects_project_idx").on(t.projectId)],
+);
+
 // Relations (pour les requêtes relationnelles `db.query.*`)
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -333,11 +407,12 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, { fields: [sessions.userId], references: [users.id] }),
 }));
 
-export const projectsRelations = relations(projects, ({ many }) => ({
+export const projectsRelations = relations(projects, ({ one, many }) => ({
   tasks: many(tasks),
   resources: many(externalResources),
   events: many(projectEvents),
   files: many(projectFiles),
+  discord: one(projectDiscord),
 }));
 
 export const projectFilesRelations = relations(projectFiles, ({ one, many }) => ({
@@ -380,6 +455,10 @@ export const externalResourcesRelations = relations(externalResources, ({ one })
   }),
 }));
 
+export const projectDiscordRelations = relations(projectDiscord, ({ one }) => ({
+  project: one(projects, { fields: [projectDiscord.projectId], references: [projects.id] }),
+}));
+
 export const workSessionsRelations = relations(workSessions, ({ one }) => ({
   user: one(users, { fields: [workSessions.userId], references: [users.id] }),
   project: one(projects, { fields: [workSessions.projectId], references: [projects.id] }),
@@ -395,4 +474,7 @@ export type TaskPriority = (typeof taskPriority.enumValues)[number];
 export type ExternalConnection = typeof externalConnections.$inferSelect;
 export type ExternalResource = typeof externalResources.$inferSelect;
 export type WorkSession = typeof workSessions.$inferSelect;
+export type ProjectDiscord = typeof projectDiscord.$inferSelect;
 export type IntegrationProvider = (typeof integrationProvider.enumValues)[number];
+export type CalendarTasksMode = (typeof calendarTasksMode.enumValues)[number];
+export type GoogleCalendarSync = typeof googleCalendarSyncs.$inferSelect;
