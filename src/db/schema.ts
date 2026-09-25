@@ -10,6 +10,7 @@
  *   projects ──< project_files ──< project_file_chunks (PDF importés, découpés en morceaux)
  *   users ──< work_sessions >── projects
  *   projects ──< project_discord (salon Discord relié) ; users ──< discord_read_state
+ *   users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
  * - Une tâche peut avoir des sous-tâches (un seul niveau) et dépendre d'autres tâches du même
@@ -48,6 +49,8 @@ export const integrationProvider = pgEnum("integration_provider", ["google", "gi
 export const connectionStatus = pgEnum("connection_status", ["active", "needs_reauth"]);
 /** "uploading" tant que tous les morceaux du fichier ne sont pas arrivés. */
 export const fileStatus = pgEnum("file_status", ["uploading", "ready"]);
+/** Échéances envoyées dans Google Agenda : tâches du membre, toutes celles des projets choisis, ou aucune. */
+export const calendarTasksMode = pgEnum("calendar_tasks_mode", ["mine", "all", "none"]);
 
 /**
  * Octets bruts. Les deux drivers acceptent un Uint8Array (Neon l'envoie en hexadécimal, PGlite en
@@ -358,6 +361,39 @@ export const discordReadState = pgTable(
   (t) => [primaryKey({ columns: [t.userId, t.channelId] })],
 );
 
+/**
+ * Synchronisation vers Google Agenda d'un membre (une au plus) : GePro écrit dans un agenda
+ * « GePro » qu'il a créé dans le compte Google du membre (connexion `external_connections`).
+ * Sens unique : GePro reste la référence, l'agenda Google n'est qu'une copie.
+ */
+export const googleCalendarSyncs = pgTable("google_calendar_syncs", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  /** Id Google de l'agenda « GePro ». Nul tant qu'il n'est pas créé (ou s'il a été supprimé dans Google). */
+  calendarId: text("calendar_id"),
+  tasksMode: calendarTasksMode("tasks_mode").notNull().default("mine"),
+  /** Dernière synchronisation complète réussie. */
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  /** Code d'erreur de la dernière synchronisation (voir lib/integrations/errors.ts), nul si OK. */
+  lastError: text("last_error"),
+  ...timestamps,
+});
+
+/** Projets choisis par le membre (les événements d'équipe, sans projet, sont toujours inclus). */
+export const googleCalendarSyncProjects = pgTable(
+  "google_calendar_sync_projects",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => googleCalendarSyncs.userId, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("google_calendar_sync_projects_project_idx").on(t.projectId)],
+);
+
 // Relations (pour les requêtes relationnelles `db.query.*`)
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -440,3 +476,5 @@ export type ExternalResource = typeof externalResources.$inferSelect;
 export type WorkSession = typeof workSessions.$inferSelect;
 export type ProjectDiscord = typeof projectDiscord.$inferSelect;
 export type IntegrationProvider = (typeof integrationProvider.enumValues)[number];
+export type CalendarTasksMode = (typeof calendarTasksMode.enumValues)[number];
+export type GoogleCalendarSync = typeof googleCalendarSyncs.$inferSelect;
