@@ -1,25 +1,49 @@
 "use client";
 
-import { AlertTriangle, ExternalLink, MessagesSquare, RotateCw, Settings, X } from "lucide-react";
-import Link from "next/link";
-import { useEffect, useRef } from "react";
-import { Button, buttonClass } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ACCESS_ERRORS } from "@/lib/discord/errors";
+import { ExternalLink, SquareArrowOutUpRight, X } from "lucide-react";
+import { useEffect, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useTabs } from "@/components/layout/tabs";
+import { Button } from "@/components/ui/button";
 import type { DiscordChannelView } from "@/lib/discord/model";
-import { channelUrl, DISCORD_DOCS_URL } from "@/lib/discord/urls";
+import { channelUrl } from "@/lib/discord/urls";
 import { cn } from "@/lib/utils";
-import { Composer } from "./composer";
-import { MessageList } from "./message-list";
-import { DISCORD_COLOR, DiscordIcon } from "./discord-icon";
-import { useDiscordChannel, type ChannelState } from "./use-discord-channel";
+import { DiscordConversation } from "./discord-conversation";
 
 export const DISCORD_PANEL_ID = "panneau-discord";
 
+/** Largeur du panneau (px) : par défaut, bornes, pas au clavier. */
+const DEFAULT_WIDTH = 380;
+const MIN_WIDTH = 320;
+const MAX_WIDTH = 960;
+/** Espace toujours laissé à la page, à gauche du panneau. */
+const PAGE_MARGIN = 240;
+const KEY_STEP = 32;
+const WIDTH_STORAGE_KEY = "gepro:discord:largeur";
+
+const maxWidth = () => Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, window.innerWidth - PAGE_MARGIN));
+const clampWidth = (w: number) => Math.round(Math.min(Math.max(w, MIN_WIDTH), maxWidth()));
+
+function readStoredWidth(): number {
+  try {
+    const stored = Number(localStorage.getItem(WIDTH_STORAGE_KEY));
+    return stored > 0 ? clampWidth(stored) : DEFAULT_WIDTH;
+  } catch {
+    return DEFAULT_WIDTH;
+  }
+}
+
+function storeWidth(width: number) {
+  try {
+    localStorage.setItem(WIDTH_STORAGE_KEY, String(width));
+  } catch {
+    // Stockage indisponible (navigation privée…) : la largeur dure le temps de la session.
+  }
+}
+
 /**
- * Panneau latéral droit du salon Discord : superposé à la page sans l'assombrir (on peut
- * continuer à la consulter), plein écran sur mobile. Reste monté une fois ouvert, pour
- * retrouver messages et position de lecture ; fermé, il est inerte et n'interroge plus Discord.
+ * Panneau latéral droit du salon Discord : superposé à la page sans l'assombrir, plein écran sur
+ * mobile. Sa largeur se règle en tirant son bord gauche (mémorisée dans ce navigateur). Il reste
+ * monté une fois ouvert, pour retrouver messages et position ; fermé, il est inerte et en veille.
  */
 export function DiscordPanel({
   projectId,
@@ -34,14 +58,15 @@ export function DiscordPanel({
   onClose: () => void;
   onSeen: (messageId: string) => void;
 }) {
-  const discord = useDiscordChannel(projectId, open, onSeen);
-  const composerRef = useRef<HTMLTextAreaElement>(null);
-  const ready = discord.state.kind === "ready";
+  const { showInTab } = useTabs();
+  // Monté au premier clic seulement : localStorage est lisible dès le premier rendu.
+  const [width, setWidth] = useState(readStoredWidth);
+  const [resizing, setResizing] = useState(false);
 
   // Échap ferme le panneau, sauf si une fenêtre modale est ouverte par-dessus (elle se ferme d'abord).
   useEffect(() => {
     if (!open) return;
-    function onKeyDown(e: KeyboardEvent) {
+    function onKeyDown(e: globalThis.KeyboardEvent) {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector('[role="dialog"][data-state="open"]')) return;
       onClose();
@@ -50,39 +75,104 @@ export function DiscordPanel({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  // Saisie prête dès l'ouverture.
+  // Fenêtre rétrécie : le panneau laisse toujours de la place à la page.
   useEffect(() => {
-    if (open && ready) composerRef.current?.focus({ preventScroll: true });
-  }, [open, ready]);
+    const onResize = () => setWidth((w) => clampWidth(w));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // Pendant le glissement : curseur de redimensionnement et pas de sélection de texte, sur toute la page.
+  useEffect(() => {
+    if (!resizing) return;
+    const { cursor, userSelect } = document.body.style;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    return () => {
+      document.body.style.cursor = cursor;
+      document.body.style.userSelect = userSelect;
+    };
+  }, [resizing]);
+
+  function onPointerDown(e: PointerEvent<HTMLDivElement>) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setResizing(true);
+  }
+
+  function onPointerMove(e: PointerEvent<HTMLDivElement>) {
+    if (resizing) setWidth(clampWidth(window.innerWidth - e.clientX));
+  }
+
+  function onPointerUp(e: PointerEvent<HTMLDivElement>) {
+    if (!resizing) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    setResizing(false);
+    storeWidth(width);
+  }
+
+  function resizeTo(next: number) {
+    const w = clampWidth(next);
+    setWidth(w);
+    storeWidth(w);
+  }
+
+  function onHandleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    // Poignée à gauche : ← élargit le panneau, → le rétrécit.
+    if (e.key === "ArrowLeft") resizeTo(width + KEY_STEP);
+    else if (e.key === "ArrowRight") resizeTo(width - KEY_STEP);
+    else if (e.key === "Home") resizeTo(MAX_WIDTH);
+    else if (e.key === "End") resizeTo(MIN_WIDTH);
+    else return;
+    e.preventDefault();
+  }
+
+  function openInTab() {
+    showInTab(`/projets/${projectId}/discord`, "end");
+    onClose();
+  }
 
   return (
     <aside
       id={DISCORD_PANEL_ID}
       aria-label={`Discord, salon #${channel.channelName}`}
       inert={!open}
+      style={{ "--discord-panel-width": `${width}px` } as CSSProperties}
       className={cn(
-        "fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-surface shadow-2xl md:w-[380px]",
-        "transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none",
+        "fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-surface shadow-2xl md:w-(--discord-panel-width)",
+        !resizing && "transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none",
         open ? "visible translate-x-0" : "invisible translate-x-full",
       )}
     >
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border pr-2 pl-2">
-        {/*
-          Le panneau recouvre le logo de l'en-tête de la page : on le répète ici pour que « recliquer
-          sur le logo » ferme toujours le panneau.
-        */}
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Discord"
-          aria-expanded="true"
-          aria-controls={DISCORD_PANEL_ID}
-          title="Fermer le panneau Discord"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg hover:bg-surface-2"
-          style={{ color: DISCORD_COLOR }}
-        >
-          <DiscordIcon size={18} />
-        </button>
+      {/* Poignée de redimensionnement (ordinateur) : glisser, flèches, double-clic pour la largeur par défaut. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Redimensionner le panneau Discord"
+        aria-controls={DISCORD_PANEL_ID}
+        aria-valuenow={width}
+        aria-valuemin={MIN_WIDTH}
+        aria-valuemax={MAX_WIDTH}
+        tabIndex={0}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onDoubleClick={() => resizeTo(DEFAULT_WIDTH)}
+        onKeyDown={onHandleKeyDown}
+        title="Tirer pour redimensionner (double-clic : largeur par défaut)"
+        className="group absolute inset-y-0 -left-1.5 z-10 hidden w-3 cursor-col-resize touch-none focus-visible:outline-none md:block"
+      >
+        <span
+          className={cn(
+            "absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 transition-colors group-hover:bg-accent group-focus-visible:bg-accent",
+            resizing && "bg-accent",
+          )}
+        />
+      </div>
+
+      <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border pr-2 pl-4">
         <h2 className="min-w-0 flex-1 truncate text-sm font-semibold">
           <span className="text-muted">#</span>
           {channel.channelName}
@@ -95,82 +185,15 @@ export function DiscordPanel({
         >
           Ouvrir dans Discord <ExternalLink size={12} aria-hidden />
         </a>
+        <Button variant="ghost" size="icon" onClick={openInTab} aria-label="Ouvrir dans un onglet" title="Ouvrir dans un onglet GePro">
+          <SquareArrowOutUpRight size={15} />
+        </Button>
         <Button variant="ghost" size="icon" onClick={onClose} aria-label="Fermer le panneau Discord">
           <X size={16} />
         </Button>
       </header>
 
-      {discord.state.kind === "loading" && <LoadingState />}
-      {discord.state.kind === "error" && <ErrorState state={discord.state} projectId={projectId} onRetry={() => void discord.load()} />}
-      {ready &&
-        (discord.messages.length === 0 && discord.pending.length === 0 ? (
-          <EmptyChannel name={channel.channelName} />
-        ) : (
-          <MessageList
-            messages={discord.messages}
-            pending={discord.pending}
-            hasOlder={discord.hasOlder}
-            loadingOlder={discord.loadingOlder}
-            onLoadOlder={() => void discord.loadOlder()}
-            onRetry={discord.retry}
-            onDiscard={discord.discard}
-          />
-        ))}
-      {ready && <Composer ref={composerRef} channelName={channel.channelName} onSend={discord.send} />}
+      <DiscordConversation projectId={projectId} channel={channel} active={open} onSeen={onSeen} />
     </aside>
-  );
-}
-
-function LoadingState() {
-  const widths = ["w-3/4", "w-1/2", "w-2/3", "w-5/12", "w-3/5", "w-1/3"];
-  return (
-    <div role="status" aria-busy="true" className="flex-1 space-y-5 overflow-hidden px-4 py-4">
-      <span className="sr-only">Chargement des messages…</span>
-      {widths.map((w, i) => (
-        <div key={i} className="flex gap-2.5">
-          <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
-          <div className="min-w-0 flex-1 space-y-1.5">
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className={cn("h-3.5", w)} />
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function EmptyChannel({ name }: { name: string }) {
-  return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-      <MessagesSquare size={28} className="mb-3 text-muted" aria-hidden />
-      <p className="text-sm font-medium">Aucun message dans #{name}</p>
-      <p className="mt-1 text-sm text-muted">Lancez la conversation : votre message sera publié sous votre nom.</p>
-    </div>
-  );
-}
-
-function ErrorState({ state, projectId, onRetry }: { state: Extract<ChannelState, { kind: "error" }>; projectId: string; onRetry: () => void }) {
-  const access = ACCESS_ERRORS.includes(state.code);
-  return (
-    <div role="alert" className="flex flex-1 flex-col items-center justify-center px-6 text-center">
-      <AlertTriangle size={26} className="mb-3 text-warning" aria-hidden />
-      <p className="text-sm font-medium">{access ? "Le bot GePro n'a pas accès au salon" : "Impossible de charger les messages"}</p>
-      <p className="mt-1 text-sm text-muted">{state.message}</p>
-      <div className="mt-4 flex flex-wrap justify-center gap-2">
-        <Button size="sm" onClick={onRetry}>
-          <RotateCw size={14} /> Réessayer
-        </Button>
-        {access && (
-          <>
-            <a href={DISCORD_DOCS_URL} target="_blank" rel="noopener noreferrer" className={buttonClass({ size: "sm", variant: "ghost" })}>
-              Guide de configuration <ExternalLink size={12} aria-hidden />
-            </a>
-            <Link href={`/projets/${projectId}/parametres#discord`} className={buttonClass({ size: "sm", variant: "ghost" })}>
-              <Settings size={14} /> Paramètres
-            </Link>
-          </>
-        )}
-      </div>
-    </div>
   );
 }

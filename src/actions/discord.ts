@@ -13,8 +13,8 @@ import { parseChannelInput } from "@/lib/discord/urls";
 import { isUuid } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
-// Toutes les pages du projet : l'en-tête affiche le bouton Discord.
-const refresh = (projectId: string) => revalidatePath(`/projets/${projectId}`, "layout");
+// Le layout aussi : l'onglet fixe Discord de la barre d'onglets dépend du salon relié.
+const refresh = () => revalidatePath("/", "layout");
 
 async function projectExists(projectId: string): Promise<boolean> {
   if (!isUuid(projectId)) return false;
@@ -35,7 +35,7 @@ export async function linkDiscordChannel(projectId: string, input: string): Prom
 
   try {
     const channel = await linkChannel(projectId, channelId, me.id);
-    refresh(projectId);
+    refresh();
     return ok(channel);
   } catch (e) {
     const code = e instanceof DiscordError ? e.code : "unknown";
@@ -48,6 +48,6 @@ export async function unlinkDiscordChannel(projectId: string): Promise<ActionRes
   await requireUser();
   if (!(await projectExists(projectId))) return fail("Projet introuvable.");
   await unlinkChannel(projectId);
-  refresh(projectId);
+  refresh();
   return ok(undefined);
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { SendHorizontal } from "lucide-react";
-import { forwardRef, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import { forwardRef, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { MESSAGE_MAX_LENGTH } from "@/lib/discord/validation";
 import { cn } from "@/lib/utils";
 
@@ -19,6 +19,8 @@ export const Composer = forwardRef<HTMLTextAreaElement, { channelName: string; o
   forwardedRef,
 ) {
   const [value, setValue] = useState("");
+  // Le panneau et l'onglet Discord peuvent coexister : ids uniques.
+  const hintId = useId();
   const localRef = useRef<HTMLTextAreaElement | null>(null);
   const length = value.length;
   const tooLong = length > MESSAGE_MAX_LENGTH;
@@ -67,7 +69,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, { channelName: string; o
           rows={1}
           placeholder={`Écrire dans #${channelName}`}
           aria-label={`Message pour #${channelName}`}
-          aria-describedby="discord-composer-hint"
+          aria-describedby={hintId}
           aria-invalid={tooLong || undefined}
           className="max-h-[200px] min-h-6 flex-1 resize-none bg-transparent py-0.5 text-sm leading-relaxed placeholder:text-muted focus:outline-none"
         />
@@ -81,7 +83,7 @@ export const Composer = forwardRef<HTMLTextAreaElement, { channelName: string; o
         </button>
       </div>
       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-muted">
-        <span id="discord-composer-hint">Entrée pour envoyer · Maj + Entrée pour aller à la ligne</span>
+        <span id={hintId}>Entrée pour envoyer · Maj + Entrée pour aller à la ligne</span>
         {length > COUNTER_FROM && (
           <span className={cn("tabular-nums", tooLong && "font-semibold text-danger")} aria-live="polite">
             {length} / {MESSAGE_MAX_LENGTH}

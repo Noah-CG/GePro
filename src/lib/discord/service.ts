@@ -43,6 +43,19 @@ export async function getDiscordChannelView(projectId: string): Promise<DiscordC
   return row ?? null;
 }
 
+/** Salon relié à chaque projet (barre d'onglets : l'onglet Discord suit le projet sélectionné). */
+export async function getDiscordChannelViews(): Promise<Record<string, DiscordChannelView>> {
+  const rows = await db
+    .select({
+      projectId: projectDiscord.projectId,
+      guildId: projectDiscord.guildId,
+      channelId: projectDiscord.channelId,
+      channelName: projectDiscord.channelName,
+    })
+    .from(projectDiscord);
+  return Object.fromEntries(rows.map(({ projectId, ...view }) => [projectId, view]));
+}
+
 // Rattachement
 
 /**

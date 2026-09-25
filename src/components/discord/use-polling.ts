@@ -8,9 +8,9 @@ import { useEffect, useRef } from "react";
  * - Jamais deux exécutions en parallèle : le délai court à partir de la fin de la précédente.
  * - `task` peut renvoyer un délai (ms) pour la prochaine exécution (limite de débit, rattrapage).
  * - En pause quand l'onglet est masqué ; reprise immédiate quand il redevient visible.
- * - Première exécution immédiate à l'activation.
+ * - Première exécution immédiate à l'activation, et à chaque changement de `key` (autre projet…).
  */
-export function usePolling(task: () => Promise<number | void>, intervalMs: number, enabled: boolean) {
+export function usePolling(task: () => Promise<number | void>, intervalMs: number, enabled: boolean, key?: string) {
   const taskRef = useRef(task);
   useEffect(() => {
     taskRef.current = task;
@@ -52,5 +52,5 @@ export function usePolling(task: () => Promise<number | void>, intervalMs: numbe
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [enabled, intervalMs]);
+  }, [enabled, intervalMs, key]);
 }

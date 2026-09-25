@@ -18,6 +18,7 @@ import {
 import { DiscordError } from "./errors";
 import {
   diagnoseAccessError,
+  getDiscordChannelViews,
   getLastRead,
   getProjectDiscord,
   getStatus,
@@ -84,6 +85,11 @@ describe("rattachement d'un salon", () => {
     const rows = await db.select().from(projectDiscord);
     expect(rows).toHaveLength(1);
     expect(rows[0].channelName).toBe("projet-x");
+  });
+
+  it("liste le salon de chaque projet, sans aucun secret", async () => {
+    await linked();
+    expect(await getDiscordChannelViews()).toEqual({ [projectId]: { guildId: GUILD_ID, channelId: CHANNEL_ID, channelName: "général" } });
   });
 
   it("refuse un salon qui n'est pas textuel", async () => {

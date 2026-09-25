@@ -4,6 +4,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { requireUser } from "@/lib/auth";
 import { resolveSelectedProjectId, SELECTED_PROJECT_COOKIE } from "@/lib/current-project";
 import { todayISO } from "@/lib/dates";
+import { isDiscordConfigured } from "@/lib/discord/client";
+import { getDiscordChannelViews } from "@/lib/discord/service";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { COLLAPSED_SECTIONS_COOKIE, parseCollapsedSections, SIDEBAR_COLLAPSED_COOKIE } from "@/lib/navigation-prefs";
 import { getConnectionView, getFileLinks, getProjectOptions, getProjectsWithStats, getResourceLinks, getRunningSince, getTeam } from "@/lib/queries";
@@ -12,7 +14,8 @@ import { getConnectionView, getFileLinks, getProjectOptions, getProjectsWithStat
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireUser();
   const today = todayISO();
-  const [team, projects, projectStats, resources, files, googleConnection, runningSince, cookieStore] = await Promise.all([
+  const discordConfigured = isDiscordConfigured();
+  const [team, projects, projectStats, resources, files, googleConnection, runningSince, discordChannels, cookieStore] = await Promise.all([
     getTeam(),
     getProjectOptions(),
     getProjectsWithStats({ today }),
@@ -20,6 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     getFileLinks(),
     getConnectionView(me.id, "google"),
     getRunningSince(me.id),
+    discordConfigured ? getDiscordChannelViews() : {},
     cookies(),
   ]);
 
@@ -43,7 +47,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AppProvider me={me} team={team} projects={projects} today={today} selectedProjectId={selectedProjectId}>
-      <AppShell sidebar={sidebar} prefs={prefs}>
+      <AppShell sidebar={sidebar} prefs={prefs} discord={{ configured: discordConfigured, channels: discordChannels }}>
         {children}
       </AppShell>
     </AppProvider>

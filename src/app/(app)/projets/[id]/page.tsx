@@ -1,15 +1,12 @@
 import { Archive } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { DiscordButton } from "@/components/discord/discord-button";
 import { ProjectDates, ProjectMenu } from "@/components/projects/project-card";
 import { NewTaskButton } from "@/components/tasks/new-task-button";
 import { TaskBoard } from "@/components/tasks/task-board";
 import { ProgressBar } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { todayISO } from "@/lib/dates";
-import { isDiscordConfigured } from "@/lib/discord/client";
-import { getDiscordChannelView } from "@/lib/discord/service";
 import { getProjectsWithStats, getTasks } from "@/lib/queries";
 import { percent } from "@/lib/utils";
 
@@ -33,7 +30,7 @@ export default async function ProjectPage({ params }: Props) {
   const { id } = await params;
   const project = await loadProject(id);
   if (!project) notFound();
-  const [tasks, discordChannel] = await Promise.all([getTasks({ projectId: id }), getDiscordChannelView(id)]);
+  const tasks = await getTasks({ projectId: id });
   const pct = percent(project.done, project.total);
   const today = todayISO();
 
@@ -65,10 +62,7 @@ export default async function ProjectPage({ params }: Props) {
             <ProjectDates project={project} today={today} />
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <DiscordButton projectId={project.id} channel={discordChannel} configured={isDiscordConfigured()} />
-          <NewTaskButton />
-        </div>
+        <NewTaskButton />
       </div>
 
       <TaskBoard tasks={tasks} projectId={project.id} />
