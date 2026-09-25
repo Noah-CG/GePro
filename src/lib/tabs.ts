@@ -17,7 +17,21 @@ export type Tab = {
 
 export type TabsState = { tabs: Tab[]; activeId: string };
 
-export type TabKind = "dashboard" | "tasks" | "projects" | "project" | "documents" | "document" | "pdf" | "settings" | "members" | "calendar" | "time" | "screens" | "page";
+export type TabKind =
+  | "dashboard"
+  | "tasks"
+  | "projects"
+  | "project"
+  | "documents"
+  | "document"
+  | "pdf"
+  | "settings"
+  | "discord"
+  | "members"
+  | "calendar"
+  | "time"
+  | "screens"
+  | "page";
 
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const KINDS: [RegExp, TabKind][] = [
@@ -29,6 +43,7 @@ const KINDS: [RegExp, TabKind][] = [
   [new RegExp(`^/projets/${UUID}/documents/${UUID}$`, "i"), "document"],
   [new RegExp(`^/projets/${UUID}/documents/pdf/${UUID}$`, "i"), "pdf"],
   [new RegExp(`^/projets/${UUID}/parametres$`, "i"), "settings"],
+  [new RegExp(`^/projets/${UUID}/discord$`, "i"), "discord"],
   [/^\/membres$/, "members"],
   [/^\/calendrier$/, "calendar"],
   [/^\/temps$/, "time"],
@@ -49,6 +64,7 @@ const DEFAULT_TITLES: Record<TabKind, string> = {
   document: "Document",
   pdf: "PDF",
   settings: "Paramètres",
+  discord: "Discord",
   members: "Membres",
   calendar: "Calendrier",
   time: "Temps de travail",
@@ -124,11 +140,20 @@ export function setActiveTitle(state: TabsState, title: string): TabsState {
   return active.title === title ? state : updateTab(state, active.id, { title });
 }
 
-/** Ouvre `url` dans un nouvel onglet, juste après l'onglet actif. Null si la limite est atteinte. */
-export function openTab(state: TabsState, url: string, id: string, currentScrollY: number): TabsState | null {
+/** Place d'un nouvel onglet : juste après l'onglet actif (par défaut), ou après tous les autres. */
+export type TabPosition = "afterActive" | "end";
+
+/** Ouvre `url` dans un nouvel onglet. Null si la limite est atteinte. */
+export function openTab(
+  state: TabsState,
+  url: string,
+  id: string,
+  currentScrollY: number,
+  position: TabPosition = "afterActive",
+): TabsState | null {
   if (state.tabs.length >= MAX_TABS) return null;
   const saved = updateTab(state, state.activeId, { scrollY: currentScrollY });
-  const index = saved.tabs.findIndex((t) => t.id === state.activeId);
+  const index = position === "end" ? saved.tabs.length - 1 : saved.tabs.findIndex((t) => t.id === state.activeId);
   const tabs = [...saved.tabs.slice(0, index + 1), newTab(id, url), ...saved.tabs.slice(index + 1)];
   return { tabs, activeId: id };
 }
@@ -137,10 +162,16 @@ export function openTab(state: TabsState, url: string, id: string, currentScroll
  * Affiche `url` sans quitter l'onglet actuel : l'onglet qui l'affiche déjà est réactivé, sinon
  * un nouvel onglet s'ouvre. Null si un nouvel onglet est nécessaire mais la limite atteinte.
  */
-export function showInTab(state: TabsState, url: string, id: string, currentScrollY: number): TabsState | null {
+export function showInTab(
+  state: TabsState,
+  url: string,
+  id: string,
+  currentScrollY: number,
+  position: TabPosition = "afterActive",
+): TabsState | null {
   const existing = state.tabs.find((t) => t.url === url);
   if (existing) return activateTab(state, existing.id, currentScrollY);
-  return openTab(state, url, id, currentScrollY);
+  return openTab(state, url, id, currentScrollY, position);
 }
 
 /** Active un onglet en mémorisant la position de défilement de celui qu'on quitte. */

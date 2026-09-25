@@ -35,6 +35,7 @@ describe("type de page et titre", () => {
     [`/projets/${P}/documents/${D}`, "document"],
     [`/projets/${P}/documents/pdf/${D}`, "pdf"],
     [`/projets/${P}/parametres`, "settings"],
+    [`/projets/${P}/discord`, "discord"],
     ["/membres", "members"],
     ["/calendrier?vue=semaine&date=2026-09-24", "calendar"],
     ["/temps?membre=abc", "time"],
@@ -102,6 +103,12 @@ describe("ouvrir, activer, fermer", () => {
     expect(s.tabs.map((t) => t.id)).toEqual(["t0", "neuf", "t1"]);
     expect(s.activeId).toBe("neuf");
     expect(s.tabs[0].scrollY).toBe(420);
+  });
+
+  it("ouvre après tous les autres onglets sur demande", () => {
+    const s = showInTab(state("/", "/taches", "/membres"), `/projets/${P}/discord`, "neuf", 0, "end")!;
+    expect(s.tabs.map((t) => t.id)).toEqual(["t0", "t1", "t2", "neuf"]);
+    expect(s.activeId).toBe("neuf");
   });
 
   it(`refuse au-delà de ${MAX_TABS} onglets`, () => {
