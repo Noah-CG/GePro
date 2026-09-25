@@ -1,6 +1,6 @@
 # Intégration Discord
 
-Chaque projet GePro peut être relié à **un salon Discord**. Un onglet fixe, réduit au logo Discord, se trouve tout à gauche de la barre d'onglets : il ouvre un panneau latéral pour lire le salon et y écrire sans quitter GePro, ou le salon peut s'ouvrir dans un onglet GePro à part entière. Une pastille rouge sur le logo signale les nouveaux messages.
+Chaque projet GePro peut être relié à **un salon Discord**. Un onglet fixe, réduit au logo Discord, se trouve tout à droite de la barre d'onglets : il ouvre un panneau latéral pour lire le salon et y écrire sans quitter GePro, ou le salon peut s'ouvrir dans un onglet GePro à part entière. Une pastille rouge sur le logo signale les nouveaux messages.
 
 L'intégration est facultative. Tant que `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY` ne sont pas tous deux renseignés, elle est désactivée et l'onglet Discord n'apparaît pas.
 
@@ -82,7 +82,7 @@ Si le webhook est supprimé côté Discord, GePro le recrée automatiquement au 
 
 ## Utilisation
 
-- **Onglet fixe Discord**, tout à gauche de la barre d'onglets, sur toutes les pages : il concerne le projet sélectionné et ne se ferme pas. Sans salon relié, il mène aux paramètres du projet. Sinon, il ouvre ou ferme le panneau, qui se ferme aussi avec **✕** ou **Échap**.
+- **Onglet fixe Discord**, tout à droite de la barre d'onglets, sur toutes les pages, juste au-dessus du panneau qu'il ouvre : il concerne le projet sélectionné et ne se ferme pas. Sans salon relié, il mène aux paramètres du projet. Sinon, il ouvre ou ferme le panneau, qui se ferme aussi avec **✕** ou **Échap**.
 - **Largeur du panneau** : tirez son bord gauche (ou, la poignée ayant le focus, ← pour élargir et → pour rétrécir ; double-clic pour revenir à 380 px). La largeur est mémorisée dans ce navigateur.
 - **Ouvrir dans un onglet** (icône à côté de « Ouvrir dans Discord ») : le salon s'affiche en pleine page dans un onglet GePro, placé après les autres (ou réactivé s'il est déjà ouvert). Son adresse est `/projets/<id>/discord`.
 - **Pastille rouge** : le dernier message du salon est plus récent que le dernier lu (comparaison en BigInt). Le salon est marqué comme lu à l'ouverture du panneau, puis à chaque nouveau message affiché. Vos propres messages ne déclenchent pas la pastille.

@@ -10,7 +10,8 @@ import { useDiscord } from "./discord-provider";
 const tabShape = "relative flex h-8 w-10 shrink-0 items-center justify-center rounded-t-lg border border-b-0 transition-colors";
 
 /**
- * Onglet fixe Discord, tout à gauche de la barre d'onglets : il ne se ferme pas et suit le projet
+ * Onglet fixe Discord, tout à droite de la barre d'onglets, juste au-dessus du panneau qu'il ouvre :
+ * il ne se ferme pas et suit le projet
  * sélectionné. Sans salon relié, il mène aux paramètres ; sinon il ouvre / ferme le panneau, et une
  * pastille rouge signale les messages non lus. Masqué si l'intégration n'est pas configurée.
  */
@@ -18,11 +19,12 @@ export function DiscordTab() {
   const { configured, projectId, channel, open, unread, onDiscordPage, toggle, triggerRef } = useDiscord();
   if (!configured || !projectId) return null;
 
-  const separator = <span aria-hidden className="mx-1 mb-2 h-4 w-px shrink-0 self-end bg-border" />;
+  const separator = <span aria-hidden className="mr-1 mb-2 h-4 w-px shrink-0 self-end bg-border" />;
 
   if (!channel) {
     return (
       <>
+        {separator}
         <Link
           href={`/projets/${projectId}/parametres#discord`}
           aria-label="Discord"
@@ -31,7 +33,6 @@ export function DiscordTab() {
         >
           <DiscordIcon size={16} />
         </Link>
-        {separator}
       </>
     );
   }
@@ -39,6 +40,7 @@ export function DiscordTab() {
   const active = open || onDiscordPage;
   return (
     <>
+      {separator}
       <button
         ref={triggerRef}
         type="button"
@@ -64,7 +66,6 @@ export function DiscordTab() {
           )}
         </span>
       </button>
-      {separator}
     </>
   );
 }

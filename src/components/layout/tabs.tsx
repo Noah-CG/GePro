@@ -287,13 +287,14 @@ function TabIcon({ url }: { url: string }) {
 
 /**
  * Barre d'onglets : ←/→ (et Début/Fin) déplacent le focus, Entrée ouvre, Suppr ferme.
- * `pinned` : onglet fixe affiché tout à gauche, hors de la liste (Discord).
+ * `pinned` : onglet fixe affiché tout à droite, hors de la liste (Discord).
  */
 export function TabBar({ pinned }: { pinned?: ReactNode }) {
+  const pinnedSlot = pinned && <div className="ml-auto flex shrink-0 items-end pl-1">{pinned}</div>;
   const { state, activate, close, openInNewTab } = useTabs();
   const bar = "sticky top-14 z-20 flex h-10 shrink-0 items-end gap-1 border-b border-border bg-bg px-2 md:top-0 md:px-4";
   // Avant le montage : barre de même hauteur, avec l'onglet fixe seulement (pas de décalage du contenu).
-  if (!state) return <div className={bar}>{pinned}</div>;
+  if (!state) return <div className={bar}>{pinnedSlot}</div>;
 
   const canClose = state.tabs.length > 1;
 
@@ -316,7 +317,6 @@ export function TabBar({ pinned }: { pinned?: ReactNode }) {
 
   return (
     <div className={bar}>
-      {pinned}
       <div
         role="tablist"
         aria-label="Onglets"
@@ -375,6 +375,7 @@ export function TabBar({ pinned }: { pinned?: ReactNode }) {
       >
         <Plus size={15} />
       </button>
+      {pinnedSlot}
     </div>
   );
 }

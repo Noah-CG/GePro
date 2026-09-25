@@ -41,8 +41,8 @@ function storeWidth(width: number) {
 }
 
 /**
- * Panneau latéral droit du salon Discord : superposé à la page sans l'assombrir, plein écran sur
- * mobile. Sa largeur se règle en tirant son bord gauche (mémorisée dans ce navigateur). Il reste
+ * Panneau latéral droit du salon Discord : superposé à la page sans l'assombrir, sous la barre
+ * d'onglets (l'onglet fixe Discord, juste au-dessus, reste cliquable), plein écran sur mobile. Sa largeur se règle en tirant son bord gauche (mémorisée dans ce navigateur). Il reste
  * monté une fois ouvert, pour retrouver messages et position ; fermé, il est inerte et en veille.
  */
 export function DiscordPanel({
@@ -140,7 +140,7 @@ export function DiscordPanel({
       inert={!open}
       style={{ "--discord-panel-width": `${width}px` } as CSSProperties}
       className={cn(
-        "fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-surface shadow-2xl md:w-(--discord-panel-width)",
+        "fixed inset-y-0 right-0 z-40 flex w-full flex-col border-l border-border bg-surface shadow-2xl md:top-10 md:w-(--discord-panel-width)",
         !resizing && "transition-[translate,visibility] duration-200 ease-out motion-reduce:transition-none",
         open ? "visible translate-x-0" : "invisible translate-x-full",
       )}

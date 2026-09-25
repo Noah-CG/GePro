@@ -125,7 +125,7 @@ Chaque document est lu et synchronisé avec le compte Google de la personne qui 
 
 ## Intégration Discord
 
-Chaque projet peut être relié à un salon Discord : l'onglet fixe au logo Discord, tout à gauche de la barre d'onglets, ouvre un panneau latéral redimensionnable pour lire le salon et y écrire (ou l'affiche dans un onglet GePro), et une pastille rouge signale les nouveaux messages. Un bot lit le salon (jeton côté serveur uniquement) ; les messages sont publiés par un webhook « GePro » sous le nom du membre, sans notifier personne. Pas de WebSocket (Vercel est serverless) : le panneau interroge l'API REST de Discord via les routes de GePro, avec un cache de 3 s partagé.
+Chaque projet peut être relié à un salon Discord : l'onglet fixe au logo Discord, tout à droite de la barre d'onglets, ouvre un panneau latéral redimensionnable pour lire le salon et y écrire (ou l'affiche dans un onglet GePro), et une pastille rouge signale les nouveaux messages. Un bot lit le salon (jeton côté serveur uniquement) ; les messages sont publiés par un webhook « GePro » sous le nom du membre, sans notifier personne. Pas de WebSocket (Vercel est serverless) : le panneau interroge l'API REST de Discord via les routes de GePro, avec un cache de 3 s partagé.
 
 Facultative : il faut `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY`. Création du bot, **Message Content Intent**, permissions, URL d'invitation, variables et rattachement d'un salon : **[docs/discord.md](docs/discord.md)**.
 
@@ -271,7 +271,7 @@ Au-dessus du contenu, une barre d'onglets permet de garder plusieurs pages ouver
 - **Ouvrir** : `Ctrl/⌘ + clic` ou clic du milieu sur n'importe quel lien interne, **Ouvrir dans un nouvel onglet** dans le menu ⋯ d'un projet, ou le **+** de la barre d'onglets. Un vrai onglet du navigateur reste accessible par clic droit → *Ouvrir le lien dans un nouvel onglet*.
 - **Documents** : un Google Doc ou un PDF s'ouvre toujours dans un onglet à lui, sans quitter la page en cours ; s'il est déjà ouvert, son onglet est simplement réactivé.
 - **Fermer** : la croix, le clic du milieu, ou `Suppr` sur l'onglet sélectionné. Le dernier onglet ne se ferme pas.
-- **Discord** : tout à gauche, un onglet fixe réduit au logo Discord ouvre le salon du projet sélectionné dans un panneau latéral ; depuis le panneau, **Ouvrir dans un onglet** l'affiche dans un onglet GePro, après les autres (voir [docs/discord.md](docs/discord.md)).
+- **Discord** : tout à droite, un onglet fixe réduit au logo Discord ouvre le salon du projet sélectionné dans un panneau latéral ; depuis le panneau, **Ouvrir dans un onglet** l'affiche dans un onglet GePro, après les autres (voir [docs/discord.md](docs/discord.md)).
 - 10 onglets au maximum. Ils sont mémorisés dans ce navigateur (`localStorage`, par utilisateur) et retrouvés au prochain passage.
 
 ## Architecture
