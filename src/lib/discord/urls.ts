@@ -39,3 +39,6 @@ export function parseChannelInput(input: string): string | null {
   const id = match ? match[1] : value;
   return isSnowflake(id) ? id : null;
 }
+
+/** Guide de configuration (bot, permissions, invitation), affiché quand le bot n'a pas accès au salon. */
+export const DISCORD_DOCS_URL = "https://github.com/Noah-CG/GePro/blob/main/docs/discord.md";
