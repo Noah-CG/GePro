@@ -23,6 +23,10 @@ export const taskInput = z
     startDate: isoDate.default(null),
     dueDate: isoDate.default(null),
     assigneeIds: z.array(z.uuid()).max(20).default([]),
+    /** Tâche parente (sous-tâche) : nulle ou "" pour une tâche de premier niveau. */
+    parentId: z.uuid().nullable().or(z.literal("").transform(() => null)).default(null),
+    /** Tâches à terminer avant celle-ci. */
+    dependsOnIds: z.array(z.uuid()).max(50, "50 dépendances au maximum").default([]),
   })
   .refine(startBeforeDue, { message: START_AFTER_DUE, path: ["startDate"] });
 export type TaskInput = z.input<typeof taskInput>;

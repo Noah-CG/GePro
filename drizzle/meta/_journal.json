@@ -43,6 +43,13 @@
       "when": 1790285025146,
       "tag": "0005_gantt_date_debut",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790322307123,
+      "tag": "0006_task_hierarchy",
+      "breakpoints": true
     }
   ]
 }

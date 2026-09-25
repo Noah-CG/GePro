@@ -5,7 +5,19 @@
 import "server-only";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { externalConnections, externalResources, projectEvents, projectFiles, projects, taskAssignees, tasks, users, workSessions } from "@/db/schema";
+import { alias } from "drizzle-orm/pg-core";
+import {
+  externalConnections,
+  externalResources,
+  projectEvents,
+  projectFiles,
+  projects,
+  taskAssignees,
+  taskDependencies,
+  tasks,
+  users,
+  workSessions,
+} from "@/db/schema";
 import type { IntegrationProvider, TaskPriority, TaskStatus } from "@/db/schema";
 import { addDays, APP_TIMEZONE, endOfWeekISO, formatDateTime } from "@/lib/dates";
 import { fileTitle, formatFileSize } from "@/lib/files";
@@ -44,6 +56,15 @@ export type TaskView = {
   dueDate: string | null;
   position: number;
   assigneeIds: string[];
+  /** Tâche parente, si c'est une sous-tâche. */
+  parentId: string | null;
+  parentTitle: string | null;
+  /** Avancement des sous-tâches (total 0 = aucune). */
+  subtasks: { total: number; done: number };
+  /** Tâches à terminer avant celle-ci. */
+  dependsOnIds: string[];
+  /** Prérequis pas encore terminés : la tâche est bloquée tant que la liste n'est pas vide. */
+  blockers: { id: string; title: string }[];
 };
 
 /** Événement du calendrier, tel qu'affiché. */
@@ -200,6 +221,7 @@ export async function getProjectsWithStats(
  */
 export async function getTasks(opts: { projectId?: string; assigneeId?: string } = {}): Promise<TaskView[]> {
   const scope = opts.projectId ? eq(tasks.projectId, opts.projectId) : isNull(projects.archivedAt);
+  const parent = alias(tasks, "parent");
   const rows = await db
     .select({
       id: tasks.id,
@@ -213,9 +235,12 @@ export async function getTasks(opts: { projectId?: string; assigneeId?: string }
       startDate: tasks.startDate,
       dueDate: tasks.dueDate,
       position: tasks.position,
+      parentId: tasks.parentId,
+      parentTitle: parent.title,
     })
     .from(tasks)
     .innerJoin(projects, eq(projects.id, tasks.projectId))
+    .leftJoin(parent, eq(parent.id, tasks.parentId))
     .where(
       opts.assigneeId
         ? and(
@@ -230,21 +255,62 @@ export async function getTasks(opts: { projectId?: string; assigneeId?: string }
     .orderBy(asc(tasks.position), desc(tasks.createdAt));
 
   if (rows.length === 0) return [];
-
-  const links = await db
-    .select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId })
-    .from(taskAssignees)
-    .where(
-      inArray(
-        taskAssignees.taskId,
-        rows.map((r) => r.id),
-      ),
-    );
+  const ids = rows.map((r) => r.id);
+  const [links, linksOf] = await Promise.all([
+    db
+      .select({ taskId: taskAssignees.taskId, userId: taskAssignees.userId })
+      .from(taskAssignees)
+      .where(inArray(taskAssignees.taskId, ids)),
+    getTaskLinks(ids),
+  ]);
 
   const byTask = new Map<string, string[]>();
   for (const l of links) byTask.set(l.taskId, [...(byTask.get(l.taskId) ?? []), l.userId]);
 
-  return rows.map((r) => ({ ...r, assigneeIds: byTask.get(r.id) ?? [] }));
+  return rows.map((r) => ({ ...r, assigneeIds: byTask.get(r.id) ?? [], ...linksOf(r.id) }));
+}
+
+type TaskLinks = Pick<TaskView, "subtasks" | "dependsOnIds" | "blockers">;
+
+/** Sous-tâches et dépendances de plusieurs tâches, en deux requêtes : renvoie une fonction de lecture par id. */
+async function getTaskLinks(ids: string[]): Promise<(id: string) => TaskLinks> {
+  if (ids.length === 0) return () => ({ subtasks: { total: 0, done: 0 }, dependsOnIds: [], blockers: [] });
+  const prerequisite = alias(tasks, "prerequisite");
+  const [subtaskCounts, dependencies] = await Promise.all([
+    db
+      .select({
+        parentId: tasks.parentId,
+        total: sql<number>`count(*)::int`,
+        done: sql<number>`count(*) filter (where ${tasks.status} = 'done')::int`,
+      })
+      .from(tasks)
+      .where(inArray(tasks.parentId, ids))
+      .groupBy(tasks.parentId),
+    db
+      .select({
+        taskId: taskDependencies.taskId,
+        id: prerequisite.id,
+        title: prerequisite.title,
+        status: prerequisite.status,
+      })
+      .from(taskDependencies)
+      .innerJoin(prerequisite, eq(prerequisite.id, taskDependencies.dependsOnId))
+      .where(inArray(taskDependencies.taskId, ids))
+      .orderBy(asc(prerequisite.title)),
+  ]);
+
+  const subtasksByParent = new Map(subtaskCounts.map((c) => [c.parentId, { total: c.total, done: c.done }]));
+  const depsByTask = new Map<string, typeof dependencies>();
+  for (const d of dependencies) depsByTask.set(d.taskId, [...(depsByTask.get(d.taskId) ?? []), d]);
+
+  return (id) => {
+    const deps = depsByTask.get(id) ?? [];
+    return {
+      subtasks: subtasksByParent.get(id) ?? { total: 0, done: 0 },
+      dependsOnIds: deps.map((d) => d.id),
+      blockers: deps.filter((d) => d.status !== "done").map(({ id, title }) => ({ id, title })),
+    };
+  };
 }
 
 export async function getConnectionView(userId: string, provider: IntegrationProvider): Promise<ConnectionView | null> {
@@ -495,6 +561,8 @@ type CalendarRow = {
   project_id: string | null;
   project_name: string | null;
   project_color: string | null;
+  parent_id: string | null;
+  parent_title: string | null;
   assignee_ids: unknown;
   color: string | null;
   created_by: string | null;
@@ -525,6 +593,7 @@ export async function getCalendarItems({
     select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date, t.start_date::text as start_date,
            t.status::text as status, t.priority::text as priority, t.position,
            t.project_id, p.name as project_name, p.color as project_color,
+           t.parent_id, (select pt.title from ${tasks} pt where pt.id = t.parent_id) as parent_title,
            coalesce((select json_agg(a.user_id) from ${taskAssignees} a where a.task_id = t.id), '[]'::json) as assignee_ids,
            null::text as color, null::uuid as created_by
       from ${tasks} t
@@ -535,6 +604,7 @@ export async function getCalendarItems({
     select 'event', e.id, e.title, e.description, e.event_date::text, null,
            null, null, null,
            e.project_id, p.name, p.color,
+           null, null,
            null, e.color, e.created_by
       from ${projectEvents} e
       left join ${projects} p on p.id = e.project_id
@@ -543,6 +613,7 @@ export async function getCalendarItems({
     order by date, kind, title
   `);
 
+  const linksOf = await getTaskLinks(rows.filter((r) => r.kind === "task").map((r) => r.id));
   const result: CalendarItems = { tasks: [], events: [] };
   for (const r of rows) {
     if (r.kind === "task") {
@@ -559,6 +630,9 @@ export async function getCalendarItems({
         dueDate: r.date,
         position: Number(r.position),
         assigneeIds: jsonArray(r.assignee_ids),
+        parentId: r.parent_id,
+        parentTitle: r.parent_title,
+        ...linksOf(r.id),
       });
     } else {
       result.events.push({

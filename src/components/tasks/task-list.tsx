@@ -10,6 +10,7 @@ import { DueBadge, PriorityBadge, StatusBadge } from "@/components/ui/badges";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { sortTasks, type Sort, type SortKey } from "./filters";
+import { ParentLabel, TaskLinkBadges } from "./task-links";
 
 const NEXT_STATUS: Record<TaskStatus, TaskStatus> = { todo: "in_progress", in_progress: "done", done: "todo" };
 
@@ -113,7 +114,11 @@ export function TaskList({ tasks, showProject = true }: { tasks: TaskView[]; sho
               <div className="flex min-w-0 items-center gap-3">
                 <DoneCheckbox task={t} onToggle={() => setStatus(t, done ? "todo" : "done")} />
                 <div className="min-w-0">
-                  <p className={cn("truncate text-sm", done && "text-muted line-through")}>{t.title}</p>
+                  <ParentLabel task={t} />
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <p className={cn("truncate text-sm", done && "text-muted line-through")}>{t.title}</p>
+                    <TaskLinkBadges task={t} />
+                  </div>
                   {/* Infos condensées sur mobile */}
                   <div className="mt-0.5 flex items-center gap-2.5 sm:hidden">
                     <PriorityBadge priority={t.priority} compact />

@@ -5,6 +5,7 @@ import { AvatarStack } from "@/components/ui/avatar";
 import { DueBadge, PriorityBadge } from "@/components/ui/badges";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
+import { ParentLabel, TaskLinkBadges } from "./task-links";
 
 /** Carte de tâche du Kanban (présentation pure, le glisser-déposer est géré par le parent). */
 export function TaskCard({ task, showProject, dragging }: { task: TaskView; showProject?: boolean; dragging?: boolean }) {
@@ -25,10 +26,12 @@ export function TaskCard({ task, showProject, dragging }: { task: TaskView; show
           <span className="truncate">{task.projectName}</span>
         </div>
       )}
+      <ParentLabel task={task} className="mb-1" />
       <p className={cn("text-sm leading-snug font-medium", done && "text-muted line-through")}>{task.title}</p>
-      <div className="mt-2.5 flex items-center gap-3">
+      <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1">
         <PriorityBadge priority={task.priority} compact />
         <DueBadge dueDate={task.dueDate} today={today} done={done} />
+        <TaskLinkBadges task={task} />
         <span className="ml-auto">
           <AvatarStack users={assignees} />
         </span>

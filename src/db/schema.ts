@@ -3,12 +3,16 @@
  *
  *   users ──< sessions
  *   users ──< task_assignees >── tasks >── projects
+ *   tasks ──< tasks (sous-tâches, via parent_id)
+ *   tasks ──< task_dependencies >── tasks
  *   users ──< external_connections ──< external_resources >── projects
  *   projects ──< project_events (projet facultatif : sans projet, événement d'équipe)
  *   projects ──< project_files ──< project_file_chunks (PDF importés, découpés en morceaux)
  *   users ──< work_sessions >── projects
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
+ * - Une tâche peut avoir des sous-tâches (un seul niveau) et dépendre d'autres tâches du même
+ *   projet ; ces règles (même projet, pas de cycle) sont vérifiées dans actions/tasks.ts.
  * - Un projet archivé (archived_at non nul) disparaît des vues courantes mais reste consultable.
  * - Les dates "métier" (échéance, début/fin de projet) sont des DATE sans heure, manipulées
  *   comme chaînes "YYYY-MM-DD" pour éviter tout décalage de fuseau horaire.
@@ -16,8 +20,10 @@
  *   ressources externes (Google Docs, puis dépôts, issues…) sont rattachées à un projet.
  */
 import { relations, sql } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   customType,
+  check,
   date,
   doublePrecision,
   index,
@@ -107,6 +113,8 @@ export const tasks = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
+    /** Tâche parente (nul = tâche de premier niveau). Supprimer la parente supprime ses sous-tâches. */
+    parentId: uuid("parent_id").references((): AnyPgColumn => tasks.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
     status: taskStatus("status").notNull().default("todo"),
@@ -127,6 +135,25 @@ export const tasks = pgTable(
   (t) => [
     index("tasks_project_status_idx").on(t.projectId, t.status, t.position),
     index("tasks_due_date_idx").on(t.dueDate),
+    index("tasks_parent_idx").on(t.parentId),
+  ],
+);
+
+/** Dépendances : `task_id` ne peut raisonnablement avancer qu'une fois `depends_on_id` terminée. */
+export const taskDependencies = pgTable(
+  "task_dependencies",
+  {
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    dependsOnId: uuid("depends_on_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.taskId, t.dependsOnId] }),
+    index("task_dependencies_depends_on_idx").on(t.dependsOnId),
+    check("task_dependencies_not_self", sql`${t.taskId} <> ${t.dependsOnId}`),
   ],
 );
 
@@ -330,6 +357,8 @@ export const projectEventsRelations = relations(projectEvents, ({ one }) => ({
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   project: one(projects, { fields: [tasks.projectId], references: [projects.id] }),
+  parent: one(tasks, { fields: [tasks.parentId], references: [tasks.id], relationName: "subtasks" }),
+  subtasks: many(tasks, { relationName: "subtasks" }),
   assignees: many(taskAssignees),
 }));
 

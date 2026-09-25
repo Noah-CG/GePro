@@ -3,6 +3,7 @@
 import { useApp } from "@/components/layout/app-provider";
 import { AvatarStack } from "@/components/ui/avatar";
 import { DueBadge, PriorityBadge } from "@/components/ui/badges";
+import { TaskLinkBadges } from "@/components/tasks/task-links";
 import { DoneCheckbox, useOptimisticStatus } from "@/components/tasks/task-list";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ export function DashboardTaskList({ tasks, empty }: { tasks: TaskView[]; empty: 
                 <span className="truncate">{t.projectName}</span>
               </p>
             </div>
+            <TaskLinkBadges task={t} />
             <PriorityBadge priority={t.priority} compact />
             <span className="w-24 text-right">
               <DueBadge dueDate={t.dueDate} today={today} done={done} />

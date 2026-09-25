@@ -23,6 +23,11 @@ const task = (id: string, dueDate: string, status: TaskView["status"] = "todo"):
   priority: "medium",
   startDate: null,
   dueDate,
+  parentId: null,
+  parentTitle: null,
+  subtasks: { total: 0, done: 0 },
+  dependsOnIds: [],
+  blockers: [],
   position: 0,
   assigneeIds: [],
 });
