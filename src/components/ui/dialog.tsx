@@ -14,6 +14,7 @@ export function Dialog({
   title,
   description,
   children,
+  footer,
   className,
 }: {
   open: boolean;
@@ -21,6 +22,8 @@ export function Dialog({
   title: string;
   description?: string;
   children: ReactNode;
+  /** Barre du bas (boutons), hors de la zone qui défile : toujours visible, jamais recouverte. */
+  footer?: ReactNode;
   className?: string;
 }) {
   return (
@@ -31,7 +34,8 @@ export function Dialog({
           className={cn(
             "fixed z-50 flex max-h-[92dvh] flex-col border border-border bg-surface shadow-2xl focus:outline-none",
             "inset-x-0 bottom-0 rounded-t-2xl",
-            "sm:inset-auto sm:top-[12vh] sm:left-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:rounded-2xl",
+            // En haut : 8vh + 84vh laisse toujours voir le bas de la fenêtre (et ses boutons).
+            "sm:inset-auto sm:top-[8vh] sm:max-h-[84dvh] sm:left-1/2 sm:w-full sm:max-w-lg sm:-translate-x-1/2 sm:rounded-2xl",
             className,
           )}
         >
@@ -48,7 +52,8 @@ export function Dialog({
               <X size={18} />
             </RadixDialog.Close>
           </div>
-          <div className="overflow-y-auto px-5 pt-4 pb-5">{children}</div>
+          <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-4 pb-5">{children}</div>
+          {footer && <div className="shrink-0 border-t border-border px-5 py-4">{footer}</div>}
         </RadixDialog.Content>
       </RadixDialog.Portal>
     </RadixDialog.Root>

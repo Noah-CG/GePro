@@ -13,7 +13,6 @@ import { Field, Input, Segmented, Textarea } from "@/components/ui/input";
 import { Kbd } from "@/components/ui/misc";
 import { SimpleSelect } from "@/components/ui/select";
 import { PRIORITIES, STATUSES } from "@/lib/constants";
-import { addDays, endOfWeekISO } from "@/lib/dates";
 import { googleCalendarUrl } from "@/lib/google-calendar";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -22,6 +21,8 @@ import { DependencyPicker } from "./task-links";
 
 /** Valeur du sélecteur de tâche parente pour « aucune » (Radix Select refuse la chaîne vide). */
 const NO_PARENT = "aucune";
+
+const FORM_ID = "formulaire-tache";
 
 export type TaskDraft = {
   projectId: string;
@@ -49,7 +50,7 @@ export function TaskDialog({
   task?: TaskView;
   defaults?: Partial<TaskDraft>;
 }) {
-  const { projects, today, toast, newTask } = useApp();
+  const { projects, toast, newTask } = useApp();
   const activeProjects = projects.filter((p) => !p.archived || p.id === task?.projectId);
 
   const [draft, setDraft] = useState<TaskDraft>(() => ({
@@ -87,8 +88,6 @@ export function TaskDialog({
     };
   }, [open, draft.projectId]);
 
-  // Parente et prérequis sont propres à un projet : changer de projet les efface.
-  const changeProject = (projectId: string) => setDraft((d) => ({ ...d, projectId, parentId: "", dependsOnIds: [] }));
 
   const others = projectTasks.filter((t) => t.id !== task?.id);
   const subtasks = task ? projectTasks.filter((t) => t.parentId === task.id) : [];
@@ -131,26 +130,57 @@ export function TaskDialog({
     });
   }
 
-  // Raccourcis de date en un clic.
-  const quickDates = [
-    { label: "Aujourd'hui", value: today },
-    { label: "Demain", value: addDays(today, 1) },
-    { label: "Fin de semaine", value: endOfWeekISO(today) === today ? addDays(today, 7) : endOfWeekISO(today) },
-  ];
+  const projectName = projects.find((p) => p.id === draft.projectId)?.name;
 
   // Reprend les valeurs affichées dans la fenêtre, même pas encore enregistrées.
   const calendarUrl = googleCalendarUrl({
     ...draft,
-    projectName: projects.find((p) => p.id === draft.projectId)?.name,
+    projectName,
     link: task && typeof window !== "undefined" ? `${window.location.origin}/projets/${task.projectId}?tache=${task.id}` : undefined,
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={task ? "Modifier la tâche" : "Nouvelle tâche"}>
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={task ? "Modifier la tâche" : "Nouvelle tâche"}
+      // Pas de choix du projet : la tâche appartient au projet dans lequel on travaille.
+      description={projectName ? `Projet ${projectName}` : undefined}
+      footer={
+        activeProjects.length > 0 && (
+          <div className="flex items-center justify-between gap-2">
+            {task ? (
+              <Button variant={confirmDelete ? "danger" : "ghost"} size="sm" onClick={remove} disabled={pending} loading={deleting}>
+                <Trash2 size={14} />
+                {!confirmDelete
+                  ? "Supprimer"
+                  : subtasks.length
+                    ? `Supprimer avec ${subtasks.length > 1 ? `ses ${subtasks.length} sous-tâches` : "sa sous-tâche"}`
+                    : "Confirmer la suppression"}
+              </Button>
+            ) : (
+              <span className="hidden items-center gap-1 text-xs text-muted sm:flex">
+                <Kbd>Ctrl</Kbd>+<Kbd>Entrée</Kbd> pour enregistrer
+              </span>
+            )}
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                Annuler
+              </Button>
+              {/* Hors du formulaire (barre du bas de la fenêtre) : relié par son id. */}
+              <Button type="submit" form={FORM_ID} variant="primary" disabled={pending || !draft.title.trim()} loading={saving}>
+                {task ? "Enregistrer" : "Créer la tâche"}
+              </Button>
+            </div>
+          </div>
+        )
+      }
+    >
       {activeProjects.length === 0 ? (
         <p className="text-sm text-muted">Créez d'abord un projet pour pouvoir y ajouter des tâches.</p>
       ) : (
         <form
+          id={FORM_ID}
           onSubmit={submit}
           onKeyDown={(e) => {
             // Ctrl/Cmd + Entrée enregistre depuis n'importe quel champ.
@@ -172,17 +202,10 @@ export function TaskDialog({
             value={draft.description}
             onChange={(e) => set("description", e.target.value)}
             aria-label="Description"
-            className="min-h-20"
+            rows={2}
+            // `!` : l'emporte sur la hauteur minimale par défaut du champ.
+            className="min-h-14!"
           />
-
-          <Field label="Projet" htmlFor="task-project">
-            <SimpleSelect
-              id="task-project"
-              value={draft.projectId}
-              onValueChange={changeProject}
-              options={activeProjects.map((p) => ({ value: p.id, label: p.name, dot: p.color }))}
-            />
-          </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Début" htmlFor="task-start">
@@ -192,32 +215,24 @@ export function TaskDialog({
               <DatePicker id="task-due" value={draft.dueDate} onChange={(v) => set("dueDate", v)} placeholder="Sans échéance" />
             </Field>
           </div>
-          <div className="-mt-2 flex flex-wrap gap-1.5 sm:justify-end">
-            {calendarUrl && (
+          <div className="-mt-2 flex justify-center">
+            {calendarUrl ? (
               <a
                 href={calendarUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 title="Ouvre Google Agenda avec l'événement pré-rempli (dates, description, lien vers la tâche)"
-                className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted hover:border-accent hover:text-accent sm:mr-auto"
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
               >
                 <CalendarPlus size={12} /> Ajouter à Google Agenda
               </a>
-            )}
-            {quickDates.map((d) => (
-              <button
-                key={d.label}
-                type="button"
-                onClick={() => set("dueDate", d.value)}
-                className="rounded-full border border-border px-2.5 py-0.5 text-xs text-muted hover:border-accent hover:text-accent"
+            ) : (
+              <span
+                title="Choisissez une date de début ou une échéance pour l'ajouter à Google Agenda"
+                className="inline-flex cursor-not-allowed items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted opacity-50"
               >
-                {d.label}
-              </button>
-            ))}
-            {draft.dueDate && (
-              <button type="button" onClick={() => set("dueDate", "")} className="px-1.5 text-xs text-muted hover:text-text">
-                Effacer
-              </button>
+                <CalendarPlus size={12} /> Ajouter à Google Agenda
+              </span>
             )}
           </div>
 
@@ -272,7 +287,7 @@ export function TaskDialog({
             </p>
           )}
 
-          {task && !task.parentId && (
+          {!draft.parentId && (
             <Field label={`Sous-tâches${subtasks.length ? ` (${subtasks.filter((t) => t.status === "done").length}/${subtasks.length})` : ""}`}>
               <ul className="space-y-0.5">
                 {subtasks.map((sub) => (
@@ -288,42 +303,22 @@ export function TaskDialog({
                   </li>
                 ))}
               </ul>
+              {/* À la création, la tâche n'existe pas encore : même bouton, désactivé. */}
               <button
                 type="button"
-                onClick={() => newTask({ projectId: task.projectId, parentId: task.id, assigneeIds: task.assigneeIds })}
-                className="mt-1 inline-flex h-7 items-center gap-1 rounded-full border border-dashed border-border px-2.5 text-xs text-muted hover:border-accent hover:text-accent"
+                disabled={!task}
+                title={task ? undefined : "Disponible une fois la tâche créée"}
+                onClick={() => task && newTask({ projectId: task.projectId, parentId: task.id, assigneeIds: task.assigneeIds })}
+                className="mt-1 inline-flex h-7 items-center gap-1 rounded-full border border-dashed border-border px-2.5 text-xs text-muted hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border disabled:hover:text-muted"
               >
                 <Plus size={12} /> Ajouter une sous-tâche
               </button>
+              {!task && <p className="mt-1 text-xs text-muted">Vous pourrez ajouter des sous-tâches une fois la tâche créée.</p>}
             </Field>
           )}
 
           {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
-          <div className="flex items-center justify-between gap-2 border-t border-border pt-4">
-            {task ? (
-              <Button variant={confirmDelete ? "danger" : "ghost"} size="sm" onClick={remove} disabled={pending} loading={deleting}>
-                <Trash2 size={14} />
-                {!confirmDelete
-                  ? "Supprimer"
-                  : subtasks.length
-                    ? `Supprimer avec ${subtasks.length > 1 ? `ses ${subtasks.length} sous-tâches` : "sa sous-tâche"}`
-                    : "Confirmer la suppression"}
-              </Button>
-            ) : (
-              <span className="hidden items-center gap-1 text-xs text-muted sm:flex">
-                <Kbd>Ctrl</Kbd>+<Kbd>Entrée</Kbd> pour enregistrer
-              </span>
-            )}
-            <div className="flex gap-2">
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>
-                Annuler
-              </Button>
-              <Button type="submit" variant="primary" disabled={pending || !draft.title.trim()} loading={saving}>
-                {task ? "Enregistrer" : "Créer la tâche"}
-              </Button>
-            </div>
-          </div>
         </form>
       )}
     </Dialog>
