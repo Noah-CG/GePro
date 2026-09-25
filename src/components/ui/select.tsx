@@ -14,15 +14,18 @@ export const Select = SelectPrimitive.Root;
 export const SelectGroup = SelectPrimitive.Group;
 export const SelectValue = SelectPrimitive.Value;
 
-export function SelectTrigger({ className, children, size = "md", ...props }: ComponentProps<typeof SelectPrimitive.Trigger> & { size?: "sm" | "md" }) {
+/** xs : barres d'outils denses (filtres des tâches). */
+type SelectSize = "xs" | "sm" | "md";
+
+export function SelectTrigger({ className, children, size = "md", ...props }: ComponentProps<typeof SelectPrimitive.Trigger> & { size?: SelectSize }) {
   return (
     <SelectPrimitive.Trigger
       className={cn(
         // Largeur choisie par l'appelant (pleine largeur par défaut dans SimpleSelect).
-        "flex items-center justify-between gap-2 rounded-lg border border-border bg-surface text-left text-sm whitespace-nowrap",
+        "flex items-center justify-between gap-2 rounded-lg border border-border bg-surface text-left whitespace-nowrap",
         "focus:border-accent focus:ring-2 focus:ring-ring/40 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
         "data-[placeholder]:text-muted [&>span]:min-w-0 [&>span]:truncate",
-        size === "sm" ? "h-8 px-2.5" : "h-9 px-3",
+        size === "xs" ? "h-7 gap-1.5 px-2 text-xs" : size === "sm" ? "h-8 px-2.5 text-sm" : "h-9 px-3 text-sm",
         className,
       )}
       {...props}
@@ -111,7 +114,7 @@ export function SimpleSelect<T extends string>({
   value: T;
   onValueChange: (value: T) => void;
   options: SelectOption<T>[];
-  size?: "sm" | "md";
+  size?: SelectSize;
   className?: string;
   id?: string;
   placeholder?: string;

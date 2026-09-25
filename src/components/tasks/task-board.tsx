@@ -58,9 +58,13 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <FilterBar filters={filters} onChange={setFilters} showProject={!projectId} showStatus={view !== "kanban"} />
-        <div className="flex rounded-lg border border-border bg-surface p-0.5" role="tablist" aria-label="Vue">
+      {/* Dès sm, les filtres passent à la ligne dans leur zone : le sélecteur de vue reste en haut
+          à droite, même quand le filtre « Statut » (Liste et Gantt) allonge la barre. */}
+      <div className="flex flex-wrap items-start justify-between gap-3 sm:flex-nowrap">
+        <div className="min-w-0 flex-1">
+          <FilterBar filters={filters} onChange={setFilters} showProject={!projectId} showStatus={view !== "kanban"} />
+        </div>
+        <div className="flex shrink-0 rounded-lg border border-border bg-surface p-0.5" role="tablist" aria-label="Vue">
           {(
             [
               { v: "kanban", label: "Kanban", icon: Columns3 },
@@ -72,13 +76,16 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
               key={v}
               role="tab"
               aria-selected={view === v}
+              aria-label={label}
+              title={label}
               onClick={() => setView(v)}
               className={cn(
-                "flex h-7 items-center gap-1.5 rounded-md px-2.5 text-sm",
+                "flex h-6 items-center gap-1.5 rounded-md px-2 text-xs",
                 view === v ? "bg-surface-2 font-medium" : "text-muted hover:text-text",
               )}
             >
-              <Icon size={14} /> {label}
+              {/* Libellé masqué quand la place manque, pour garder filtres et vues sur une ligne. */}
+              <Icon size={14} /> <span className="hidden xl:inline">{label}</span>
             </button>
           ))}
         </div>

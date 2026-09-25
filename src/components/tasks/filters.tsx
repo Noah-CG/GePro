@@ -148,9 +148,9 @@ export function FilterBar({
   }, [filters.q]);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full sm:w-56">
-        <Search size={14} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
+    <div className="flex flex-wrap items-center gap-1.5">
+      <div className="relative w-full sm:w-40">
+        <Search size={13} className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-muted" />
         <Input
           value={text}
           onChange={(e) => {
@@ -160,7 +160,7 @@ export function FilterBar({
           }}
           placeholder="Filtrer…"
           aria-label="Filtrer par texte"
-          className="h-8 pr-2 pl-8"
+          className="h-7 pr-2 pl-7 text-xs"
         />
       </div>
 
@@ -168,7 +168,7 @@ export function FilterBar({
       <button
         onClick={() => set("assignee", filters.assignee === "me" ? "all" : "me")}
         className={cn(
-          "h-8 rounded-lg border px-3 text-sm",
+          "h-7 rounded-lg border px-2.5 text-xs",
           filters.assignee === "me" ? "border-accent bg-accent-soft font-medium text-accent" : "border-border bg-surface hover:bg-surface-2",
         )}
       >
@@ -178,20 +178,20 @@ export function FilterBar({
       <button
         onClick={() => setExpanded((e) => !e)}
         aria-expanded={expanded}
-        className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-surface px-3 text-sm sm:hidden"
+        className="flex h-7 items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 text-xs sm:hidden"
       >
         <SlidersHorizontal size={14} /> Filtres{advanced > 0 && <span className="text-accent">({advanced})</span>}
       </button>
 
-      <div className={cn("w-full flex-wrap items-center gap-2 sm:flex sm:w-auto", expanded ? "flex" : "hidden")}>
+      <div className={cn("w-full flex-wrap items-center gap-1.5 sm:flex sm:w-auto", expanded ? "flex" : "hidden")}>
         <SimpleSelect
           aria-label="Responsable"
-          size="sm"
+          size="xs"
           className="w-auto"
           value={filters.assignee}
           onValueChange={(v) => set("assignee", v)}
           options={[
-            { value: "all", label: "Tous les responsables" },
+            { value: "all", label: "Responsables" },
             { value: "me", label: "Moi" },
             { value: "none", label: "Non assignées" },
             ...team.map((m, i) => ({ value: m.id, label: m.name, dot: m.color, separatorBefore: i === 0 })),
@@ -200,24 +200,24 @@ export function FilterBar({
 
         <SimpleSelect
           aria-label="Priorité"
-          size="sm"
+          size="xs"
           className="w-auto"
           value={filters.priority}
           onValueChange={(v) => set("priority", v)}
           options={[
-            { value: "all" as const, label: "Toutes priorités" },
+            { value: "all" as const, label: "Priorités" },
             ...PRIORITIES.map((p) => ({ value: p.value, label: p.label, dot: PRIORITY_DOT[p.value] })),
           ]}
         />
 
         <SimpleSelect
           aria-label="Échéance"
-          size="sm"
+          size="xs"
           className="w-auto"
           value={filters.due}
           onValueChange={(v) => set("due", v)}
           options={[
-            { value: "all", label: "Toutes échéances" },
+            { value: "all", label: "Échéances" },
             { value: "overdue", label: "En retard" },
             { value: "today", label: "Aujourd'hui" },
             { value: "week", label: "Cette semaine" },
@@ -228,23 +228,23 @@ export function FilterBar({
         {showStatus && (
           <SimpleSelect
             aria-label="Statut"
-            size="sm"
+            size="xs"
             className="w-auto"
             value={filters.status}
             onValueChange={(v) => set("status", v)}
-            options={[{ value: "all" as const, label: "Tous statuts" }, ...STATUSES.map((st) => ({ value: st.value, label: st.label }))]}
+            options={[{ value: "all" as const, label: "Statuts" }, ...STATUSES.map((st) => ({ value: st.value, label: st.label }))]}
           />
         )}
 
         {showProject && (
           <SimpleSelect
             aria-label="Projet"
-            size="sm"
+            size="xs"
             className="w-auto"
             value={filters.project}
             onValueChange={(v) => set("project", v)}
             options={[
-              { value: "all", label: "Tous les projets" },
+              { value: "all", label: "Projets" },
               ...projects.filter((p) => !p.archived).map((p) => ({ value: p.id, label: p.name, dot: p.color })),
             ]}
           />
@@ -252,8 +252,8 @@ export function FilterBar({
       </div>
 
       {active && (
-        <button onClick={() => onChange(DEFAULT_FILTERS)} className="flex h-8 items-center gap-1 px-2 text-sm text-muted hover:text-text">
-          <X size={14} /> Réinitialiser
+        <button onClick={() => onChange(DEFAULT_FILTERS)} className="flex h-7 items-center gap-1 px-1.5 text-xs text-muted hover:text-text">
+          <X size={13} /> Réinitialiser
         </button>
       )}
     </div>
