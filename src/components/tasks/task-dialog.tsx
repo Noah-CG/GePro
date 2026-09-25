@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, Plus, Trash2 } from "lucide-react";
+import { CalendarPlus, Lock, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState, useTransition, type FormEvent } from "react";
 import { createTask, deleteTask, getTaskOptions, moveTask, updateTask, type TaskOption } from "@/actions/tasks";
 import type { TaskPriority, TaskStatus } from "@/db/schema";
@@ -14,6 +14,7 @@ import { Kbd } from "@/components/ui/misc";
 import { SimpleSelect } from "@/components/ui/select";
 import { PRIORITIES, STATUSES } from "@/lib/constants";
 import { addDays, endOfWeekISO } from "@/lib/dates";
+import { googleCalendarUrl } from "@/lib/google-calendar";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { AssigneePicker } from "./assignee-picker";
@@ -137,6 +138,13 @@ export function TaskDialog({
     { label: "Fin de semaine", value: endOfWeekISO(today) === today ? addDays(today, 7) : endOfWeekISO(today) },
   ];
 
+  // Reprend les valeurs affichées dans la fenêtre, même pas encore enregistrées.
+  const calendarUrl = googleCalendarUrl({
+    ...draft,
+    projectName: projects.find((p) => p.id === draft.projectId)?.name,
+    link: task && typeof window !== "undefined" ? `${window.location.origin}/projets/${task.projectId}?tache=${task.id}` : undefined,
+  });
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={task ? "Modifier la tâche" : "Nouvelle tâche"}>
       {activeProjects.length === 0 ? (
@@ -185,6 +193,17 @@ export function TaskDialog({
             </Field>
           </div>
           <div className="-mt-2 flex flex-wrap gap-1.5 sm:justify-end">
+            {calendarUrl && (
+              <a
+                href={calendarUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Ouvre Google Agenda avec l'événement pré-rempli (dates, description, lien vers la tâche)"
+                className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-0.5 text-xs text-muted hover:border-accent hover:text-accent sm:mr-auto"
+              >
+                <CalendarPlus size={12} /> Ajouter à Google Agenda
+              </a>
+            )}
             {quickDates.map((d) => (
               <button
                 key={d.label}
