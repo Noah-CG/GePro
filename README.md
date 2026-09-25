@@ -123,6 +123,12 @@ Chaque document est lu et synchronisé avec le compte Google de la personne qui 
 | Il faut se reconnecter chaque semaine | Application Externe en mode Test : les autorisations expirent au bout de 7 jours (voir plus haut). |
 | « Non configurée sur ce serveur » dans les paramètres du projet | Une des quatre variables manque, ou `INTEGRATIONS_ENCRYPTION_KEY` ne fait pas 32 octets. Redémarrez le serveur après toute modification. |
 
+## Intégration Discord
+
+Chaque projet peut être relié à un salon Discord : le logo Discord de l'en-tête du projet ouvre un panneau latéral pour lire le salon et y écrire, et une pastille rouge signale les nouveaux messages. Un bot lit le salon (jeton côté serveur uniquement) ; les messages sont publiés par un webhook « GePro » sous le nom du membre, sans notifier personne. Pas de WebSocket (Vercel est serverless) : le panneau interroge l'API REST de Discord via les routes de GePro, avec un cache de 3 s partagé.
+
+Facultative : il faut `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY`. Création du bot, **Message Content Intent**, permissions, URL d'invitation, variables et rattachement d'un salon : **[docs/discord.md](docs/discord.md)**.
+
 ## Documents PDF
 
 Chaque projet peut aussi recevoir des **PDF importés depuis l'ordinateur**, lisibles par toute l'équipe dans GePro, en lecture seule. Aucune configuration n'est nécessaire.
@@ -143,7 +149,7 @@ Fonctionnement :
 | Commande | Rôle |
 |---|---|
 | `npm run dev` / `build` / `start` | Développement, build, production |
-| `npm run lint` | Vérification TypeScript |
+| `npm run lint` / `npm run typecheck` | Vérification TypeScript |
 | `npm test` / `npm run test:watch` | Tests (Vitest) |
 | `npm run db:generate` | Génère une migration SQL après modification de `src/db/schema.ts` |
 | `npm run db:migrate` | Applique les migrations (Neon ou base locale) |
@@ -172,6 +178,7 @@ users ──< task_assignees >── tasks >── projects
 users ──< external_connections ──< external_resources >── projects
 projects ──< project_events
 projects ──< project_files ──< project_file_chunks
+projects ──o project_discord            users ──< discord_read_state
 ```
 
 | Table | Champs principaux | Notes |
@@ -185,6 +192,8 @@ projects ──< project_files ──< project_file_chunks
 | **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un admin |
 | **project_file_chunks** | `file_id`, `position` (clé composite), `data` (`bytea`) | Contenu des fichiers, en morceaux de 960 Ko |
 | **external_connections** | `user_id`, `provider` (`google`/`github`), `account_email`, `access_token_enc`, `refresh_token_enc`, `access_token_expires_at`, `status` (`active`/`needs_reauth`) | Un compte externe par utilisateur et par fournisseur ; jetons chiffrés |
+| **project_discord** | `project_id` (clé), `guild_id`, `channel_id`, `channel_name`, `webhook_id`, `webhook_token_enc`, `linked_by` | Salon Discord relié au projet (un au plus). Jeton du webhook chiffré |
+| **discord_read_state** | `user_id`, `channel_id` (clé composite), `last_read_message_id` | Dernier message lu par membre et par salon. Identifiants Discord (snowflakes) en texte, comparés en `numeric` / `BigInt` |
 | **external_resources** | `project_id`, `provider`, `kind` (`google_doc`…), `external_id`, `title`, `url`, `external_updated_at`, `metadata` (JSON), `connection_id`, `attached_by`, `synced_at`, `sync_error` | Ressources externes rattachées à un projet (copie en cache), uniques par (`project_id`, `provider`, `external_id`) |
 
 Règles :
@@ -277,7 +286,7 @@ src/
 │       ├── temps/            Temps de travail : chrono, journal de bord corrigeable, temps de l'équipe
 │       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres
 │       └── membres/          Gestion des comptes (admin)
-│   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur)
+│   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur), projects/[id]/discord/ (salon Discord : status, messages, read)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/
 │   ├── ui/                   Briques génériques : Button, Dialog, Input, Select, DatePicker, Calendar, Badges, Avatar…
@@ -288,11 +297,13 @@ src/
 │   ├── calendar/             Grilles Mois / Semaine, liste mobile, tâches et événements, fenêtre d'événement
 │   ├── files/                Lecteur PDF (pdf.js), import par morceaux, liste des PDF du projet
 │   ├── time/                 Chrono, journal de bord, fenêtre d'ajout / correction d'une période
+│   ├── discord/              Bouton et pastille, panneau du salon, fil de messages, saisie, interrogation périodique
 │   └── dashboard/, members/
 ├── db/                       Schéma Drizzle + client (Neon ou PGlite)
 ├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, fichiers (découpage, plages d'octets), constantes, chiffrement, onglets, préférences de navigation
-│   └── integrations/         Client Google (OAuth + Drive, export Markdown), jetons, état OAuth, lecture des documents, erreurs
-├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google
+│   ├── integrations/         Client Google (OAuth + Drive, export Markdown), jetons, état OAuth, lecture des documents, erreurs
+│   └── discord/              Client REST Discord, rattachement et webhook, normalisation, markdown Discord, snowflakes
+├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google, faux Discord
 └── proxy.ts                  Redirection rapide vers /login sans cookie
 scripts/                      migrate, seed, create-user
 drizzle/                      Migrations SQL générées
@@ -306,11 +317,11 @@ Principes :
 - **Recherche** côté serveur (`ILIKE` sur titres et descriptions, y compris les projets archivés).
 - **Thème** clair, sombre ou automatique (`next-themes`), construit sur des variables CSS.
 - **Champs de formulaire** : aucun contrôle natif du navigateur pour les listes et les dates. `components/ui/select.tsx` (Radix Select) et `components/ui/date-picker.tsx` (calendrier `react-day-picker` en français, semaine du lundi) reprennent les composants de shadcn/ui, recopiés et adaptés aux couleurs de l'app plutôt qu'installés via `npx shadcn init`, qui remplacerait le thème existant.
-- **Intégrations** : appels REST directs à Google, sans SDK. Chaque erreur est traduite en code (`lib/integrations/errors.ts`), et le code en message lisible au moment de l'affichage.
+- **Intégrations** : appels REST directs à Google et Discord, sans SDK. Chaque erreur est traduite en code (`lib/integrations/errors.ts`), et le code en message lisible au moment de l'affichage.
 
 ## Tests
 
 `npm test` lance Vitest. Les tests sont placés à côté du code testé (`*.test.ts`, `*.test.tsx` pour les composants rendus avec `react-dom/server`) :
 - la base de données est une instance PGlite **en mémoire**, créée avec les vraies migrations (`src/test/db.ts`) ;
-- Google est simulé en remplaçant `fetch` (`src/test/google.ts`) : aucun appel réseau, aucun identifiant réel ;
+- Google et Discord sont simulés en remplaçant `fetch` (`src/test/google.ts`, `src/test/discord.ts`) : aucun appel réseau, aucun identifiant réel ;
 - les modules propres à Next.js (`next/headers`, `next/cache`, `next/navigation`) et la session (`@/lib/auth`) sont remplacés par `vi.mock` dans les tests qui en ont besoin.
