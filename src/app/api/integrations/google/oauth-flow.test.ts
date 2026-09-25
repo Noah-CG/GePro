@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { externalConnections } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { decryptSecret } from "@/lib/crypto";
+import { saveGoogleConnection } from "@/lib/integrations/connections";
+import { CALENDAR_SCOPE, GOOGLE_SCOPE } from "@/lib/integrations/google";
 import { insertProject, insertUser, resetDb } from "@/test/db";
 import { json, mockGoogle, tokenResponse } from "@/test/google";
 import { GET as callback } from "./callback/route";
@@ -129,6 +131,41 @@ describe("connexion OAuth Google", () => {
     expect(location).toBe(`${settingsUrl()}?google=error&reason=missing_scope`);
     expect(calls.find((c) => c.url.pathname === "/revoke")?.body?.get("token")).toBe("refresh-1");
     expect(await db.select().from(externalConnections)).toHaveLength(0);
+  });
+
+  it("agenda : demande le seul droit Agenda (plus l'identité) et revient sur le calendrier", async () => {
+    const url = new URL(await redirectOf(() => connect(request("/api/integrations/google/connect?agenda=1"))));
+    expect(url.searchParams.get("scope")).toBe(`${CALENDAR_SCOPE} openid email`);
+    // Autorisation incrémentale : un accès Drive déjà accordé est conservé.
+    expect(url.searchParams.get("include_granted_scopes")).toBe("true");
+
+    const calls = mockGoogle({ token: () => tokenResponse({ scope: `${CALENDAR_SCOPE} openid https://www.googleapis.com/auth/userinfo.email` }) });
+    const location = await redirectOf(() =>
+      callback(request(`/api/integrations/google/callback?state=${url.searchParams.get("state")}&code=c`)),
+    );
+    expect(location).toBe("/calendrier?google=connected");
+    // Sans Drive, l'identité du compte vient d'OpenID.
+    expect(calls.some((c) => c.url.pathname === "/v1/userinfo")).toBe(true);
+    const [row] = await db.select().from(externalConnections);
+    expect(row).toMatchObject({ accountId: "sub-1", accountEmail: "camille@gmail.com" });
+    expect(row.scopes).toContain(CALENDAR_SCOPE);
+  });
+
+  it("agenda refusé : message dédié, sans révoquer l'accès Drive déjà accordé", async () => {
+    await saveGoogleConnection(
+      userId,
+      { accessToken: "a", refreshToken: "r", expiresAt: new Date(Date.now() + 3_600_000), scope: GOOGLE_SCOPE },
+      { id: "perm-1", email: "camille@gmail.com" },
+    );
+    const url = new URL(await redirectOf(() => connect(request("/api/integrations/google/connect?agenda=1"))));
+    const calls = mockGoogle({ token: () => tokenResponse({ scope: GOOGLE_SCOPE, refresh_token: "refresh-2" }) });
+    const location = await redirectOf(() =>
+      callback(request(`/api/integrations/google/callback?state=${url.searchParams.get("state")}&code=c`)),
+    );
+    expect(location).toBe("/calendrier?google=error&reason=missing_calendar_scope");
+    expect(calls.some((c) => c.url.pathname === "/revoke")).toBe(false);
+    const [row] = await db.select().from(externalConnections);
+    expect(decryptSecret(row.refreshTokenEnc!)).toBe("r");
   });
 
   it("code expiré ou déjà utilisé : invite à recommencer", async () => {

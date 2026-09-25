@@ -13,7 +13,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import type { IntegrationProvider } from "@/db/schema";
 
-type OAuthFlow = { state: string; verifier: string; returnTo: string };
+type OAuthFlow = {
+  state: string;
+  verifier: string;
+  returnTo: string;
+  /** Droits indispensables à ce parcours : refus de l'un d'eux = connexion refusée. */
+  requiredScopes: string[];
+};
 
 const cookieName = (provider: IntegrationProvider) => `gepro_oauth_${provider}`;
 const cookiePath = (provider: IntegrationProvider) => `/api/integrations/${provider}`;
@@ -22,11 +28,12 @@ const cookiePath = (provider: IntegrationProvider) => `/api/integrations/${provi
 export const isSafeReturnPath = (path: string) => path.startsWith("/") && !path.startsWith("//") && !path.includes("\\");
 
 /** Démarre une connexion : mémorise state + verifier et renvoie ce qu'il faut transmettre au fournisseur. */
-export async function startOAuthFlow(provider: IntegrationProvider, returnTo: string) {
+export async function startOAuthFlow(provider: IntegrationProvider, returnTo: string, requiredScopes: string[]) {
   const flow: OAuthFlow = {
     state: randomBytes(32).toString("base64url"),
     verifier: randomBytes(32).toString("base64url"),
     returnTo: isSafeReturnPath(returnTo) ? returnTo : "/",
+    requiredScopes,
   };
   (await cookies()).set(cookieName(provider), JSON.stringify(flow), {
     httpOnly: true,
@@ -49,7 +56,8 @@ export async function takeOAuthFlow(provider: IntegrationProvider): Promise<OAut
     const flow = JSON.parse(raw) as Partial<OAuthFlow>;
     if (typeof flow.state !== "string" || typeof flow.verifier !== "string" || typeof flow.returnTo !== "string") return null;
     if (!isSafeReturnPath(flow.returnTo)) return null;
-    return flow as OAuthFlow;
+    const requiredScopes = Array.isArray(flow.requiredScopes) ? flow.requiredScopes.filter((s) => typeof s === "string") : [];
+    return { state: flow.state, verifier: flow.verifier, returnTo: flow.returnTo, requiredScopes };
   } catch {
     return null;
   }

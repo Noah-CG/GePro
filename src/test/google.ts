@@ -16,6 +16,7 @@ type GoogleRoutes = {
   token: Route;
   revoke: Route;
   about: Route;
+  userinfo: Route;
   search: Route;
   file: (id: string, call: FetchCall) => Response | Promise<Response>;
   export: (id: string, call: FetchCall) => Response | Promise<Response>;
@@ -66,6 +67,7 @@ export function mockGoogle(routes: Partial<GoogleRoutes> = {}): FetchCall[] {
     token: () => tokenResponse(),
     revoke: () => new Response(null, { status: 200 }),
     about: () => json({ user: { permissionId: "perm-1", emailAddress: "camille@gmail.com" } }),
+    userinfo: () => json({ sub: "sub-1", email: "camille@gmail.com" }),
     search: () => json({ files: [driveFile()] }),
     file: (id) => json(driveFile({ id })),
     export: () => new Response(DOC_MARKDOWN, { headers: { "content-type": "text/markdown" } }),
@@ -76,6 +78,7 @@ export function mockGoogle(routes: Partial<GoogleRoutes> = {}): FetchCall[] {
     if (hostname === "oauth2.googleapis.com" && pathname === "/token") return r.token(call);
     if (hostname === "oauth2.googleapis.com" && pathname === "/revoke") return r.revoke(call);
     if (pathname === "/drive/v3/about") return r.about(call);
+    if (hostname === "openidconnect.googleapis.com" && pathname === "/v1/userinfo") return r.userinfo(call);
     if (pathname === "/drive/v3/files") return r.search(call);
     const fileId = pathname.match(/^\/drive\/v3\/files\/([^/]+)$/)?.[1];
     if (fileId) return r.file(decodeURIComponent(fileId), call);
