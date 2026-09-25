@@ -59,7 +59,7 @@ Les libellés ci-dessous sont ceux de la console en français ; l'équivalent an
      - **Interne** (*Internal*) si toute l'équipe utilise des comptes Google Workspace de votre organisation. **C'est le choix recommandé** : pas de vérification Google, et les autorisations n'expirent pas au bout de 7 jours.
      - **Externe** (*External*) dans les autres cas (comptes @gmail.com, par exemple). L'application reste en mode **Test** : ajoutez chaque membre dans **Audience → Utilisateurs test** (*Test users*, 100 au maximum).
    - **Coordonnées** (*Contact information*) : votre adresse e-mail. Acceptez les conditions, puis **Créer**.
-4. **Scope** : **Accès aux données** (*Data Access*) → **Ajouter ou supprimer des champs d'application** (*Add or remove scopes*). Cochez `https://www.googleapis.com/auth/drive.readonly` (*Google Drive API, afficher et télécharger tous vos fichiers Google Drive*), puis **Mettre à jour** et **Enregistrer**. C'est le seul scope demandé par GePro.
+4. **Scope** : **Accès aux données** (*Data Access*) → **Ajouter ou supprimer des champs d'application** (*Add or remove scopes*). Cochez `https://www.googleapis.com/auth/drive.readonly` (*Google Drive API, afficher et télécharger tous vos fichiers Google Drive*), puis **Mettre à jour** et **Enregistrer**. Pour la [synchronisation avec Google Agenda](#synchronisation-avec-google-agenda), ajoutez aussi `calendar.app.created`, `openid` et `email`.
 5. **Client OAuth** : **Clients** → **Créer un client** (*Create client*) :
    - Type d'application : **Application Web** (*Web application*). Nom : `GePro`.
    - **URI de redirection autorisés** (*Authorized redirect URIs*) : ajoutez une URI par environnement, en respectant exactement la valeur de `APP_URL` :
@@ -129,6 +129,31 @@ Chaque projet peut être relié à un salon Discord : l'onglet fixe au logo Disc
 
 Facultative : il faut `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY`. Création du bot, **Message Content Intent**, permissions, URL d'invitation, variables et rattachement d'un salon : **[docs/discord.md](docs/discord.md)**.
 
+## Synchronisation avec Google Agenda
+
+Chaque membre peut retrouver l'agenda de GePro dans son **Google Agenda** : bouton **Google Agenda** de la page **Calendrier**.
+
+- GePro crée dans le compte Google du membre un agenda nommé **« GePro »** et le remplit : **événements d'équipe** (toujours), **événements des projets cochés**, et **échéances des tâches** non terminées de ces projets (*Mes tâches*, *Toutes* ou *Aucune*). Projets archivés exclus.
+- **Sens unique** : GePro est la référence. Une modification faite dans Google Agenda sur un événement GePro sera écrasée ; les événements ajoutés à la main dans l'agenda « GePro » sont laissés tels quels.
+- Les événements sont « toute la journée », sans rappel, et n'occupent pas l'agenda (disponibilité inchangée). La couleur est celle de l'événement, ou du projet pour une échéance (au plus proche des 11 couleurs de Google). Chacun renvoie vers GePro.
+- **Au fil de l'eau** : chaque création, modification ou suppression d'un événement ou d'une tâche est envoyée quelques secondes après, pour chaque membre concerné (`after()` : l'action n'est pas ralentie).
+- **Synchronisation complète** : à l'activation, à chaque changement de réglages, avec **Synchroniser maintenant**, et automatiquement à l'ouverture du calendrier si la dernière date de plus de 6 h. Elle rattrape tout écart : modification manquée, projet renommé ou archivé, agenda « GePro » supprimé dans Google (il est recréé).
+- **Arrêter la synchronisation** conserve l'agenda dans Google, sauf si vous cochez « Supprimer aussi l'agenda GePro ».
+
+### Configuration
+
+En plus de la configuration Google Docs ci-dessus (même client OAuth, mêmes variables) :
+
+1. **Activer l'API Google Calendar** : **API et services → Bibliothèque**, recherchez **Google Calendar API**, puis **Activer**.
+2. **Scopes** : **Google Auth Platform → Accès aux données** → **Ajouter ou supprimer des champs d'application**, cochez :
+   - `https://www.googleapis.com/auth/calendar.app.created` (*Créer des agendas secondaires et gérer leurs événements*) : GePro ne voit **que les agendas qu'il a créés**, jamais les autres agendas ni les rendez-vous du membre ;
+   - `openid` et `…/auth/userinfo.email` : identifient le compte quand le membre n'a pas autorisé Google Drive.
+3. Appliquez la migration (`npm run db:migrate`, automatique sur Vercel).
+
+Chaque membre clique ensuite sur **Google Agenda → Autoriser l'accès à Google Agenda**. L'autorisation est **incrémentale** : un accès Google Drive déjà accordé est conservé (une seule connexion Google par membre). Refuser l'accès à l'agenda ne touche pas à la connexion existante.
+
+En mode **Test** (application Externe), Google fait expirer les autorisations au bout de 7 jours : la synchronisation s'interrompt et la fenêtre propose de reconnecter le compte.
+
 ## Documents PDF
 
 Chaque projet peut aussi recevoir des **PDF importés depuis l'ordinateur**, lisibles par toute l'équipe dans GePro, en lecture seule. Aucune configuration n'est nécessaire.
@@ -179,6 +204,7 @@ users ──< external_connections ──< external_resources >── projects
 projects ──< project_events
 projects ──< project_files ──< project_file_chunks
 projects ──o project_discord            users ──< discord_read_state
+users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
 ```
 
 | Table | Champs principaux | Notes |
@@ -194,6 +220,8 @@ projects ──o project_discord            users ──< discord_read_state
 | **external_connections** | `user_id`, `provider` (`google`/`github`), `account_email`, `access_token_enc`, `refresh_token_enc`, `access_token_expires_at`, `status` (`active`/`needs_reauth`) | Un compte externe par utilisateur et par fournisseur ; jetons chiffrés |
 | **project_discord** | `project_id` (clé), `guild_id`, `channel_id`, `channel_name`, `webhook_id`, `webhook_token_enc`, `linked_by` | Salon Discord relié au projet (un au plus). Jeton du webhook chiffré |
 | **discord_read_state** | `user_id`, `channel_id` (clé composite), `last_read_message_id` | Dernier message lu par membre et par salon. Identifiants Discord (snowflakes) en texte, comparés en `numeric` / `BigInt` |
+| **google_calendar_syncs** | `user_id` (clé), `calendar_id`, `tasks_mode` (`mine`/`all`/`none`), `last_synced_at`, `last_error` | Synchronisation vers Google Agenda d'un membre : id de l'agenda « GePro » créé dans son compte |
+| **google_calendar_sync_projects** | `user_id`, `project_id` (clé composite) | Projets choisis pour la synchronisation |
 | **external_resources** | `project_id`, `provider`, `kind` (`google_doc`…), `external_id`, `title`, `url`, `external_updated_at`, `metadata` (JSON), `connection_id`, `attached_by`, `synced_at`, `sync_error` | Ressources externes rattachées à un projet (copie en cache), uniques par (`project_id`, `provider`, `external_id`) |
 
 Règles :
@@ -245,6 +273,7 @@ Sur la page d'un projet, la bascule **Kanban / Liste / Gantt** propose une trois
 - Au clavier, la grille n'a qu'un arrêt de tabulation : flèches pour changer de jour, `Début` / `Fin` pour le lundi / dimanche, `Page préc.` / `Page suiv.` pour la période voisine, `Tab` pour atteindre les éléments du jour.
 - Sous 768 px, le calendrier devient la liste des jours qui ont du contenu.
 - Chaque vue ne fait qu'une requête, bornée sur les jours affichés (`getCalendarItems`).
+- **Google Agenda** : le bouton du même nom envoie événements et échéances dans l'agenda Google de chaque membre qui l'active (voir [Synchronisation avec Google Agenda](#synchronisation-avec-google-agenda)).
 
 ### Temps de travail
 
@@ -302,9 +331,9 @@ src/
 │   └── dashboard/, members/
 ├── db/                       Schéma Drizzle + client (Neon ou PGlite)
 ├── lib/                      auth, requêtes de lecture, validation (Zod), dates, calendrier, fichiers (découpage, plages d'octets), constantes, chiffrement, onglets, préférences de navigation
-│   ├── integrations/         Client Google (OAuth + Drive, export Markdown), jetons, état OAuth, lecture des documents, erreurs
+│   ├── integrations/         Client Google (OAuth + Drive, export Markdown, Agenda), jetons, état OAuth, lecture des documents, synchronisation Google Agenda, erreurs
 │   └── discord/              Client REST Discord, rattachement et webhook, normalisation, markdown Discord, snowflakes
-├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google, faux Discord
+├── test/                     Utilitaires de test : base PGlite en mémoire, faux Google (Drive, Agenda), faux Discord
 └── proxy.ts                  Redirection rapide vers /login sans cookie
 scripts/                      migrate, seed, create-user
 drizzle/                      Migrations SQL générées
