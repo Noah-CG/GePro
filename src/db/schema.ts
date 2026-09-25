@@ -9,6 +9,7 @@
  *   projects ──< project_events (projet facultatif : sans projet, événement d'équipe)
  *   projects ──< project_files ──< project_file_chunks (PDF importés, découpés en morceaux)
  *   users ──< work_sessions >── projects
+ *   projects ──< project_discord (salon Discord relié) ; users ──< discord_read_state
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
  * - Une tâche peut avoir des sous-tâches (un seul niveau) et dépendre d'autres tâches du même
@@ -320,6 +321,43 @@ export const workSessions = pgTable(
   ],
 );
 
+/**
+ * Salon Discord relié à un projet (un au plus). Le bot lit le salon ; le webhook « GePro », créé
+ * ou réutilisé au rattachement, y publie les messages écrits dans GePro. Son jeton est chiffré
+ * (voir lib/crypto.ts) et ne quitte jamais le serveur. Les identifiants Discord sont des
+ * snowflakes (entiers 64 bits) : stockés en texte, comparés en BigInt.
+ */
+export const projectDiscord = pgTable("project_discord", {
+  projectId: uuid("project_id")
+    .primaryKey()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  guildId: text("guild_id").notNull(),
+  channelId: text("channel_id").notNull(),
+  /** Copie du nom du salon au moment du rattachement (sans le #). */
+  channelName: text("channel_name").notNull(),
+  webhookId: text("webhook_id").notNull(),
+  webhookTokenEnc: text("webhook_token_enc").notNull(),
+  linkedBy: uuid("linked_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Dernier message lu par un membre dans un salon Discord : le salon est « non lu » quand son
+ * dernier message est plus récent. Par salon et non par projet : deux projets reliés au même
+ * salon partagent l'état de lecture.
+ */
+export const discordReadState = pgTable(
+  "discord_read_state",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    channelId: text("channel_id").notNull(),
+    lastReadMessageId: text("last_read_message_id").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.channelId] })],
+);
+
 // Relations (pour les requêtes relationnelles `db.query.*`)
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -333,11 +371,12 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
   user: one(users, { fields: [sessions.userId], references: [users.id] }),
 }));
 
-export const projectsRelations = relations(projects, ({ many }) => ({
+export const projectsRelations = relations(projects, ({ one, many }) => ({
   tasks: many(tasks),
   resources: many(externalResources),
   events: many(projectEvents),
   files: many(projectFiles),
+  discord: one(projectDiscord),
 }));
 
 export const projectFilesRelations = relations(projectFiles, ({ one, many }) => ({
@@ -380,6 +419,10 @@ export const externalResourcesRelations = relations(externalResources, ({ one })
   }),
 }));
 
+export const projectDiscordRelations = relations(projectDiscord, ({ one }) => ({
+  project: one(projects, { fields: [projectDiscord.projectId], references: [projects.id] }),
+}));
+
 export const workSessionsRelations = relations(workSessions, ({ one }) => ({
   user: one(users, { fields: [workSessions.userId], references: [users.id] }),
   project: one(projects, { fields: [workSessions.projectId], references: [projects.id] }),
@@ -395,4 +438,5 @@ export type TaskPriority = (typeof taskPriority.enumValues)[number];
 export type ExternalConnection = typeof externalConnections.$inferSelect;
 export type ExternalResource = typeof externalResources.$inferSelect;
 export type WorkSession = typeof workSessions.$inferSelect;
+export type ProjectDiscord = typeof projectDiscord.$inferSelect;
 export type IntegrationProvider = (typeof integrationProvider.enumValues)[number];
