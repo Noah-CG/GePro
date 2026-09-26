@@ -2,9 +2,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
-export function ProgressBar({ value, color, className }: { value: number; color?: string; className?: string }) {
+export function ProgressBar({ value, color, className, label }: { value: number; color?: string; className?: string; label?: string }) {
   return (
     <div
+      aria-label={label}
       className={cn("h-1.5 w-full overflow-hidden rounded-full bg-surface-2", className)}
       role="progressbar"
       aria-valuenow={value}

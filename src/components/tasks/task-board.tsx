@@ -96,7 +96,7 @@ export function TaskBoard({ tasks, projectId }: { tasks: TaskView[]; projectId?:
       ) : view === "gantt" ? (
         <GanttChart tasks={filtered} showProject={!projectId} />
       ) : (
-        <TaskList tasks={filtered} showProject={!projectId} />
+        <TaskList tasks={filtered} allTasks={tasks} showProject={!projectId} />
       )}
     </div>
   );

@@ -21,6 +21,19 @@
   --success: #059669;
   --success-soft: #ecfdf5;
   --ring: #a5b4fc;
+  /*
+   * Arbre des tâches (vue liste) : fond de chaque niveau, un peu plus foncé à chaque niveau en
+   * clair (environ 3,5 % de luminosité en moins), et textes secondaires assez contrastés sur
+   * tous ces fonds (WCAG AA, vérifié par src/lib/theme-contrast.test.ts).
+   */
+  --task-level-0: #ffffff;
+  --task-level-1: #f6f6f7;
+  --task-level-2: #eeeef0;
+  --task-level-3: #e6e6e9;
+  --task-muted: #5f5f68;
+  --task-warning: #92400e;
+  --task-success: #065f46;
+  --task-danger: #b91c1c;
   color-scheme: light;
 }
 
@@ -41,6 +54,15 @@
   --success: #34d399;
   --success-soft: #0f2a21;
   --ring: #4f46e5;
+  /* En sombre, l'inverse : chaque niveau est un peu plus clair (élévation). */
+  --task-level-0: #141418;
+  --task-level-1: #1b1b21;
+  --task-level-2: #23232a;
+  --task-level-3: #2b2b33;
+  --task-muted: #a1a1ad;
+  --task-warning: #fbbf24;
+  --task-success: #34d399;
+  --task-danger: #f87171;
   color-scheme: dark;
 }
 
@@ -82,6 +104,37 @@
   :focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 2px;
+  }
+}
+
+/*
+ * Ligne de l'arbre des tâches : les textes secondaires prennent les variantes contrastées (les
+ * pastilles et fonds gardent leurs couleurs habituelles). Même spécificité que les utilitaires,
+ * placés après eux : un hover:text-text garde la main.
+ */
+@layer utilities {
+  :where(.task-tree-row) .text-muted {
+    color: var(--task-muted);
+  }
+  :where(.task-tree-row) .text-warning {
+    color: var(--task-warning);
+  }
+  :where(.task-tree-row) .text-success {
+    color: var(--task-success);
+  }
+  :where(.task-tree-row) .text-danger {
+    color: var(--task-danger);
+  }
+}
+
+/* Actions de ligne (« + Sous-tâche ») : au survol sur ordinateur, toujours visibles au doigt. */
+@media (hover: hover) {
+  .task-tree-row .reveal-on-hover {
+    opacity: 0;
+  }
+  .task-tree-row:hover .reveal-on-hover,
+  .task-tree-row:focus-within .reveal-on-hover {
+    opacity: 1;
   }
 }
 

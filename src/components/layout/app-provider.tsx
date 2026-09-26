@@ -19,7 +19,9 @@ import { ProjectDialog } from "@/components/projects/project-dialog";
 import { TaskDialog, type TaskDraft } from "@/components/tasks/task-dialog";
 import { cn } from "@/lib/utils";
 
-type Toast = { id: number; message: string; kind: "success" | "error" };
+/** Bouton d'un toast (par exemple « Terminer »), qui ferme le toast une fois cliqué. */
+type ToastAction = { label: string; onClick: () => void };
+type Toast = { id: number; message: string; kind: "success" | "error"; action?: ToastAction };
 
 type AppContextValue = {
   me: SessionUser;
@@ -37,7 +39,7 @@ type AppContextValue = {
   newProject: () => void;
   editProject: (project: ProjectWithStats) => void;
   openSearch: () => void;
-  toast: (message: string, kind?: Toast["kind"]) => void;
+  toast: (message: string, kind?: Toast["kind"], action?: ToastAction) => void;
 };
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -104,11 +106,16 @@ export function AppProvider({
     [currentProjectId],
   );
 
-  const toast = useCallback((message: string, kind: Toast["kind"] = "success") => {
-    const id = ++toastId.current;
-    setToasts((t) => [...t, { id, message, kind }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
-  }, []);
+  const dismissToast = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
+  const toast = useCallback(
+    (message: string, kind: Toast["kind"] = "success", action?: ToastAction) => {
+      const id = ++toastId.current;
+      setToasts((t) => [...t, { id, message, kind, action }]);
+      // Avec un bouton, on laisse le temps de le lire et de cliquer.
+      setTimeout(() => dismissToast(id), action ? 8000 : 3500);
+    },
+    [dismissToast],
+  );
 
   const anyDialogOpen = taskDialog.open || projectDialog.open || searchOpen;
 
@@ -180,11 +187,23 @@ export function AppProvider({
           <div
             key={t.id}
             className={cn(
-              "pointer-events-auto rounded-lg border px-4 py-2.5 text-sm shadow-lg",
+              "pointer-events-auto flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm shadow-lg",
               t.kind === "error" ? "border-danger/30 bg-danger-soft text-danger" : "border-border bg-surface text-text",
             )}
           >
-            {t.message}
+            <span>{t.message}</span>
+            {t.action && (
+              <button
+                type="button"
+                onClick={() => {
+                  t.action?.onClick();
+                  dismissToast(t.id);
+                }}
+                className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-accent hover:bg-accent-soft"
+              >
+                {t.action.label}
+              </button>
+            )}
           </div>
         ))}
       </div>
