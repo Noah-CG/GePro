@@ -81,6 +81,7 @@ export function ImportantDaysWidget({ projectId, days, today }: { projectId: str
         onOpenChange={setAdding}
         projectId={projectId}
         date={today}
+        pickDate
       />
     </Section>
   );
