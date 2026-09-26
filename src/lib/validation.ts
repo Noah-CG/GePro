@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { DEFAULT_IMPORTANT_DAY_COLOR, IMPORTANT_DAY_COLORS, IMPORTANT_DAY_TITLE_MAX } from "./constants";
 import { defaultLinkTitle, detectLink } from "./links/detect";
+import { usernameFormatError } from "./usernames";
 
 const isoDate = z
   .string()
@@ -84,22 +85,76 @@ export const importantDayInput = z.object({
 });
 export type ImportantDayInput = z.input<typeof importantDayInput>;
 
+export const PASSWORD_MIN = 10;
+
+/**
+ * Nouveau mot de passe (inscription, réinitialisation, changement, création par un administrateur).
+ * Les mots de passe existants plus courts restent valables à la connexion. bcrypt ignore tout
+ * au-delà de 72 octets : on le refuse plutôt que de le tronquer en silence.
+ */
+export const password = z
+  .string()
+  .min(PASSWORD_MIN, `${PASSWORD_MIN} caractères minimum`)
+  .refine((p) => new TextEncoder().encode(p).length <= 72, "72 caractères maximum");
+
+/** Email saisi : sans espaces autour, en minuscules (comme partout dans l'application). */
+export const emailInput = z
+  .string()
+  .trim()
+  .max(254, "Email trop long")
+  .pipe(z.email("Email invalide"))
+  .transform((e) => e.toLowerCase());
+
+/** Nom d'utilisateur : format et noms réservés (la disponibilité se vérifie en base). */
+export const usernameInput = z
+  .string()
+  .trim()
+  .superRefine((value, ctx) => {
+    const error = usernameFormatError(value);
+    if (error) ctx.addIssue({ code: "custom", message: error });
+  });
+
 export const memberInput = z.object({
   name: z.string().trim().min(1, "Le nom est obligatoire").max(80),
-  email: z.email("Email invalide").transform((e) => e.toLowerCase()),
-  password: z.string().min(8, "8 caractères minimum"),
+  email: emailInput,
+  password,
   role: z.enum(["admin", "member"]).default("member"),
 });
 export type MemberInput = z.input<typeof memberInput>;
 
-export const password = z.string().min(8, "8 caractères minimum");
+const passwordsMatch = (v: { password: string; confirm: string }) => v.password === v.confirm;
+const MISMATCH = { message: "Les deux mots de passe ne correspondent pas", path: ["confirm"] };
+
+export const signupInput = z
+  .object({ username: usernameInput, email: emailInput, password, confirm: z.string() })
+  .refine(passwordsMatch, MISMATCH);
+
+export const resetPasswordInput = z.object({ password, confirm: z.string() }).refine(passwordsMatch, MISMATCH);
 
 /** Invitation à un projet : email exact (pas de recherche parmi les comptes), rôle donné à l'arrivée. */
 export const invitationInput = z.object({
-  email: z.email("Email invalide").transform((e) => e.trim().toLowerCase()),
+  email: emailInput,
   role: z.enum(["admin", "member"]).default("member"),
 });
 export type InvitationInput = z.input<typeof invitationInput>;
+
+/** Invitation par nom d'utilisateur exact (casse indifférente), sans recherche parmi les comptes. */
+export const usernameInvitationInput = z.object({
+  username: z.string().trim().min(1, "Saisissez un nom d'utilisateur").max(30, "Aucun compte avec ce nom d'utilisateur"),
+  role: z.enum(["admin", "member"]).default("member"),
+});
+export type UsernameInvitationInput = z.input<typeof usernameInvitationInput>;
+
+/** Durée de validité d'un lien d'invitation ouvert : 7 jours par défaut, 30 au plus. */
+export const INVITE_LINK_DEFAULT_DAYS = 7;
+export const INVITE_LINK_MAX_DAYS = 30;
+
+/** Lien d'invitation ouvert : toujours rôle membre ; `maxUses` nul = illimité jusqu'à expiration. */
+export const inviteLinkInput = z.object({
+  days: z.coerce.number().int("Nombre de jours entier").min(1, "1 jour minimum").max(INVITE_LINK_MAX_DAYS, `${INVITE_LINK_MAX_DAYS} jours maximum`).default(INVITE_LINK_DEFAULT_DAYS),
+  maxUses: z.coerce.number().int().min(1, "1 utilisation minimum").max(500, "500 utilisations maximum").nullable().default(1),
+});
+export type InviteLinkInput = z.input<typeof inviteLinkInput>;
 
 /** Rôle modifiable d'un membre (le propriétaire change par transfert de propriété). */
 export const memberRoleInput = z.enum(["admin", "member"]);

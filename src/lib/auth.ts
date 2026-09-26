@@ -1,5 +1,6 @@
 /**
- * Authentification par email + mot de passe, avec sessions stockées en base.
+ * Authentification par email ou nom d'utilisateur + mot de passe, avec sessions stockées en base.
+ * Inscription, vérification d'email et mot de passe oublié : actions/auth.ts.
  *
  * Le cookie contient un jeton aléatoire ; la base ne stocke que son hash SHA-256.
  * Une fuite de la table `sessions` ne permet donc pas d'usurper une session.
@@ -22,13 +23,22 @@ export type SessionUser = {
   email: string;
   role: "admin" | "member";
   color: string;
+  /** Nul seulement pour un compte antérieur aux noms d'utilisateur, avant la migration 0013. */
+  username: string | null;
+  /** Nul tant que le nom d'utilisateur proposé par la migration n'a pas été confirmé. */
+  usernameConfirmedAt: Date | null;
+  /** Nul tant que l'adresse email n'est pas vérifiée. */
+  emailVerifiedAt: Date | null;
 };
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export { hashPassword, verifyPassword } from "./password";
 
-/** Crée une session et pose le cookie. */
+/**
+ * Crée une session et pose le cookie. Format inchangé depuis l'origine (jeton aléatoire dans
+ * `gepro_session`, SHA-256 en base) : les sessions ouvertes avant les comptes restent valables.
+ */
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
@@ -62,6 +72,9 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       email: users.email,
       role: users.role,
       color: users.color,
+      username: users.username,
+      usernameConfirmedAt: users.usernameConfirmedAt,
+      emailVerifiedAt: users.emailVerifiedAt,
       expiresAt: sessions.expiresAt,
     })
     .from(sessions)
@@ -77,7 +90,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 /** À appeler en tête de chaque page protégée et de chaque Server Action. */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/connexion");
   return user;
 }
 

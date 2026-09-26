@@ -25,6 +25,7 @@ import {
   type TaskStatus,
 } from "../src/db/schema";
 import { hashPassword } from "../src/lib/password";
+import { suggestUsername } from "../src/lib/usernames";
 import { addDays, todayISO } from "../src/lib/dates";
 
 const DEMO_PASSWORD = "demo1234";
@@ -155,10 +156,18 @@ async function main() {
 
   const today = todayISO();
   const passwordHash = await hashPassword(DEMO_PASSWORD);
+  // Comptes de démo : nom d'utilisateur tiré du nom, email vérifié.
+  const usernames = new Set<string>();
+  const demoUsers = [];
+  for (const { key: _, ...m } of MEMBERS) {
+    const username = await suggestUsername(m.name, m.email, (c) => usernames.has(c));
+    usernames.add(username);
+    demoUsers.push({ ...m, passwordHash, username, usernameConfirmedAt: new Date(), emailVerifiedAt: new Date() });
+  }
 
   const insertedUsers = await db
     .insert(users)
-    .values(MEMBERS.map(({ key: _, ...m }) => ({ ...m, passwordHash })))
+    .values(demoUsers)
     .returning({ id: users.id, email: users.email });
   const userId = (key: MemberKey) => insertedUsers.find((u) => u.email === MEMBERS.find((m) => m.key === key)!.email)!.id;
   const admin = userId("camille");

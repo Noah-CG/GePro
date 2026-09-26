@@ -6,6 +6,8 @@ import { db } from "@/db";
 import { projects, sessions, users } from "@/db/schema";
 import { hashPassword, requireAdmin } from "@/lib/auth";
 import { COLORS } from "@/lib/constants";
+import { isUniqueViolation } from "@/lib/db-errors";
+import { suggestUsername } from "@/lib/usernames";
 import { firstError, memberInput, password, type MemberInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -18,14 +20,23 @@ export async function createMember(input: MemberInput): Promise<ActionResult> {
   if (!parsed.success) return fail(firstError(parsed.error));
   const { password: pwd, ...data } = parsed.data;
 
-  const existing = await db.select({ id: users.id, email: users.email }).from(users);
-  if (existing.some((u) => u.email === data.email)) return fail("Un compte existe déjà avec cet email.");
+  const existing = await db.select({ id: users.id, email: users.email, username: users.username }).from(users);
+  if (existing.some((u) => u.email.toLowerCase() === data.email)) return fail("Un compte existe déjà avec cet email.");
+  const taken = new Set(existing.map((u) => u.username?.toLowerCase()));
 
-  await db.insert(users).values({
-    ...data,
-    passwordHash: await hashPassword(pwd),
-    color: COLORS[existing.length % COLORS.length],
-  });
+  try {
+    await db.insert(users).values({
+      ...data,
+      passwordHash: await hashPassword(pwd),
+      color: COLORS[existing.length % COLORS.length],
+      // Nom d'utilisateur proposé, à confirmer à la première connexion ; compte de confiance.
+      username: await suggestUsername(data.name, data.email, (c) => taken.has(c.toLowerCase())),
+      emailVerifiedAt: new Date(),
+    });
+  } catch (err) {
+    if (isUniqueViolation(err)) return fail("Un compte existe déjà avec cet email.");
+    throw err;
+  }
   refresh();
   return ok(undefined);
 }

@@ -4,11 +4,12 @@
  *   npm run user:create -- --name "Alice Durand" --email alice@societe.fr --password "motdepasse" [--admin]
  */
 import "./env";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db } from "../src/db";
 import { users } from "../src/db/schema";
 import { COLORS } from "../src/lib/constants";
 import { hashPassword } from "../src/lib/password";
+import { suggestUsername } from "../src/lib/usernames";
 import { memberInput } from "../src/lib/validation";
 
 function arg(name: string) {
@@ -25,20 +26,29 @@ async function main() {
   });
   if (!parsed.success) {
     console.error("Paramètres invalides :", parsed.error.issues.map((i) => `${i.path.join(".")} → ${i.message}`).join(", "));
-    console.error('Usage : npm run user:create -- --name "Nom Prénom" --email x@y.fr --password "8+ caractères" [--admin]');
+    console.error('Usage : npm run user:create -- --name "Nom Prénom" --email x@y.fr --password "10+ caractères" [--admin]');
     process.exit(1);
   }
   const { password, ...data } = parsed.data;
 
-  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, data.email));
+  const [existing] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${data.email}`);
   if (existing) {
     console.error(`Un compte existe déjà pour ${data.email}.`);
     process.exit(1);
   }
 
-  const count = (await db.select({ id: users.id }).from(users)).length;
-  await db.insert(users).values({ ...data, passwordHash: await hashPassword(password), color: COLORS[count % COLORS.length] });
-  console.log(`✔ Compte ${data.role === "admin" ? "administrateur " : ""}créé : ${data.email}`);
+  const all = await db.select({ username: users.username }).from(users);
+  const taken = new Set(all.map((u) => u.username?.toLowerCase()));
+  // Compte créé par un administrateur : email de confiance ; nom d'utilisateur à confirmer à la première connexion.
+  const username = await suggestUsername(data.name, data.email, (c) => taken.has(c.toLowerCase()));
+  await db.insert(users).values({
+    ...data,
+    passwordHash: await hashPassword(password),
+    color: COLORS[all.length % COLORS.length],
+    username,
+    emailVerifiedAt: new Date(),
+  });
+  console.log(`✔ Compte ${data.role === "admin" ? "administrateur " : ""}créé : ${data.email} (nom d'utilisateur : ${username})`);
 }
 
 main()

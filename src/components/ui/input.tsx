@@ -17,15 +17,33 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   },
 );
 
-/** Libellé + champ + message d'aide éventuel. */
-export function Field({ label, htmlFor, children, hint }: { label: string; htmlFor?: string; children: ReactNode; hint?: string }) {
+/** Libellé + champ + message d'aide éventuel (remplacé par l'erreur du champ s'il y en a une). */
+export function Field({
+  label,
+  htmlFor,
+  children,
+  hint,
+  error,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: ReactNode;
+  hint?: ReactNode;
+  error?: string | null;
+}) {
   return (
     <div className="space-y-1.5">
       <label htmlFor={htmlFor} className="block text-xs font-medium text-muted">
         {label}
       </label>
       {children}
-      {hint && <p className="text-xs text-muted">{hint}</p>}
+      {error ? (
+        <p id={htmlFor ? `${htmlFor}-erreur` : undefined} className="text-xs text-danger" role="alert">
+          {error}
+        </p>
+      ) : (
+        hint && <div className="text-xs text-muted">{hint}</div>
+      )}
     </div>
   );
 }
