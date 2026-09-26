@@ -13,7 +13,7 @@ import { isGoogleConfigured } from "@/lib/integrations/google";
 import { MEMBERS_SECTION_ID } from "@/lib/members";
 import { loadProjectPage } from "@/lib/project-page";
 import { atLeast } from "@/lib/access";
-import { getAccounts, getConnectionView, getPendingInvitations, getProjectMembers } from "@/lib/queries";
+import { getAccounts, getConnectionView, getInviteLinks, getPendingInvitations, getProjectMembers } from "@/lib/queries";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -37,11 +37,12 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
   const { project, user: me, role } = await loadProjectPage(id);
   const { google, reason } = await searchParams;
   const manager = atLeast(role, "admin");
-  const [connection, discordChannel, members, invitations, accounts] = await Promise.all([
+  const [connection, discordChannel, members, invitations, links, accounts] = await Promise.all([
     getConnectionView(me.id, "google"),
     getDiscordChannelView(project.id),
     getProjectMembers(project.id),
     manager ? getPendingInvitations(project.id) : [],
+    manager ? getInviteLinks(project.id) : [],
     // Gestion des comptes : réservée aux administrateurs de l'application, comme les actions de
     // actions/members.ts. Sans rapport avec le rôle dans ce projet.
     me.role === "admin" ? getAccounts() : null,
@@ -60,7 +61,7 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
           Seuls les membres voient le projet et ses données. On n&apos;y entre que sur invitation
           {manager ? "." : " d'un propriétaire ou d'un administrateur."}
         </p>
-        <ProjectMembers projectId={project.id} myRole={role} members={members} invitations={invitations} />
+        <ProjectMembers projectId={project.id} myRole={role} members={members} invitations={invitations} links={links} />
       </section>
 
       <section className="mb-8">
@@ -81,7 +82,7 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
         <section id={MEMBERS_SECTION_ID} className="mb-8 scroll-mt-4">
           <h2 className="mb-1 text-sm font-semibold">Comptes de l&apos;équipe</h2>
           <p className="mb-3 text-sm text-muted">
-            Créez les comptes et communiquez les identifiants à chaque membre. Les comptes sont communs à tous les
+            Chacun peut aussi créer son compte depuis la page d&apos;inscription. Les comptes sont communs à tous les
             projets, mais un nouveau compte ne voit aucun projet tant qu&apos;il n&apos;y est pas invité.
           </p>
           <MembersManager team={accounts} />

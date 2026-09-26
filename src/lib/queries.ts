@@ -7,7 +7,7 @@
  * (`projectId`) supposent que l'appelant a vérifié l'accès (lib/access.ts).
  */
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -17,6 +17,8 @@ import {
   projectEvents,
   projectFiles,
   projectInvitations,
+  projectInviteLinks,
+  projectInviteLinkUses,
   projectLinks,
   projectMembers,
   projects,
@@ -241,8 +243,18 @@ export async function getProjectMembers(projectId: string): Promise<ProjectMembe
   return rows.map((r) => ({ ...r, joinedAt: r.joinedAt.toISOString() }));
 }
 
-/** Invitation en attente, telle qu'affichée dans les paramètres du projet. */
-export type PendingInvitation = { id: string; email: string; role: ProjectRole; expiresAt: string; invitedByName: string | null };
+/**
+ * Invitation en attente, telle qu'affichée dans les paramètres du projet : par email, ou par nom
+ * d'utilisateur (`username` renseigné, `email` nul).
+ */
+export type PendingInvitation = {
+  id: string;
+  email: string | null;
+  username: string | null;
+  role: ProjectRole;
+  expiresAt: string;
+  invitedByName: string | null;
+};
 
 /** Invitation reçue, telle qu'affichée à la personne invitée. */
 export type ReceivedInvitation = {
@@ -257,16 +269,19 @@ export type ReceivedInvitation = {
 
 /** Invitations en attente (non expirées) d'un projet. */
 export async function getPendingInvitations(projectId: string): Promise<PendingInvitation[]> {
+  const invited = alias(users, "invited");
   const rows = await db
     .select({
       id: projectInvitations.id,
       email: projectInvitations.email,
+      username: invited.username,
       role: projectInvitations.role,
       expiresAt: projectInvitations.expiresAt,
       invitedByName: users.name,
     })
     .from(projectInvitations)
     .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
+    .leftJoin(invited, eq(invited.id, projectInvitations.invitedUserId))
     .where(
       and(
         eq(projectInvitations.projectId, projectId),
@@ -279,14 +294,18 @@ export async function getPendingInvitations(projectId: string): Promise<PendingI
 }
 
 /**
- * Invitation valable (en attente, non expirée) désignée par le hash de son jeton, avec l'email
- * auquel elle est adressée : à comparer à celui du compte connecté avant d'en montrer quoi que ce soit.
+ * Invitation valable (en attente, non expirée) désignée par le hash de son jeton, avec son
+ * destinataire (email ou compte) : à comparer au compte connecté (`isInvitationFor`) avant d'en
+ * montrer quoi que ce soit.
  */
-export async function getInvitationByTokenHash(tokenHash: string): Promise<(ReceivedInvitation & { email: string }) | null> {
+export async function getInvitationByTokenHash(
+  tokenHash: string,
+): Promise<(ReceivedInvitation & { email: string | null; invitedUserId: string | null }) | null> {
   const [row] = await db
     .select({
       id: projectInvitations.id,
       email: projectInvitations.email,
+      invitedUserId: projectInvitations.invitedUserId,
       projectId: projects.id,
       projectName: projects.name,
       projectColor: projects.color,
@@ -308,8 +327,46 @@ export async function getInvitationByTokenHash(tokenHash: string): Promise<(Rece
   return row ? { ...row, expiresAt: row.expiresAt.toISOString() } : null;
 }
 
-/** Invitations en attente (non expirées) adressées à cet email, projets dont on n'est pas déjà membre. */
-export async function getReceivedInvitations(user: { id: string; email: string }): Promise<ReceivedInvitation[]> {
+/** Compte tel que vu par les invitations : son id, son email et si celui-ci est vérifié. */
+export type Invitee = { id: string; email: string; emailVerifiedAt: Date | null };
+
+/**
+ * Invitation adressée à ce compte : par son nom d'utilisateur (id), ou par son email à condition
+ * qu'il soit vérifié (sinon n'importe qui pourrait s'inscrire avec l'email d'un autre et récupérer
+ * ses invitations).
+ */
+export function isInvitationFor(invitation: { email: string | null; invitedUserId: string | null }, user: Invitee): boolean {
+  if (invitation.invitedUserId) return invitation.invitedUserId === user.id;
+  return invitation.email !== null && invitation.email === user.email.toLowerCase() && user.emailVerifiedAt !== null;
+}
+
+/** Condition SQL équivalente à `isInvitationFor`. */
+export function invitationForUser(user: Invitee) {
+  const byUser = eq(projectInvitations.invitedUserId, user.id);
+  return user.emailVerifiedAt ? or(byUser, eq(projectInvitations.email, user.email.toLowerCase()))! : byUser;
+}
+
+/** Nombre d'invitations par email en attente, cachées tant que l'adresse n'est pas vérifiée. */
+export async function countInvitationsAwaitingVerification(user: Invitee): Promise<number> {
+  if (user.emailVerifiedAt) return 0;
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(projectInvitations)
+    .where(
+      and(
+        eq(projectInvitations.email, user.email.toLowerCase()),
+        eq(projectInvitations.status, "pending"),
+        gte(projectInvitations.expiresAt, new Date()),
+      ),
+    );
+  return row?.n ?? 0;
+}
+
+/**
+ * Invitations en attente (non expirées) adressées à ce compte (voir `isInvitationFor`), pour des
+ * projets dont il n'est pas déjà membre.
+ */
+export async function getReceivedInvitations(user: Invitee): Promise<ReceivedInvitation[]> {
   const rows = await db
     .select({
       id: projectInvitations.id,
@@ -325,7 +382,7 @@ export async function getReceivedInvitations(user: { id: string; email: string }
     .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
     .where(
       and(
-        eq(projectInvitations.email, user.email.toLowerCase()),
+        invitationForUser(user),
         eq(projectInvitations.status, "pending"),
         gte(projectInvitations.expiresAt, new Date()),
         notInArray(projectInvitations.projectId, memberProjectIds(user.id)),
@@ -333,6 +390,90 @@ export async function getReceivedInvitations(user: { id: string; email: string }
     )
     .orderBy(asc(projectInvitations.createdAt));
   return rows.map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString() }));
+}
+
+/** Lien d'invitation ouvert d'un projet, avec son journal (création, utilisations). */
+export type InviteLinkView = {
+  id: string;
+  maxUses: number | null;
+  useCount: number;
+  expiresAt: string;
+  createdAt: string;
+  createdByName: string | null;
+  /** "active" : utilisable ; sinon pourquoi il ne l'est plus. */
+  state: "active" | "expired" | "revoked" | "exhausted";
+  uses: { name: string; usedAt: string }[];
+};
+
+/** Liens d'invitation d'un projet, les plus récents d'abord (les 20 derniers). Réservé à ses gestionnaires. */
+export async function getInviteLinks(projectId: string): Promise<InviteLinkView[]> {
+  const links = await db
+    .select({
+      id: projectInviteLinks.id,
+      maxUses: projectInviteLinks.maxUses,
+      useCount: projectInviteLinks.useCount,
+      expiresAt: projectInviteLinks.expiresAt,
+      revokedAt: projectInviteLinks.revokedAt,
+      createdAt: projectInviteLinks.createdAt,
+      createdByName: users.name,
+    })
+    .from(projectInviteLinks)
+    .leftJoin(users, eq(users.id, projectInviteLinks.createdBy))
+    .where(eq(projectInviteLinks.projectId, projectId))
+    .orderBy(desc(projectInviteLinks.createdAt))
+    .limit(20);
+  if (links.length === 0) return [];
+
+  const uses = await db
+    .select({ linkId: projectInviteLinkUses.linkId, name: users.name, usedAt: projectInviteLinkUses.usedAt })
+    .from(projectInviteLinkUses)
+    .innerJoin(users, eq(users.id, projectInviteLinkUses.userId))
+    .where(inArray(projectInviteLinkUses.linkId, links.map((l) => l.id)))
+    .orderBy(asc(projectInviteLinkUses.usedAt));
+
+  const now = Date.now();
+  return links.map(({ revokedAt, ...l }) => ({
+    ...l,
+    expiresAt: l.expiresAt.toISOString(),
+    createdAt: l.createdAt.toISOString(),
+    state: revokedAt
+      ? "revoked"
+      : l.maxUses !== null && l.useCount >= l.maxUses
+        ? "exhausted"
+        : l.expiresAt.getTime() <= now
+          ? "expired"
+          : "active",
+    uses: uses.filter((u) => u.linkId === l.id).map((u) => ({ name: u.name, usedAt: u.usedAt.toISOString() })),
+  }));
+}
+
+/** Lien d'invitation ouvert désigné par le hash de son jeton, tel que montré à qui l'ouvre. */
+export type InviteLinkTarget = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectColor: string;
+  createdByName: string | null;
+  usable: boolean;
+};
+
+export async function getInviteLinkByTokenHash(tokenHash: string): Promise<InviteLinkTarget | null> {
+  const [row] = await db
+    .select({
+      id: projectInviteLinks.id,
+      projectId: projects.id,
+      projectName: projects.name,
+      projectColor: projects.color,
+      createdByName: users.name,
+      usable: sql<boolean>`(${projectInviteLinks.revokedAt} is null and ${projectInviteLinks.expiresAt} > now()
+        and (${projectInviteLinks.maxUses} is null or ${projectInviteLinks.useCount} < ${projectInviteLinks.maxUses}))`,
+    })
+    .from(projectInviteLinks)
+    .innerJoin(projects, eq(projects.id, projectInviteLinks.projectId))
+    .leftJoin(users, eq(users.id, projectInviteLinks.createdBy))
+    .where(eq(projectInviteLinks.tokenHash, tokenHash))
+    .limit(1);
+  return row ?? null;
 }
 
 /** Tous les comptes, pour leur administration (réservé aux administrateurs de l'application). */

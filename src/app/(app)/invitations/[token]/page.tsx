@@ -1,4 +1,4 @@
-import { MailX } from "lucide-react";
+import { MailWarning, MailX } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { InvitationActions } from "@/components/projects/received-invitations";
@@ -6,7 +6,7 @@ import { Card, EmptyState } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/dates";
 import { hashInvitationToken } from "@/lib/invitations";
-import { getInvitationByTokenHash } from "@/lib/queries";
+import { getInvitationByTokenHash, isInvitationFor } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Invitation" };
 
@@ -15,15 +15,27 @@ type Props = { params: Promise<{ token: string }> };
 const ROLE_LABELS = { owner: "propriétaire", admin: "administrateur", member: "membre" } as const;
 
 /**
- * Lien d'invitation à un projet. Seul le compte dont l'email est celui de l'invitation voit le
- * projet et peut accepter : pour tout autre compte (ou un lien invalide), rien n'est révélé.
+ * Lien d'invitation à un projet. Seul le compte visé (par son nom d'utilisateur, ou par son email
+ * vérifié) voit le projet et peut accepter : pour tout autre compte (ou un lien invalide), rien
+ * n'est révélé. Email de l'invitation mais pas encore vérifié : il faut d'abord le vérifier.
  */
 export default async function InvitationPage({ params }: Props) {
   const me = await requireUser();
   const { token } = await params;
   const invitation = await getInvitationByTokenHash(hashInvitationToken(token));
 
-  if (!invitation || invitation.email !== me.email.toLowerCase()) {
+  if (invitation && !invitation.invitedUserId && invitation.email === me.email.toLowerCase() && !me.emailVerifiedAt) {
+    return (
+      <div className="mx-auto max-w-lg pt-10">
+        <EmptyState icon={<MailWarning size={28} />} title="Vérifiez d'abord votre adresse email">
+          Cette invitation est adressée à {me.email}. Confirmez cette adresse avec le lien reçu par email (ou renvoyez-le depuis le
+          bandeau ci-dessus), puis rouvrez ce lien d&apos;invitation.
+        </EmptyState>
+      </div>
+    );
+  }
+
+  if (!invitation || !isInvitationFor(invitation, me)) {
     return (
       <div className="mx-auto max-w-lg pt-10">
         <EmptyState icon={<MailX size={28} />} title="Invitation introuvable">
