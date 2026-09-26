@@ -40,6 +40,7 @@ export default async function CalendarPage({ searchParams }: Props) {
       date={date}
       today={today}
       items={items}
+      projectId={project?.id ?? null}
       projectName={project?.name ?? null}
       sync={<GoogleCalendarSync view={syncView} google={google} reason={reason} />}
     />

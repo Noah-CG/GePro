@@ -4,7 +4,7 @@
  * semaines vont du lundi au dimanche.
  */
 import { addDays, addMonths, endOfMonthISO, endOfWeekISO, formatDayLong, formatMonthYear, formatShort, startOfMonthISO, startOfWeekISO } from "./dates";
-import type { CalendarEvent, TaskView } from "./queries";
+import type { CalendarEvent, ImportantDayView, TaskView } from "./queries";
 
 export type CalendarView = "mois" | "semaine";
 
@@ -69,12 +69,16 @@ export function periodTitle(view: CalendarView, date: string): string {
   return `${formatShort(days[0])} – ${formatShort(days[6])} ${days[6].slice(0, 4)}`;
 }
 
-export type DayItems = { tasks: TaskView[]; events: CalendarEvent[] };
+export type DayItems = { tasks: TaskView[]; events: CalendarEvent[]; importantDay?: ImportantDayView };
 
-/** Regroupe tâches et événements par jour. Dans un jour : tâches ouvertes avant les terminées. */
-export function groupByDay({ tasks, events }: DayItems): Map<string, DayItems> {
+/**
+ * Regroupe tâches, événements et journées importantes par jour. Dans un jour : tâches ouvertes
+ * avant les terminées.
+ */
+export function groupByDay({ tasks, events, importantDays = [] }: { tasks: TaskView[]; events: CalendarEvent[]; importantDays?: ImportantDayView[] }): Map<string, DayItems> {
   const byDay = new Map<string, DayItems>();
   const get = (day: string) => byDay.get(day) ?? byDay.set(day, { tasks: [], events: [] }).get(day)!;
+  for (const importantDay of importantDays) get(importantDay.date).importantDay = importantDay;
   for (const event of events) get(event.date).events.push(event);
   for (const task of tasks) if (task.dueDate) get(task.dueDate).tasks.push(task);
   for (const items of byDay.values()) items.tasks.sort((a, b) => Number(a.status === "done") - Number(b.status === "done"));
@@ -83,11 +87,12 @@ export function groupByDay({ tasks, events }: DayItems): Map<string, DayItems> {
 
 /**
  * Description d'un jour pour les lecteurs d'écran :
- * "jeudi 24 septembre 2026, aujourd'hui, 2 tâches dont 1 en retard, 1 événement".
+ * "jeudi 24 septembre 2026, aujourd'hui, journée importante : Lancement, 2 tâches dont 1 en retard, 1 événement".
  */
 export function dayAriaLabel(day: string, today: string, items: DayItems | undefined): string {
   const parts = [formatDayLong(day)];
   if (day === today) parts.push("aujourd'hui");
+  if (items?.importantDay) parts.push(`journée importante : ${items.importantDay.title}`);
   const tasks = items?.tasks ?? [];
   const events = items?.events ?? [];
   const overdue = tasks.filter((t) => t.status !== "done" && day < today).length;
