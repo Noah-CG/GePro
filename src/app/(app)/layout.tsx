@@ -8,19 +8,20 @@ import { isDiscordConfigured } from "@/lib/discord/client";
 import { getDiscordChannelViews } from "@/lib/discord/service";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { COLLAPSED_SECTIONS_COOKIE, parseCollapsedSections, SIDEBAR_COLLAPSED_COOKIE } from "@/lib/navigation-prefs";
-import { getConnectionView, getFileLinks, getProjectOptions, getProjectsWithStats, getResourceLinks, getRunningSince, getTeam } from "@/lib/queries";
+import { getConnectionView, getFileLinks, getProjectLinks, getProjectOptions, getProjectsWithStats, getResourceLinks, getRunningSince, getTeam } from "@/lib/queries";
 
 /** Toutes les pages de ce groupe nécessitent d'être connecté. */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireUser();
   const today = todayISO();
   const discordConfigured = isDiscordConfigured();
-  const [team, projects, projectStats, resources, files, googleConnection, runningSince, discordChannels, cookieStore] = await Promise.all([
+  const [team, projects, projectStats, resources, files, links, googleConnection, runningSince, discordChannels, cookieStore] = await Promise.all([
     getTeam(),
     getProjectOptions(),
     getProjectsWithStats({ today }),
     getResourceLinks(),
     getFileLinks(),
+    getProjectLinks(),
     getConnectionView(me.id, "google"),
     getRunningSince(me.id),
     discordConfigured ? getDiscordChannelViews() : {},
@@ -31,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     projects: projectStats,
     resources,
     files,
+    links,
     timerRunning: runningSince !== null,
     google: { configured: isGoogleConfigured(), connection: googleConnection },
   };

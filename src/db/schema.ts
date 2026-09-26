@@ -233,6 +233,32 @@ export const importantDays = pgTable(
 );
 
 /**
+ * Lien utile d'un projet (dépôt GitHub, maquette Figma, tableau Sheets…), affiché dans la barre
+ * latérale. L'icône n'est pas stockée : elle est déduite de l'adresse à l'affichage (voir
+ * lib/links/detect.ts). Modifiable par tout membre, comme les tâches.
+ */
+export const projectLinks = pgTable(
+  "project_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Adresse normalisée, en http ou https uniquement. */
+    url: text("url").notNull(),
+    title: text("title").notNull(),
+    /** Ordre d'affichage croissant ; un nouveau lien va à la fin. */
+    position: integer("position").notNull().default(0),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("project_links_project_position_idx").on(t.projectId, t.position),
+    check("project_links_url_protocol", sql`${t.url} ~* '^https?://'`),
+  ],
+);
+
+/**
  * Compte externe rattaché à un utilisateur (un seul par fournisseur).
  * Les jetons sont chiffrés (AES-256-GCM, voir lib/crypto.ts) et ne quittent jamais le serveur.
  */
@@ -511,6 +537,7 @@ export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type ProjectEvent = typeof projectEvents.$inferSelect;
 export type ImportantDay = typeof importantDays.$inferSelect;
+export type ProjectLink = typeof projectLinks.$inferSelect;
 export type ProjectFile = typeof projectFiles.$inferSelect;
 export type TaskStatus = (typeof taskStatus.enumValues)[number];
 export type TaskPriority = (typeof taskPriority.enumValues)[number];

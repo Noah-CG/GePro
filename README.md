@@ -35,7 +35,7 @@ Connexion : **camille@exemple.fr / demo1234** (administratrice). Les 5 autres me
    npm run db:seed                  # option A : données de démo
    npm run user:create -- --name "Votre Nom" --email vous@societe.fr --password "motdepasse" --admin   # option B : base vide
    ```
-5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**).
+5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**, qui mène à la section **Membres de l'équipe** des paramètres du projet).
 
 ### Déploiement sur Vercel
 
@@ -203,6 +203,7 @@ users ──< task_assignees >── tasks >── projects       tasks ──< 
 users ──< external_connections ──< external_resources >── projects
 projects ──< project_events
 projects ──< important_days
+projects ──< project_links
 projects ──< project_files ──< project_file_chunks
 projects ──o project_discord            users ──< discord_read_state
 users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
@@ -217,6 +218,7 @@ users ──o google_calendar_syncs ──< google_calendar_sync_projects >─�
 | **task_assignees** | `task_id`, `user_id` (clé composite) | Plusieurs responsables par tâche |
 | **project_events** | `id`, `project_id` (facultatif), `title`, `description`, `event_date`, `color`, `created_by` | Événements du calendrier. Sans projet : événement d'équipe, visible dans tous les projets. Modifiables par leur créateur ou un admin |
 | **important_days** | `id`, `project_id`, `date`, `title` (60 caractères au plus), `description`, `color` (rouge par défaut), `created_by`, `created_at` | Journées importantes : une au plus par date et par projet. Modifiables par tout membre |
+| **project_links** | `id`, `project_id`, `url` (http/https uniquement), `title`, `position`, `created_by`, `created_at` | Liens utiles de la barre latérale. L'icône n'est pas stockée : elle est déduite de l'adresse à l'affichage. Modifiables par tout membre |
 | **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un admin |
 | **project_file_chunks** | `file_id`, `position` (clé composite), `data` (`bytea`) | Contenu des fichiers, en morceaux de 960 Ko |
 | **external_connections** | `user_id`, `provider` (`google`/`github`), `account_email`, `access_token_enc`, `refresh_token_enc`, `access_token_expires_at`, `status` (`active`/`needs_reauth`) | Un compte externe par utilisateur et par fournisseur ; jetons chiffrés |
@@ -241,7 +243,7 @@ Règles :
 
 GePro affiche **un projet à la fois** : la barre latérale, le tableau de bord, les tâches et la recherche (`Ctrl/⌘ + K`) ne montrent que le projet sélectionné. On en change avec le **sélecteur tout en haut de la barre latérale** (liste filtrable au clavier, « Nouveau projet », « Tous les projets »). Ouvrir la page d'un projet le sélectionne aussi. Le choix est mémorisé dans le cookie `gepro_projet` (préférence d'affichage, sans lien avec la session).
 
-Seules restent communes à tous les projets : la liste **Tous les projets** (pour les gérer, archiver…) et la gestion des **membres**. L'ancienne adresse `/taches` renvoie vers les tâches du projet sélectionné, filtres compris.
+Seules restent communes à tous les projets : la liste **Tous les projets** (pour les gérer, archiver…) et la gestion des **membres** (comptes de l'équipe), rangée dans les paramètres de chaque projet par commodité. L'ancienne adresse `/taches` renvoie vers les tâches du projet sélectionné, filtres compris.
 
 ### Barre latérale
 
@@ -251,10 +253,21 @@ De haut en bas :
 - **Nouvelle tâche** et **Rechercher** ;
 - **Tableau de bord**, **Tâches** (avec le nombre de tâches ouvertes) et **Calendrier** du projet, **Temps de travail** (pastille verte quand votre chrono tourne), puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
 - **Documents** : les Google Docs et les PDF du projet, le **+** pour importer un PDF ou lier un Google Doc, et un lien vers la page de gestion ;
-- **Administration** (admin) : membres ;
-- tout en bas, **Paramètres du projet** et le menu du compte (thème, mot de passe, déconnexion).
+- **Liens utiles** : liens externes du projet (voir ci-dessous) ;
+- tout en bas, **Paramètres du projet** (intégrations et, pour un administrateur, membres de l'équipe) et le menu du compte (thème, mot de passe, déconnexion).
 
 Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bulles, au survol comme au clavier). Les sections se replient d'un clic sur leur titre. Ces choix sont mémorisés dans les cookies `gepro_sidebar_reduite` et `gepro_sections_repliees`. Sur mobile, la barre s'ouvre en tiroir depuis le bouton ☰ de l'en-tête.
+
+### Liens utiles
+
+Chaque projet a sa liste de **liens utiles** (dépôt GitHub, maquettes Figma, tableau Google Sheets…), dans la barre latérale. Tout membre peut en ajouter (**+**), les modifier ou les supprimer (menu **…** au survol de la ligne). Un clic ouvre le lien dans un nouvel onglet du navigateur ; l'adresse complète s'affiche au survol.
+
+- **Service reconnu automatiquement** d'après l'adresse (`src/lib/links/registry.ts`) : environ 95 services (GitHub, GitLab, Vercel, Notion, Jira, Confluence, Figma, Miro, Google Docs/Sheets/Slides/Forms/Drive/Meet/Agenda/Maps, Discord, Zoom, YouTube, Claude…), par domaine, sous-domaine (`*.vercel.app`, `*.atlassian.net`) et chemin (`docs.google.com/spreadsheets` → Google Sheets, `*.atlassian.net/wiki` → Confluence). Les logos viennent du paquet [`simple-icons`](https://simpleicons.org), importés un par un. Canva, Slack, LinkedIn, OneDrive, SharePoint et ChatGPT n'y figurent plus (droit des marques) : ils s'affichent avec leur favicon.
+- **Site inconnu** : favicon servi par DuckDuckGo (`icons.duckduckgo.com`) et chargé par le navigateur, sinon une icône de globe. Le serveur de GePro ne va jamais chercher une adresse saisie par un utilisateur. DuckDuckGo voit donc le domaine des liens non reconnus.
+- **Couleurs** : couleur officielle du logo, remplacée par celle du texte quand elle se distingue trop peu du fond (logo GitHub en mode sombre…), voir `src/lib/links/colors.ts`.
+- **Titre** facultatif : par défaut le nom du service reconnu, sinon le domaine.
+- **Sécurité** : seules les adresses `http` et `https` sont acceptées (pas de `javascript:` ni `data:`), aussi par une contrainte en base.
+- À venir (TODO) : réordonner par glisser-déposer, choisir l'icône à la main, ranger les liens en dossiers.
 
 ### Liste des tâches (arbre)
 
@@ -331,7 +344,7 @@ src/
 │       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
 │       ├── temps/            Temps de travail : chrono, journal de bord corrigeable, temps de l'équipe
 │       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres, [id]/discord = salon Discord en onglet
-│       └── membres/          Gestion des comptes (admin)
+│       └── membres/          Fiche d'un membre ([id]) ; /membres redirige vers les paramètres du projet (#membres)
 │   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur), projects/[id]/discord/ (salon Discord : status, messages, read)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/

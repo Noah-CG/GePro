@@ -10,6 +10,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
+import { membersSettingsHref } from "@/lib/members";
 import { cn } from "@/lib/utils";
 import { useApp } from "./app-provider";
 
@@ -18,7 +19,7 @@ import { useApp } from "./app-provider";
  * `side` : côté d'ouverture du menu (à droite quand la barre latérale est réduite).
  */
 export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side?: "bottom" | "right" }) {
-  const { me } = useApp();
+  const { me, currentProjectId } = useApp();
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
@@ -64,7 +65,7 @@ export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side
               ))}
             </div>
             {me.role === "admin" && (
-              <Link href="/membres" onClick={() => setOpen(false)} className={row}>
+              <Link href={membersSettingsHref(currentProjectId)} onClick={() => setOpen(false)} className={row}>
                 <Users size={15} className="text-muted" /> Gérer les membres
               </Link>
             )}

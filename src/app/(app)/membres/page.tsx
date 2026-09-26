@@ -1,19 +1,13 @@
-import type { Metadata } from "next";
-import { MembersManager } from "@/components/members/members-manager";
-import { PageHeader } from "@/components/ui/misc";
+import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
-import { getTeam } from "@/lib/queries";
+import { membersSettingsHref } from "@/lib/members";
+import { getSelectedProjectId } from "@/lib/selected-project";
 
-export const metadata: Metadata = { title: "Membres" };
-
-/** Gestion des comptes (réservée aux administrateurs). */
+/**
+ * Ancienne page de gestion des membres : elle se trouve désormais dans les paramètres du projet
+ * (section « Membres de l'équipe »). Sans projet, on renvoie vers la liste des projets.
+ */
 export default async function MembersPage() {
   await requireAdmin();
-  const team = await getTeam();
-  return (
-    <div className="mx-auto max-w-3xl">
-      <PageHeader title="Membres de l'équipe" subtitle="Créez les comptes et communiquez les identifiants à chaque membre." />
-      <MembersManager team={team} />
-    </div>
-  );
+  redirect(membersSettingsHref(await getSelectedProjectId()));
 }

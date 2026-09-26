@@ -1,15 +1,16 @@
 "use client";
 
-import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Timer, Users, X } from "lucide-react";
+import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Timer, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Kbd, SideTooltip } from "@/components/ui/misc";
 import type { SidebarSectionId } from "@/lib/navigation-prefs";
-import type { FileLink, ProjectWithStats, ResourceLink } from "@/lib/queries";
+import type { FileLink, ProjectLinkView, ProjectWithStats, ResourceLink } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { useApp } from "./app-provider";
 import { ProjectSwitcher } from "./project-switcher";
 import { SidebarDocuments, type GoogleSidebarState } from "./sidebar-documents";
-import { itemClass, SidebarContext, SidebarNavItem, SidebarSection } from "./sidebar-parts";
+import { SidebarLinks } from "./sidebar-links";
+import { itemClass, SidebarContext, SidebarNavItem } from "./sidebar-parts";
 import { UserMenu } from "./user-menu";
 
 /** Données de la barre latérale, chargées par le layout. */
@@ -20,6 +21,8 @@ export type SidebarData = {
   resources: ResourceLink[];
   /** PDF importés, tous projets confondus. */
   files: FileLink[];
+  /** Liens utiles, tous projets confondus. */
+  links: ProjectLinkView[];
   google: GoogleSidebarState;
   /** Le chrono de l'utilisateur connecté tourne (pastille sur « Temps de travail »). */
   timerRunning: boolean;
@@ -27,7 +30,7 @@ export type SidebarData = {
 
 /**
  * Barre latérale unique, entièrement consacrée au projet sélectionné : sélecteur de projet tout
- * en haut, actions, tableau de bord et tâches du projet, ses documents, l'administration, puis
+ * en haut, actions, tableau de bord et tâches du projet, ses documents, ses liens utiles, puis
  * en bas ses paramètres et le compte.
  *
  * - `collapsed` : réduite aux icônes, avec info-bulles (ordinateur).
@@ -52,7 +55,7 @@ export function Sidebar({
   idPrefix: string;
 }) {
   const pathname = usePathname();
-  const { me, newTask, newProject, openSearch, currentProjectId } = useApp();
+  const { newTask, newProject, openSearch, currentProjectId } = useApp();
 
   const project = data.projects.find((p) => p.id === currentProjectId) ?? null;
   const base = project ? `/projets/${project.id}` : "";
@@ -175,11 +178,7 @@ export function Sidebar({
             />
           )}
 
-          {me.role === "admin" && (
-            <SidebarSection id="administration" title="Administration">
-              <SidebarNavItem href="/membres" icon={Users} label="Membres" active={pathname.startsWith("/membres")} />
-            </SidebarSection>
-          )}
+          {project && <SidebarLinks projectId={project.id} links={data.links.filter((l) => l.projectId === project.id)} />}
         </div>
 
         {/* En bas : paramètres du projet, puis le compte */}

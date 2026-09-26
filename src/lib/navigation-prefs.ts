@@ -7,10 +7,10 @@
 /** Présent (valeur "1") quand la barre latérale est réduite aux icônes. */
 export const SIDEBAR_COLLAPSED_COOKIE = "gepro_sidebar_reduite";
 
-/** Sections repliées, séparées par des points : "documents.administration". */
+/** Sections repliées, séparées par des points : "documents.liens". */
 export const COLLAPSED_SECTIONS_COOKIE = "gepro_sections_repliees";
 
-export const SIDEBAR_SECTIONS = ["documents", "administration"] as const;
+export const SIDEBAR_SECTIONS = ["documents", "liens"] as const;
 export type SidebarSectionId = (typeof SIDEBAR_SECTIONS)[number];
 
 const isSection = (value: string): value is SidebarSectionId => (SIDEBAR_SECTIONS as readonly string[]).includes(value);

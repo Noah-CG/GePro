@@ -10,7 +10,9 @@ import { Card, PageHeader, Section, Stat } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { compareByDueThenPriority } from "@/lib/constants";
 import { todayISO } from "@/lib/dates";
+import { membersSettingsHref } from "@/lib/members";
 import { getTasks, getTeam, type TaskView } from "@/lib/queries";
+import { getSelectedProjectId } from "@/lib/selected-project";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -54,7 +56,7 @@ export default async function MemberPage({ params }: Props) {
   return (
     <div className="mx-auto max-w-6xl">
       {me.role === "admin" && (
-        <Link href="/membres" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-text">
+        <Link href={membersSettingsHref(await getSelectedProjectId())} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-text">
           <ArrowLeft size={14} /> Membres
         </Link>
       )}

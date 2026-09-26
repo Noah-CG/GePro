@@ -12,6 +12,7 @@ import {
   importantDays,
   projectEvents,
   projectFiles,
+  projectLinks,
   projects,
   taskAssignees,
   taskDependencies,
@@ -176,6 +177,9 @@ export type FileView = {
 
 /** Fichier tel que listé dans la barre latérale. */
 export type FileLink = { id: string; projectId: string; title: string };
+
+/** Lien utile d'un projet (barre latérale) ; son icône est déduite de `url` à l'affichage. */
+export type ProjectLinkView = { id: string; projectId: string; url: string; title: string };
 
 /** Au-delà, les métadonnées en cache sont rafraîchies à l'affichage de la page projet. */
 const RESOURCE_TTL_MS = 15 * 60_000;
@@ -433,6 +437,14 @@ export async function getResourceLinks(): Promise<ResourceLink[]> {
     .from(externalResources)
     .orderBy(asc(externalResources.createdAt));
   return rows.map(({ connectionId, syncError, ...r }) => ({ ...r, hasProblem: resourceProblem({ connectionId, syncError }) !== null }));
+}
+
+/** Liens utiles de tous les projets, dans leur ordre d'affichage (la barre latérale filtre). */
+export async function getProjectLinks(): Promise<ProjectLinkView[]> {
+  return db
+    .select({ id: projectLinks.id, projectId: projectLinks.projectId, url: projectLinks.url, title: projectLinks.title })
+    .from(projectLinks)
+    .orderBy(asc(projectLinks.position), asc(projectLinks.createdAt));
 }
 
 /** Durée (ms) des périodes terminées : `filter` restreint la somme (jour, semaine...). */
