@@ -13,8 +13,9 @@
  *   users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
  *
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
- * - Une tâche peut avoir des sous-tâches (un seul niveau) et dépendre d'autres tâches du même
- *   projet ; ces règles (même projet, pas de cycle) sont vérifiées dans actions/tasks.ts.
+ * - Une tâche peut avoir des sous-tâches, sur MAX_TASK_DEPTH niveaux au plus (lib/task-links.ts),
+ *   et dépendre d'autres tâches du même projet ; ces règles (même projet, profondeur, pas de
+ *   cycle) sont vérifiées dans actions/tasks.ts.
  * - Un projet archivé (archived_at non nul) disparaît des vues courantes mais reste consultable.
  * - Les dates "métier" (échéance, début/fin de projet) sont des DATE sans heure, manipulées
  *   comme chaînes "YYYY-MM-DD" pour éviter tout décalage de fuseau horaire.
@@ -131,6 +132,11 @@ export const tasks = pgTable(
      * revient à prendre la moyenne de leurs positions, sans renuméroter la colonne.
      */
     position: doublePrecision("position").notNull().default(0),
+    /**
+     * Ordre parmi les tâches sœurs (même parente, ou tâches racines du projet) dans l'arbre de la
+     * vue liste. Indépendant de `position`, qui reste l'ordre dans une colonne Kanban.
+     */
+    siblingPosition: doublePrecision("sibling_position").notNull().default(0),
     /** Renseigné quand la tâche passe à "Terminé". */
     completedAt: timestamp("completed_at", { withTimezone: true }),
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
@@ -140,6 +146,7 @@ export const tasks = pgTable(
     index("tasks_project_status_idx").on(t.projectId, t.status, t.position),
     index("tasks_due_date_idx").on(t.dueDate),
     index("tasks_parent_idx").on(t.parentId),
+    index("tasks_project_parent_sibling_idx").on(t.projectId, t.parentId, t.siblingPosition),
   ],
 );
 

@@ -29,6 +29,7 @@ const task = (id: string, dueDate: string, status: TaskView["status"] = "todo"):
   dependsOnIds: [],
   blockers: [],
   position: 0,
+  siblingPosition: 0,
   assigneeIds: [],
 });
 

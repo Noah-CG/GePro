@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { taskDependencies, tasks } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { getCalendarItems, getTasks } from "@/lib/queries";
+import { getCalendarItems, getSubtaskIds, getTasks } from "@/lib/queries";
 import { insertProject, insertUser, resetDb } from "@/test/db";
 import { createTask, deleteTask, getTaskOptions, setTaskParent, updateTask } from "./tasks";
 
@@ -40,13 +40,32 @@ describe("sous-tâches", () => {
     expect(await view(sub)).toMatchObject({ parentId: parent, parentTitle: "Lancer le site" });
   });
 
-  it("n'autorise qu'un seul niveau", async () => {
-    const parent = await add("Parente");
-    const sub = await add("Sous-tâche", { parentId: parent });
-    await expect(createTask({ projectId, title: "Petite-fille", parentId: sub })).resolves.toMatchObject({ ok: false });
-    // Une tâche qui a des sous-tâches ne peut pas devenir une sous-tâche.
+  it("accepte 4 niveaux, pas un de plus", async () => {
+    const l0 = await add("Niveau 0");
+    const l1 = await add("Niveau 1", { parentId: l0 });
+    const l2 = await add("Niveau 2", { parentId: l1 });
+    const l3 = await add("Niveau 3", { parentId: l2 });
+    await expect(createTask({ projectId, title: "Niveau 4", parentId: l3 })).resolves.toMatchObject({ ok: false });
+    // Une tâche qui a des sous-tâches compte leurs niveaux : l1 (3 niveaux) sous une autre racine en ferait 4.
     const other = await add("Autre");
-    await expect(updateTask(parent, { projectId, title: "Parente", parentId: other })).resolves.toMatchObject({ ok: false });
+    await expect(updateTask(l1, { projectId, title: "Niveau 1", parentId: other })).resolves.toMatchObject({ ok: true });
+    await expect(updateTask(other, { projectId, title: "Autre", parentId: l0 })).resolves.toMatchObject({ ok: false });
+    expect((await view(l0)).subtasks).toEqual({ total: 0, done: 0 });
+  });
+
+  it("refuse de rattacher une tâche à l'une de ses propres sous-tâches", async () => {
+    const a = await add("A");
+    const b = await add("B", { parentId: a });
+    const c = await add("C", { parentId: b });
+    await expect(setTaskParent(a, c)).resolves.toMatchObject({ ok: false });
+    await expect(updateTask(a, { projectId, title: "A", parentId: b })).resolves.toMatchObject({ ok: false });
+  });
+
+  it("range les nouvelles sous-tâches après leurs sœurs", async () => {
+    const parent = await add("Parente");
+    const first = await add("Première", { parentId: parent });
+    const second = await add("Deuxième", { parentId: parent });
+    expect((await view(second)).siblingPosition).toBeGreaterThan((await view(first)).siblingPosition);
   });
 
   it("refuse une parente d'un autre projet", async () => {
@@ -55,9 +74,11 @@ describe("sous-tâches", () => {
     await expect(createTask({ projectId, title: "Ici", parentId: foreign })).resolves.toMatchObject({ ok: false });
   });
 
-  it("supprimer la parente supprime ses sous-tâches", async () => {
+  it("supprimer la parente supprime ses sous-tâches, à tous les niveaux", async () => {
     const parent = await add("Parente");
-    await add("Sous-tâche", { parentId: parent });
+    const sub = await add("Sous-tâche", { parentId: parent });
+    await add("Sous-sous-tâche", { parentId: await add("Intermédiaire", { parentId: sub }) });
+    expect(await getSubtaskIds(parent)).toHaveLength(3);
     await deleteTask(parent);
     expect(await db.select().from(tasks)).toHaveLength(0);
   });
@@ -66,9 +87,10 @@ describe("sous-tâches", () => {
     const otherProject = (await insertProject(db, "Autre projet")).id;
     const parent = await add("Parente");
     const sub = await add("Sous-tâche", { parentId: parent });
+    const deep = await add("Sous-sous-tâche", { parentId: sub });
     await updateTask(parent, { projectId: otherProject, title: "Parente" });
-    const [row] = await db.select().from(tasks).where(eq(tasks.id, sub));
-    expect(row.projectId).toBe(otherProject);
+    const rows = await db.select().from(tasks).where(eq(tasks.projectId, otherProject));
+    expect(rows.map((r) => r.id).sort()).toEqual([parent, sub, deep].sort());
   });
   it("rattache puis détache une sous-tâche par glisser-déposer", async () => {
     const parent = await add("Parente");
@@ -83,9 +105,9 @@ describe("sous-tâches", () => {
     const parent = await add("Parente");
     const sub = await add("Sous-tâche", { parentId: parent });
     const other = await add("Autre");
-    await expect(setTaskParent(other, sub)).resolves.toMatchObject({ ok: false });
-    await expect(setTaskParent(parent, other)).resolves.toMatchObject({ ok: false });
+    await expect(setTaskParent(parent, sub)).resolves.toMatchObject({ ok: false });
     await expect(setTaskParent(other, other)).resolves.toMatchObject({ ok: false });
+    await expect(setTaskParent(other, sub)).resolves.toMatchObject({ ok: true });
   });
 });
 
@@ -136,7 +158,7 @@ describe("dépendances", () => {
     const parent = await add("Parente");
     await add("Sous-tâche", { parentId: parent });
     expect(await getTaskOptions(projectId)).toEqual([
-      { id: parent, title: "Parente", status: "todo", parentId: null },
+      { id: parent, title: "Parente", status: "todo", parentId: null, projectId },
       expect.objectContaining({ title: "Sous-tâche", parentId: parent }),
     ]);
   });

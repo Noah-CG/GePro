@@ -55,11 +55,13 @@ export type TaskView = {
   startDate: string | null;
   dueDate: string | null;
   position: number;
+  /** Ordre parmi les tâches sœurs (arbre de la vue liste). */
+  siblingPosition: number;
   assigneeIds: string[];
   /** Tâche parente, si c'est une sous-tâche. */
   parentId: string | null;
   parentTitle: string | null;
-  /** Avancement des sous-tâches (total 0 = aucune). */
+  /** Avancement des sous-tâches directes (total 0 = aucune). */
   subtasks: { total: number; done: number };
   /** Tâches à terminer avant celle-ci. */
   dependsOnIds: string[];
@@ -235,6 +237,7 @@ export async function getTasks(opts: { projectId?: string; assigneeId?: string }
       startDate: tasks.startDate,
       dueDate: tasks.dueDate,
       position: tasks.position,
+      siblingPosition: tasks.siblingPosition,
       parentId: tasks.parentId,
       parentTitle: parent.title,
     })
@@ -268,6 +271,19 @@ export async function getTasks(opts: { projectId?: string; assigneeId?: string }
   for (const l of links) byTask.set(l.taskId, [...(byTask.get(l.taskId) ?? []), l.userId]);
 
   return rows.map((r) => ({ ...r, assigneeIds: byTask.get(r.id) ?? [], ...linksOf(r.id) }));
+}
+
+/** Ids de toutes les sous-tâches d'une tâche, à tous les niveaux (sans la tâche elle-même). */
+export async function getSubtaskIds(taskId: string): Promise<string[]> {
+  const { rows } = await db.execute<{ id: string }>(sql`
+    with recursive sub as (
+      select id from ${tasks} where parent_id = ${taskId}::uuid
+      union
+      select t.id from ${tasks} t join sub on t.parent_id = sub.id
+    )
+    select id from sub
+  `);
+  return rows.map((r) => r.id);
 }
 
 type TaskLinks = Pick<TaskView, "subtasks" | "dependsOnIds" | "blockers">;
@@ -558,6 +574,7 @@ type CalendarRow = {
   status: TaskStatus | null;
   priority: TaskPriority | null;
   position: number | null;
+  sibling_position: number | null;
   project_id: string | null;
   project_name: string | null;
   project_color: string | null;
@@ -591,7 +608,7 @@ export async function getCalendarItems({
 }): Promise<CalendarItems> {
   const { rows } = await db.execute<CalendarRow>(sql`
     select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date, t.start_date::text as start_date,
-           t.status::text as status, t.priority::text as priority, t.position,
+           t.status::text as status, t.priority::text as priority, t.position, t.sibling_position,
            t.project_id, p.name as project_name, p.color as project_color,
            t.parent_id, (select pt.title from ${tasks} pt where pt.id = t.parent_id) as parent_title,
            coalesce((select json_agg(a.user_id) from ${taskAssignees} a where a.task_id = t.id), '[]'::json) as assignee_ids,
@@ -602,7 +619,7 @@ export async function getCalendarItems({
        and t.due_date between ${from}::date and ${to}::date
     union all
     select 'event', e.id, e.title, e.description, e.event_date::text, null,
-           null, null, null,
+           null, null, null, null,
            e.project_id, p.name, p.color,
            null, null,
            null, e.color, e.created_by
@@ -629,6 +646,7 @@ export async function getCalendarItems({
         startDate: r.start_date,
         dueDate: r.date,
         position: Number(r.position),
+        siblingPosition: Number(r.sibling_position),
         assigneeIds: jsonArray(r.assignee_ids),
         parentId: r.parent_id,
         parentTitle: r.parent_title,
