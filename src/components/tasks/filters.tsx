@@ -127,7 +127,9 @@ export function FilterBar({
   showProject?: boolean;
   showStatus?: boolean;
 }) {
-  const { team, projects } = useApp();
+  const { team: everyone, projects, currentProjectId } = useApp();
+  // Responsables proposés : les membres du projet affiché.
+  const team = everyone.filter((m) => !currentProjectId || m.projectIds.includes(currentProjectId));
   const set = <K extends keyof TaskFilters>(k: K, v: TaskFilters[K]) => onChange({ ...filters, [k]: v });
   const active = Object.entries(filters).some(([k, v]) => v !== DEFAULT_FILTERS[k as keyof TaskFilters]);
   // Nombre de filtres "avancés" actifs (affiché sur le bouton mobile).

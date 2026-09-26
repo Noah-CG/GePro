@@ -35,9 +35,9 @@ const task = (id: string, dueDate: string, status: TaskView["status"] = "todo"):
 
 const event = (id: string, date: string): CalendarEvent => ({
   id,
-  projectId: null,
-  projectName: null,
-  projectColor: null,
+  projectId: "3b08fcaa-91af-45d6-ac57-fb01af8d079c",
+  projectName: "Refonte",
+  projectColor: "#6366f1",
   title: id,
   description: "",
   date,

@@ -16,10 +16,13 @@ export function DiscordChannelCard({
   projectId,
   configured,
   channel,
+  canManage,
 }: {
   projectId: string;
   configured: boolean;
   channel: DiscordChannelView | null;
+  /** Relier ou délier le salon : propriétaire et administrateurs du projet (vérifié aussi côté serveur). */
+  canManage: boolean;
 }) {
   const { toast } = useApp();
   const [editing, setEditing] = useState(false);
@@ -27,7 +30,7 @@ export function DiscordChannelCard({
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
-  const showForm = configured && (!channel || editing);
+  const showForm = canManage && configured && (!channel || editing);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -82,12 +85,14 @@ export function DiscordChannelCard({
                 </a>
               </span>
             </p>
-          ) : (
+          ) : canManage ? (
             <p className="text-sm text-muted">Lisez et écrivez dans un salon Discord depuis la page du projet.</p>
+          ) : (
+            <p className="text-sm text-muted">Aucun salon relié. Un administrateur du projet peut en relier un.</p>
           )}
         </div>
 
-        {configured && channel && !editing && (
+        {canManage && configured && channel && !editing && (
           <div className="flex items-center gap-2">
             <Button size="sm" variant={confirming ? "danger" : "ghost"} onClick={unlink} onBlur={() => setConfirming(false)} loading={pending && confirming}>
               {confirming ? "Confirmer" : "Délier"}

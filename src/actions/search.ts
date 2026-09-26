@@ -2,9 +2,9 @@
 
 import { and, desc, eq, ilike, or } from "drizzle-orm";
 import { db } from "@/db";
-import { projects, tasks, type TaskStatus } from "@/db/schema";
+import { projectMembers, projects, tasks, type TaskStatus } from "@/db/schema";
+import { getProjectRole } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
-import { isUuid } from "@/lib/validation";
 
 export type SearchResults = {
   projects: { id: string; name: string; color: string; archived: boolean }[];
@@ -19,22 +19,24 @@ export type SearchResults = {
 };
 
 /**
- * Recherche simple (titre + description, insensible à la casse). Les tâches sont limitées au
- * projet sélectionné ; les projets trouvés servent à changer de projet.
+ * Recherche simple (titre + description, insensible à la casse), dans ses propres projets
+ * seulement. Les tâches sont limitées au projet sélectionné, s'il est bien l'un d'eux ; les
+ * projets trouvés servent à changer de projet.
  */
 export async function search(query: string, projectId: string | null): Promise<SearchResults> {
-  await requireUser();
+  const me = await requireUser();
   const q = query.trim();
   if (q.length < 2) return { projects: [], tasks: [] };
   // Échappe les jokers SQL saisis par l'utilisateur.
   const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-  // Sans projet sélectionné valide, aucune tâche : le site n'affiche que le projet sélectionné.
-  const taskProjectId = projectId && isUuid(projectId) ? projectId : null;
+  // Sans projet sélectionné dont on est membre, aucune tâche.
+  const taskProjectId = projectId && (await getProjectRole(me.id, projectId)) ? projectId : null;
 
   const [projectRows, taskRows] = await Promise.all([
     db
       .select({ id: projects.id, name: projects.name, color: projects.color, archivedAt: projects.archivedAt })
       .from(projects)
+      .innerJoin(projectMembers, and(eq(projectMembers.projectId, projects.id), eq(projectMembers.userId, me.id)))
       .where(or(ilike(projects.name, pattern), ilike(projects.description, pattern)))
       .orderBy(desc(projects.updatedAt))
       .limit(5),

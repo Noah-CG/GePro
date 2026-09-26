@@ -3,10 +3,10 @@
 import { and, eq, gt, isNull, lt, ne, or } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { projects, users, workSessions } from "@/db/schema";
+import { workSessions } from "@/db/schema";
+import { atLeast, getProjectRole } from "@/lib/access";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { addDays, formatDateTime, formatTime, zonedInstant } from "@/lib/dates";
-import { getSelectedProjectId } from "@/lib/selected-project";
 import { firstError, workNote, workSessionInput, type WorkSessionInput } from "@/lib/validation";
 import { endsNextDay } from "@/lib/work-time";
 import { fail, ok, type ActionResult } from "./result";
@@ -18,13 +18,14 @@ const UUID = /^[0-9a-f-]{36}$/i;
 export type StoppedSession = { id: string; durationMs: number };
 
 /**
- * Démarre le chrono du membre connecté, rattaché au projet sélectionné.
+ * Démarre le chrono du membre connecté, rattaché au projet affiché (`projectId`, celui de
+ * l'adresse ; null : sans projet), dont il doit être membre.
  * Sans effet s'il tourne déjà (index unique sur le chrono en cours) : un double clic ou un
  * second onglet ne crée pas deux périodes.
  */
-export async function startWorkTimer(): Promise<ActionResult> {
+export async function startWorkTimer(projectId: string | null): Promise<ActionResult> {
   const me = await requireUser();
-  const projectId = await getSelectedProjectId();
+  if (projectId !== null && !(await getProjectRole(me.id, projectId))) return fail("Projet introuvable.");
   await db.insert(workSessions).values({ userId: me.id, projectId }).onConflictDoNothing();
   refresh();
   return ok(undefined);
@@ -63,11 +64,29 @@ export async function saveWorkNote(id: string, note: string): Promise<ActionResu
 }
 
 // Saisie et correction manuelles du temps de travail (page Temps de travail).
-// Chacun corrige ses propres périodes ; un administrateur peut corriger celles de tous.
+// Chacun corrige ses propres périodes (sans projet, ou sur un projet dont il est membre) ; le
+// propriétaire et les administrateurs d'un projet corrigent celles de ses membres, sur ce projet.
 
-const FORBIDDEN = "Seul le membre concerné ou un administrateur peut modifier ce temps de travail.";
+const FORBIDDEN = "Seul le membre concerné ou un administrateur du projet peut modifier ce temps de travail.";
+const NOT_FOUND = "Période introuvable.";
 
-const canEditWorkOf = (me: SessionUser, userId: string) => me.role === "admin" || me.id === userId;
+/**
+ * Message d'erreur si `me` ne peut pas écrire une période de `userId` sur `projectId`, sinon null.
+ * `current` : projet de la période existante (correction) ; pour le temps d'un autre membre, la
+ * période reste sur ce projet.
+ */
+async function workEditError(me: SessionUser, userId: string, projectId: string | null, current?: string | null): Promise<string | null> {
+  if (me.id === userId) {
+    // Garder le projet d'une ancienne période reste permis, même si l'on n'en est plus membre.
+    return projectId && projectId !== current && !(await getProjectRole(me.id, projectId)) ? "Projet introuvable." : null;
+  }
+  if (!projectId || (current !== undefined && current !== projectId)) return FORBIDDEN;
+  const role = await getProjectRole(me.id, projectId);
+  if (!role) return current !== undefined ? NOT_FOUND : "Projet introuvable.";
+  if (!atLeast(role, "admin")) return FORBIDDEN;
+  if (!(await getProjectRole(userId, projectId))) return "Ce membre ne fait pas partie du projet.";
+  return null;
+}
 
 type Period = { userId: string; projectId: string | null; startedAt: Date; endedAt: Date; note: string };
 
@@ -84,11 +103,6 @@ async function toPeriod(userId: string, input: WorkSessionInput, excludeId?: str
   const endedAt = zonedInstant(endsNextDay(start, end) ? addDays(date, 1) : date, end);
   if (endedAt.getTime() <= startedAt.getTime()) return "L'heure de fin doit être après l'heure de début.";
   if (endedAt.getTime() > Date.now() + 60_000) return "Une période de travail ne peut pas se terminer dans le futur.";
-
-  if (projectId) {
-    const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
-    if (!project) return "Projet introuvable.";
-  }
 
   // Chevauchement avec une autre période du même membre (un chrono en cours court jusqu'à maintenant).
   const [overlap] = await db
@@ -114,12 +128,11 @@ async function toPeriod(userId: string, input: WorkSessionInput, excludeId?: str
 export async function createWorkSession(userId: string, input: WorkSessionInput): Promise<ActionResult<{ id: string }>> {
   const me = await requireUser();
   if (!UUID.test(userId)) return fail("Membre introuvable.");
-  if (!canEditWorkOf(me, userId)) return fail(FORBIDDEN);
-  const [member] = await db.select({ id: users.id }).from(users).where(eq(users.id, userId));
-  if (!member) return fail("Membre introuvable.");
 
   const period = await toPeriod(userId, input);
   if (typeof period === "string") return fail(period);
+  const denied = await workEditError(me, userId, period.projectId);
+  if (denied) return fail(denied);
   const [row] = await db.insert(workSessions).values(period).returning({ id: workSessions.id });
   refresh();
   return ok({ id: row.id });
@@ -132,11 +145,14 @@ export async function createWorkSession(userId: string, input: WorkSessionInput)
 export async function updateWorkSession(id: string, input: WorkSessionInput): Promise<ActionResult> {
   const me = await requireUser();
   const session = await findSession(id);
-  if (!session) return fail("Période introuvable.");
-  if (!canEditWorkOf(me, session.userId)) return fail(FORBIDDEN);
+  if (!session) return fail(NOT_FOUND);
+  const denied = await workEditError(me, session.userId, session.projectId, session.projectId);
+  if (denied) return fail(denied);
 
   const period = await toPeriod(session.userId, input, id);
   if (typeof period === "string") return fail(period);
+  const deniedTarget = await workEditError(me, session.userId, period.projectId, session.projectId);
+  if (deniedTarget) return fail(deniedTarget);
   await db.update(workSessions).set(period).where(eq(workSessions.id, id));
   refresh();
   return ok(undefined);
@@ -146,8 +162,9 @@ export async function updateWorkSession(id: string, input: WorkSessionInput): Pr
 export async function deleteWorkSession(id: string): Promise<ActionResult> {
   const me = await requireUser();
   const session = await findSession(id);
-  if (!session) return fail("Période introuvable.");
-  if (!canEditWorkOf(me, session.userId)) return fail(FORBIDDEN);
+  if (!session) return fail(NOT_FOUND);
+  const denied = await workEditError(me, session.userId, session.projectId, session.projectId);
+  if (denied) return fail(denied);
 
   await db.delete(workSessions).where(eq(workSessions.id, id));
   refresh();
@@ -156,7 +173,10 @@ export async function deleteWorkSession(id: string): Promise<ActionResult> {
 
 async function findSession(id: string) {
   if (!UUID.test(id)) return null;
-  const [row] = await db.select({ userId: workSessions.userId }).from(workSessions).where(eq(workSessions.id, id));
+  const [row] = await db
+    .select({ userId: workSessions.userId, projectId: workSessions.projectId })
+    .from(workSessions)
+    .where(eq(workSessions.id, id));
   return row ?? null;
 }
 

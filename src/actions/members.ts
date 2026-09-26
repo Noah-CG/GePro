@@ -3,7 +3,7 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { sessions, users } from "@/db/schema";
+import { projects, sessions, users } from "@/db/schema";
 import { hashPassword, requireAdmin } from "@/lib/auth";
 import { COLORS } from "@/lib/constants";
 import { firstError, memberInput, password, type MemberInput } from "@/lib/validation";
@@ -44,6 +44,9 @@ export async function resetMemberPassword(id: string, newPassword: string): Prom
 export async function deleteMember(id: string): Promise<ActionResult> {
   const me = await requireAdmin();
   if (id === me.id) return fail("Vous ne pouvez pas supprimer votre propre compte.");
+  // Ses projets resteraient sans propriétaire : il doit d'abord les transmettre ou les supprimer.
+  const [owned] = await db.select({ id: projects.id }).from(projects).where(eq(projects.ownerId, id)).limit(1);
+  if (owned) return fail("Ce compte est propriétaire de projets : il doit d'abord les transmettre à un autre membre ou les supprimer.");
   await db.delete(users).where(eq(users.id, id));
   refresh();
   return ok(undefined);

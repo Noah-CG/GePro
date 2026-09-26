@@ -1,17 +1,15 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { taskAssignees, tasks, workSessions } from "@/db/schema";
+import { projectMembers, taskAssignees, tasks, workSessions } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { formatClock, formatDuration } from "@/lib/dates";
 import { getProjectTeamWork, getTasks, getWorkByProject, getWorkSessions, getWorkSummary } from "@/lib/queries";
-import { getSelectedProjectId } from "@/lib/selected-project";
-import { insertProject, insertUser, resetDb } from "@/test/db";
+import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import { createWorkSession, deleteWorkSession, saveWorkNote, startWorkTimer, stopWorkTimer, updateWorkSession } from "./work-sessions";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
-vi.mock("@/lib/selected-project", () => ({ getSelectedProjectId: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 let me: Awaited<ReturnType<typeof insertUser>>;
@@ -20,9 +18,8 @@ let projectId: string;
 beforeEach(async () => {
   await resetDb(db);
   me = await insertUser(db);
-  projectId = (await insertProject(db)).id;
+  projectId = (await insertProject(db, "Refonte du site", me.id)).id;
   vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
-  vi.mocked(getSelectedProjectId).mockResolvedValue(projectId);
 });
 
 const rows = () => db.select().from(workSessions).where(eq(workSessions.userId, me.id));
@@ -36,8 +33,8 @@ async function insertSession(start: string, minutes: number, project: string | n
 }
 
 describe("chrono", () => {
-  it("démarrer puis arrêter enregistre une période sur le projet sélectionné", async () => {
-    await startWorkTimer();
+  it("démarrer puis arrêter enregistre une période sur le projet affiché", async () => {
+    await startWorkTimer(projectId);
     let [row] = await rows();
     expect(row).toMatchObject({ projectId, endedAt: null });
 
@@ -48,16 +45,24 @@ describe("chrono", () => {
   });
 
   it("un second démarrage pendant que le chrono tourne est sans effet", async () => {
-    await startWorkTimer();
-    await startWorkTimer();
+    await startWorkTimer(projectId);
+    await startWorkTimer(projectId);
     expect(await rows()).toHaveLength(1);
   });
 
   it("arrêter renvoie la période enregistrée, pour en rédiger le journal", async () => {
-    await startWorkTimer();
+    await startWorkTimer(projectId);
     const res = await stopWorkTimer();
     const [row] = await rows();
     expect(res).toEqual({ ok: true, data: { id: row.id, durationMs: row.endedAt!.getTime() - row.startedAt.getTime() } });
+  });
+
+  it("refuse de démarrer sur un projet dont on n'est pas membre", async () => {
+    const foreign = (await insertProject(db, "Projet secret")).id;
+    expect(await startWorkTimer(foreign)).toEqual({ ok: false, error: "Projet introuvable." });
+    expect(await rows()).toEqual([]);
+    expect(await startWorkTimer(null)).toEqual({ ok: true, data: undefined });
+    expect((await rows())[0].projectId).toBeNull();
   });
 
   it("arrêter sans chrono en cours ne fait rien", async () => {
@@ -68,7 +73,7 @@ describe("chrono", () => {
   it("n'arrête que le chrono du membre connecté", async () => {
     const other = await insertUser(db, "Léa Dubois");
     await db.insert(workSessions).values({ userId: other.id });
-    await startWorkTimer();
+    await startWorkTimer(projectId);
     await stopWorkTimer();
     const [otherRow] = await db.select().from(workSessions).where(eq(workSessions.userId, other.id));
     expect(otherRow.endedAt).toBeNull();
@@ -81,7 +86,7 @@ describe("journal de bord", () => {
     const [{ id }] = await rows();
 
     expect(await saveWorkNote(id, "  Maquettes de l'accueil  ")).toEqual({ ok: true, data: undefined });
-    expect((await getWorkSessions(me.id))[0].note).toBe("Maquettes de l'accueil");
+    expect((await getWorkSessions(me.id, { viewerId: me.id }))[0].note).toBe("Maquettes de l'accueil");
 
     await saveWorkNote(id, "Maquettes + relecture");
     expect((await rows())[0].note).toBe("Maquettes + relecture");
@@ -123,17 +128,17 @@ describe("temps de travail", () => {
   });
 
   it("répartit le temps par projet et liste les périodes récentes d'abord", async () => {
-    const other = await insertProject(db, "Application mobile");
+    const other = await insertProject(db, "Application mobile", me.id);
     await insertSession("2026-09-22T08:00:00Z", 30);
     await insertSession("2026-09-23T08:00:00Z", 120, other.id);
     await insertSession("2026-09-24T08:00:00Z", 15, null);
 
-    expect(await getWorkByProject(me.id)).toEqual([
+    expect(await getWorkByProject(me.id, { viewerId: me.id })).toEqual([
       { projectId: other.id, name: "Application mobile", color: other.color, ms: 120 * 60_000 },
       { projectId, name: "Refonte du site", color: expect.any(String), ms: 30 * 60_000 },
       { projectId: null, name: null, color: null, ms: 15 * 60_000 },
     ]);
-    expect((await getWorkSessions(me.id)).map((s) => s.startedAt)).toEqual([
+    expect((await getWorkSessions(me.id, { viewerId: me.id })).map((s) => s.startedAt)).toEqual([
       "2026-09-24T08:00:00.000Z",
       "2026-09-23T08:00:00.000Z",
       "2026-09-22T08:00:00.000Z",
@@ -219,7 +224,7 @@ describe("saisie manuelle du temps de travail", () => {
   });
 
   it("corrige une période, et arrête un chrono oublié", async () => {
-    await startWorkTimer();
+    await startWorkTimer(projectId);
     const [running] = await rows();
     const res = await updateWorkSession(running.id, { ...input, projectId });
     expect(res.ok).toBe(true);
@@ -240,25 +245,47 @@ describe("saisie manuelle du temps de travail", () => {
     expect(await rows()).toEqual([]);
   });
 
-  it("interdit de toucher au temps d'un autre membre, sauf pour un administrateur", async () => {
-    const other = await insertUser(db, "Léa Dubois");
-    const forbidden = { ok: false, error: "Seul le membre concerné ou un administrateur peut modifier ce temps de travail." };
-    expect(await create({}, other.id)).toEqual(forbidden);
+  it("interdit de toucher au temps d'un autre membre, sauf pour un administrateur du projet", async () => {
+    // Projet de Léa, dont je suis simple membre.
+    const lea = await insertUser(db, "Léa Dubois");
+    const shared = (await insertProject(db, "Projet de Léa", lea.id)).id;
+    await addMember(db, shared, me.id);
+    const forbidden = { ok: false, error: "Seul le membre concerné ou un administrateur du projet peut modifier ce temps de travail." };
+    const setMyRole = (role: "admin" | "member") =>
+      db.update(projectMembers).set({ role }).where(and(eq(projectMembers.projectId, shared), eq(projectMembers.userId, me.id)));
 
+    expect(await create({ projectId: shared }, lea.id)).toEqual(forbidden);
+    // Le rôle global « admin » ne donne aucun droit sur le temps des autres.
     vi.mocked(requireUser).mockResolvedValue({ ...me, role: "admin" });
-    const res = await create({}, other.id);
+    expect(await create({ projectId: shared }, lea.id)).toEqual(forbidden);
+
+    await setMyRole("admin");
+    const res = await create({ projectId: shared }, lea.id);
     expect(res.ok).toBe(true);
     const id = (res as { data: { id: string } }).data.id;
-
-    vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
+    // Même administrateur, on ne déplace pas le temps d'un autre vers un autre projet.
     expect(await updateWorkSession(id, { ...input, projectId })).toEqual(forbidden);
+
+    await setMyRole("member");
+    expect(await updateWorkSession(id, { ...input, projectId: shared })).toEqual(forbidden);
     expect(await deleteWorkSession(id)).toEqual(forbidden);
+  });
+
+  it("le temps d'un autre ne se saisit que sur un projet dont il est membre", async () => {
+    const lea = await insertUser(db, "Léa Dubois");
+    expect(await create({}, lea.id)).toEqual({ ok: false, error: "Ce membre ne fait pas partie du projet." });
+    expect(await create({ projectId: "" }, lea.id)).toMatchObject({ ok: false });
   });
 
   it("signale une période ou un membre inconnus", async () => {
     expect(await updateWorkSession("00000000-0000-4000-8000-000000000000", { ...input, projectId })).toEqual({ ok: false, error: "Période introuvable." });
     expect(await deleteWorkSession("pas-un-uuid")).toEqual({ ok: false, error: "Période introuvable." });
-    vi.mocked(requireUser).mockResolvedValue({ ...me, role: "admin" });
-    expect(await create({}, "00000000-0000-4000-8000-000000000000")).toEqual({ ok: false, error: "Membre introuvable." });
+    expect(await create({}, "pas-un-uuid")).toEqual({ ok: false, error: "Membre introuvable." });
+  });
+
+  it("refuse un projet dont on n'est pas membre, même pour son propre temps", async () => {
+    const foreign = (await insertProject(db, "Projet secret")).id;
+    expect(await create({ projectId: foreign })).toEqual({ ok: false, error: "Projet introuvable." });
+    expect(await rows()).toEqual([]);
   });
 });

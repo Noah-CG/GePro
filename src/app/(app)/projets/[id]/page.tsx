@@ -1,35 +1,24 @@
 import { Archive } from "lucide-react";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { ProjectDates, ProjectMenu } from "@/components/projects/project-card";
 import { NewTaskButton } from "@/components/tasks/new-task-button";
 import { TaskBoard } from "@/components/tasks/task-board";
 import { ProgressBar } from "@/components/ui/misc";
-import { requireUser } from "@/lib/auth";
 import { todayISO } from "@/lib/dates";
-import { getProjectsWithStats, getTasks } from "@/lib/queries";
+import { loadProjectPage } from "@/lib/project-page";
+import { getTasks } from "@/lib/queries";
 import { percent } from "@/lib/utils";
 
 type Props = { params: Promise<{ id: string }> };
 
-const UUID = /^[0-9a-f-]{36}$/i;
-
-async function loadProject(id: string) {
-  if (!UUID.test(id)) return null;
-  const [project] = await getProjectsWithStats({ id, today: todayISO() });
-  return project ?? null;
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const project = await loadProject((await params).id);
-  return { title: project?.name ?? "Projet" };
+  const { project } = await loadProjectPage((await params).id);
+  return { title: project.name };
 }
 
 export default async function ProjectPage({ params }: Props) {
-  await requireUser();
   const { id } = await params;
-  const project = await loadProject(id);
-  if (!project) notFound();
+  const { project } = await loadProjectPage(id);
   const tasks = await getTasks({ projectId: id });
   const pct = percent(project.done, project.total);
   const today = todayISO();

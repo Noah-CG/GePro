@@ -6,7 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { saveGoogleConnection } from "@/lib/integrations/connections";
 import { INTEGRATION_ERROR_MESSAGES as MSG } from "@/lib/integrations/errors";
 import { GOOGLE_SCOPE } from "@/lib/integrations/google";
-import { insertProject, insertUser, resetDb } from "@/test/db";
+import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import { DOC_ID, driveError, driveFile, json, mockFetch, mockGoogle } from "@/test/google";
 import {
   attachGoogleDoc,
@@ -29,7 +29,7 @@ let projectId: string;
 beforeEach(async () => {
   await resetDb(db);
   me = await insertUser(db, "Camille Martin");
-  projectId = (await insertProject(db)).id;
+  projectId = (await insertProject(db, "Refonte du site", me.id)).id;
   vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -208,6 +208,7 @@ describe("refreshProjectResources", () => {
 
   it("synchronise chaque document avec le compte de la personne qui l'a rattaché", async () => {
     const lea = await insertUser(db, "Léa Dubois");
+    await addMember(db, projectId, lea.id);
     await connectGoogle(lea.id);
     vi.mocked(requireUser).mockResolvedValue({ ...lea, role: "member" });
     const [leaConnection] = await db.select().from(externalConnections).where(eq(externalConnections.userId, lea.id));

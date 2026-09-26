@@ -16,7 +16,7 @@ let projectId: string;
 beforeEach(async () => {
   await resetDb(db);
   const me = await insertUser(db);
-  projectId = (await insertProject(db)).id;
+  projectId = (await insertProject(db, "Refonte du site", me.id)).id;
   vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
 });
 

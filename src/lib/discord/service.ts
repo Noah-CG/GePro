@@ -3,9 +3,10 @@
  * envoi, état de lecture. Seul module (avec client.ts) à manipuler le jeton du webhook.
  */
 import "server-only";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { discordReadState, projectDiscord, type ProjectDiscord } from "@/db/schema";
+import { memberProjectIds } from "@/lib/queries";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import {
   createWebhook,
@@ -43,8 +44,8 @@ export async function getDiscordChannelView(projectId: string): Promise<DiscordC
   return row ?? null;
 }
 
-/** Salon relié à chaque projet (barre d'onglets : l'onglet Discord suit le projet sélectionné). */
-export async function getDiscordChannelViews(): Promise<Record<string, DiscordChannelView>> {
+/** Salon relié à chaque projet de `viewerId` (barre d'onglets : l'onglet Discord suit le projet sélectionné). */
+export async function getDiscordChannelViews(viewerId: string): Promise<Record<string, DiscordChannelView>> {
   const rows = await db
     .select({
       projectId: projectDiscord.projectId,
@@ -52,7 +53,8 @@ export async function getDiscordChannelViews(): Promise<Record<string, DiscordCh
       channelId: projectDiscord.channelId,
       channelName: projectDiscord.channelName,
     })
-    .from(projectDiscord);
+    .from(projectDiscord)
+    .where(inArray(projectDiscord.projectId, memberProjectIds(viewerId)));
   return Object.fromEntries(rows.map(({ projectId, ...view }) => [projectId, view]));
 }
 

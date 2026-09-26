@@ -3,41 +3,39 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { projectEvents, projects } from "@/db/schema";
-import { requireUser, type SessionUser } from "@/lib/auth";
+import { projectEvents } from "@/db/schema";
+import { atLeast, authorizeProject, authorizeProjectOf, type AccessResult } from "@/lib/access";
 import { scheduleCalendarSync } from "@/lib/integrations/calendar-sync";
-import { eventInput, firstError, isUuid, type EventInput } from "@/lib/validation";
+import { eventInput, firstError, type EventInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
 /** Rafraîchit toutes les pages (calendrier, tableau de bord…) après une modification. */
 const refresh = () => revalidatePath("/", "layout");
 
-/** Message d'erreur si `me` ne peut pas modifier l'événement : seuls son créateur et les admins le peuvent. */
-async function editDenied(id: string, me: SessionUser): Promise<string | null> {
-  if (!isUuid(id)) return "Événement introuvable.";
+/**
+ * Accès en modification à un événement : il faut être membre de son projet, et en être le
+ * créateur, ou propriétaire / administrateur du projet.
+ */
+async function authorizeEdit(id: string): Promise<AccessResult> {
+  const auth = await authorizeProjectOf("event", id);
+  if (!auth.ok) return auth;
+  const { user, role } = auth.access;
   const [event] = await db.select({ createdBy: projectEvents.createdBy }).from(projectEvents).where(eq(projectEvents.id, id));
-  if (!event) return "Événement introuvable.";
-  if (me.role !== "admin" && event.createdBy !== me.id) {
-    return "Seul le créateur de l'événement ou un administrateur peut le modifier ou le supprimer.";
+  if (!atLeast(role, "admin") && event.createdBy !== user.id) {
+    return { ok: false, error: "Seul le créateur de l'événement ou un administrateur du projet peut le modifier ou le supprimer." };
   }
-  return null;
-}
-
-async function projectExists(id: string | null): Promise<boolean> {
-  if (!id) return true;
-  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, id));
-  return !!project;
+  return auth;
 }
 
 export async function createEvent(input: EventInput): Promise<ActionResult<{ id: string }>> {
-  const me = await requireUser();
   const parsed = eventInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
-  if (!(await projectExists(parsed.data.projectId))) return fail("Projet introuvable.");
+  const auth = await authorizeProject(parsed.data.projectId);
+  if (!auth.ok) return fail(auth.error);
 
   const [event] = await db
     .insert(projectEvents)
-    .values({ ...parsed.data, createdBy: me.id })
+    .values({ ...parsed.data, createdBy: auth.access.user.id })
     .returning({ id: projectEvents.id });
   await scheduleCalendarSync([{ kind: "event", id: event.id }]);
   refresh();
@@ -45,13 +43,15 @@ export async function createEvent(input: EventInput): Promise<ActionResult<{ id:
 }
 
 export async function updateEvent(id: string, input: EventInput): Promise<ActionResult> {
-  const me = await requireUser();
+  const auth = await authorizeEdit(id);
+  if (!auth.ok) return fail(auth.error);
   const parsed = eventInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
-
-  const denied = await editDenied(id, me);
-  if (denied) return fail(denied);
-  if (!(await projectExists(parsed.data.projectId))) return fail("Projet introuvable.");
+  // Déplacé vers un autre projet : il faut en être membre aussi.
+  if (parsed.data.projectId !== auth.access.projectId) {
+    const target = await authorizeProject(parsed.data.projectId);
+    if (!target.ok) return fail(target.error);
+  }
 
   await db.update(projectEvents).set(parsed.data).where(eq(projectEvents.id, id));
   await scheduleCalendarSync([{ kind: "event", id }]);
@@ -60,9 +60,8 @@ export async function updateEvent(id: string, input: EventInput): Promise<Action
 }
 
 export async function deleteEvent(id: string): Promise<ActionResult> {
-  const me = await requireUser();
-  const denied = await editDenied(id, me);
-  if (denied) return fail(denied);
+  const auth = await authorizeEdit(id);
+  if (!auth.ok) return fail(auth.error);
 
   await db.delete(projectEvents).where(eq(projectEvents.id, id));
   await scheduleCalendarSync([{ kind: "event", id }]);

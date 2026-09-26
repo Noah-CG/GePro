@@ -10,16 +10,17 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Segmented } from "@/components/ui/input";
 import { Card } from "@/components/ui/misc";
-import type { Member } from "@/lib/queries";
+import type { Account } from "@/lib/queries";
 
-export function MembersManager({ team }: { team: Member[] }) {
+/** Administration des comptes de l'application (sans rapport avec les membres des projets). */
+export function MembersManager({ team }: { team: Account[] }) {
   const { me, toast } = useApp();
   const [createOpen, setCreateOpen] = useState(false);
-  const [resetFor, setResetFor] = useState<Member | null>(null);
+  const [resetFor, setResetFor] = useState<Account | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const remove = (m: Member) => {
+  const remove = (m: Account) => {
     if (confirmDelete !== m.id) return setConfirmDelete(m.id);
     startTransition(async () => {
       const res = await deleteMember(m.id);
@@ -131,7 +132,7 @@ function CreateMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   );
 }
 
-function ResetPasswordDialog({ member, onClose }: { member: Member | null; onClose: () => void }) {
+function ResetPasswordDialog({ member, onClose }: { member: Account | null; onClose: () => void }) {
   const { toast } = useApp();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

@@ -2,6 +2,7 @@
  * Modèle de données GePro.
  *
  *   users ──< sessions
+ *   users ──< project_members >── projects ──< project_invitations
  *   users ──< task_assignees >── tasks >── projects
  *   tasks ──< tasks (sous-tâches, via parent_id)
  *   tasks ──< task_dependencies >── tasks
@@ -13,6 +14,11 @@
  *   projects ──< project_discord (salon Discord relié) ; users ──< discord_read_state
  *   users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
  *
+ * - Les projets sont étanches : on ne voit et ne modifie que les projets dont on est membre
+ *   (project_members), et on n'y entre que sur invitation. Toute donnée de projet porte un
+ *   `project_id` non nul (ou hérite de celui de sa parente : sous-tâches, morceaux de fichier…) ;
+ *   le contrôle d'accès est centralisé dans lib/access.ts.
+ * - Un projet a un seul propriétaire (`projects.owner_id`, rôle "owner" dans project_members).
  * - Une tâche appartient à un seul projet, et peut avoir plusieurs responsables.
  * - Une tâche peut avoir des sous-tâches, sur MAX_TASK_DEPTH niveaux au plus (lib/task-links.ts),
  *   et dépendre d'autres tâches du même projet ; ces règles (même projet, profondeur, pas de
@@ -43,7 +49,11 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+/** Rôle dans l'application : un "admin" gère les comptes, sans aucun droit sur les projets. */
 export const userRole = pgEnum("user_role", ["admin", "member"]);
+/** Rôle dans un projet (voir lib/access.ts) : owner > admin > member. */
+export const projectRole = pgEnum("project_role", ["owner", "admin", "member"]);
+export const invitationStatus = pgEnum("invitation_status", ["pending", "accepted", "revoked"]);
 export const taskStatus = pgEnum("task_status", ["todo", "in_progress", "done"]);
 export const taskPriority = pgEnum("task_priority", ["low", "medium", "high"]);
 /** "github" est déclaré d'avance : l'ajouter plus tard imposerait une migration. */
@@ -109,8 +119,65 @@ export const projects = pgTable("projects", {
   /** Non nul = projet archivé. */
   archivedAt: timestamp("archived_at", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+  /**
+   * Propriétaire, toujours présent dans project_members avec le rôle "owner". Un compte qui
+   * possède des projets ne peut pas être supprimé (restrict) : ils resteraient sans propriétaire.
+   */
+  ownerId: uuid("owner_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
   ...timestamps,
 });
+
+/** Membres d'un projet : seuls eux le voient. Un seul "owner" par projet. */
+export const projectMembers = pgTable(
+  "project_members",
+  {
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: projectRole("role").notNull().default("member"),
+    joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.userId] }),
+    index("project_members_user_idx").on(t.userId),
+    uniqueIndex("project_members_one_owner_uq").on(t.projectId).where(sql`${t.role} = 'owner'`),
+  ],
+);
+
+/**
+ * Invitation à rejoindre un projet, pour un email exact. Le jeton n'est montré qu'une fois (lien
+ * à transmettre) ; la base n'en garde que le hash SHA-256, comme pour les sessions. Accepter
+ * n'ajoute qu'à ce projet, et seulement le compte qui a cet email.
+ */
+export const projectInvitations = pgTable(
+  "project_invitations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Toujours en minuscules. */
+    email: text("email").notNull(),
+    role: projectRole("role").notNull().default("member"),
+    tokenHash: text("token_hash").notNull().unique(),
+    status: invitationStatus("status").notNull().default("pending"),
+    invitedBy: uuid("invited_by").references(() => users.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("project_invitations_project_idx").on(t.projectId),
+    index("project_invitations_email_idx").on(t.email),
+    uniqueIndex("project_invitations_pending_uq").on(t.projectId, t.email).where(sql`${t.status} = 'pending'`),
+    check("project_invitations_not_owner", sql`${t.role} <> 'owner'`),
+  ],
+);
 
 export const tasks = pgTable(
   "tasks",
@@ -183,21 +250,20 @@ export const taskAssignees = pgTable(
   (t) => [primaryKey({ columns: [t.taskId, t.userId] }), index("task_assignees_user_idx").on(t.userId)],
 );
 
-/**
- * Événements du calendrier (réunion, jalon, livraison…), distincts des tâches.
- * Sans projet, c'est un événement d'équipe, affiché dans le calendrier de chaque projet.
- */
+/** Événements du calendrier d'un projet (réunion, jalon, livraison…), distincts des tâches. */
 export const projectEvents = pgTable(
   "project_events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
     /** Date métier "YYYY-MM-DD", comme les échéances des tâches. */
     eventDate: date("event_date", { mode: "string" }).notNull(),
     color: text("color").notNull().default("#6366f1"),
-    /** Seul le créateur (ou un admin) peut modifier ou supprimer l'événement. */
+    /** Seul le créateur (ou un owner/admin du projet) peut modifier ou supprimer l'événement. */
     createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     ...timestamps,
   },
@@ -342,7 +408,7 @@ export const projectFiles = pgTable(
     size: integer("size").notNull(),
     chunkCount: integer("chunk_count").notNull(),
     status: fileStatus("status").notNull().default("uploading"),
-    /** Seule cette personne (ou un admin) peut supprimer le fichier. */
+    /** Seule cette personne (ou un owner/admin du projet) peut supprimer le fichier. */
     uploadedBy: uuid("uploaded_by").references(() => users.id, { onDelete: "set null" }),
     ...timestamps,
   },
@@ -373,7 +439,10 @@ export const workSessions = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    /** Projet sélectionné au démarrage du chrono. */
+    /**
+     * Projet sélectionné au démarrage du chrono. Le temps appartient au membre : supprimer le
+     * projet le garde, "sans projet".
+     */
     projectId: uuid("project_id").references(() => projects.id, { onDelete: "set null" }),
     startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
     endedAt: timestamp("ended_at", { withTimezone: true }),
@@ -382,6 +451,7 @@ export const workSessions = pgTable(
   },
   (t) => [
     index("work_sessions_user_started_idx").on(t.userId, t.startedAt),
+    index("work_sessions_project_idx").on(t.projectId),
     uniqueIndex("work_sessions_running_uq").on(t.userId).where(sql`${t.endedAt} is null`),
   ],
 );
@@ -442,7 +512,7 @@ export const googleCalendarSyncs = pgTable("google_calendar_syncs", {
   ...timestamps,
 });
 
-/** Projets choisis par le membre (les événements d'équipe, sans projet, sont toujours inclus). */
+/** Projets choisis par le membre (seuls ceux dont il est encore membre sont synchronisés). */
 export const googleCalendarSyncProjects = pgTable(
   "google_calendar_sync_projects",
   {
@@ -460,6 +530,7 @@ export const googleCalendarSyncProjects = pgTable(
 
 export const usersRelations = relations(users, ({ many }) => ({
   assignments: many(taskAssignees),
+  memberships: many(projectMembers),
   sessions: many(sessions),
   connections: many(externalConnections),
   workSessions: many(workSessions),
@@ -470,12 +541,24 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 }));
 
 export const projectsRelations = relations(projects, ({ one, many }) => ({
+  owner: one(users, { fields: [projects.ownerId], references: [users.id] }),
+  members: many(projectMembers),
+  invitations: many(projectInvitations),
   tasks: many(tasks),
   resources: many(externalResources),
   events: many(projectEvents),
   importantDays: many(importantDays),
   files: many(projectFiles),
   discord: one(projectDiscord),
+}));
+
+export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
+  project: one(projects, { fields: [projectMembers.projectId], references: [projects.id] }),
+  user: one(users, { fields: [projectMembers.userId], references: [users.id] }),
+}));
+
+export const projectInvitationsRelations = relations(projectInvitations, ({ one }) => ({
+  project: one(projects, { fields: [projectInvitations.projectId], references: [projects.id] }),
 }));
 
 export const projectFilesRelations = relations(projectFiles, ({ one, many }) => ({
@@ -534,6 +617,8 @@ export const workSessionsRelations = relations(workSessions, ({ one }) => ({
 
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
+export type ProjectRole = (typeof projectRole.enumValues)[number];
+export type ProjectInvitation = typeof projectInvitations.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type ProjectEvent = typeof projectEvents.$inferSelect;
 export type ImportantDay = typeof importantDays.$inferSelect;

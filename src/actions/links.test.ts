@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { projectLinks } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { getProjectLinks } from "@/lib/queries";
-import { insertProject, insertUser, resetDb } from "@/test/db";
+import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import { createProjectLink, deleteProjectLink, updateProjectLink } from "./links";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
@@ -17,7 +17,7 @@ beforeEach(async () => {
   await resetDb(db);
   const me = await insertUser(db);
   meId = me.id;
-  projectId = (await insertProject(db)).id;
+  projectId = (await insertProject(db, "Refonte du site", meId)).id;
   vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
 });
 
@@ -32,7 +32,7 @@ describe("liens utiles", () => {
     await add("github.com/gepro/gepro");
     await add("https://www.exemple.fr/doc");
     await add("https://www.figma.com/file/1", "  Maquettes  ");
-    expect((await getProjectLinks()).map(({ url, title }) => ({ url, title }))).toEqual([
+    expect((await getProjectLinks(meId)).map(({ url, title }) => ({ url, title }))).toEqual([
       { url: "https://github.com/gepro/gepro", title: "GitHub" },
       { url: "https://www.exemple.fr/doc", title: "exemple.fr" },
       { url: "https://www.figma.com/file/1", title: "Maquettes" },
@@ -44,7 +44,7 @@ describe("liens utiles", () => {
   it("ajoute chaque lien à la fin de la liste de son projet", async () => {
     await add("https://a.fr");
     await add("https://b.fr");
-    const other = (await insertProject(db, "Autre projet")).id;
+    const other = (await insertProject(db, "Autre projet", meId)).id;
     await add("https://c.fr", "", other);
     const rows = await db.select({ title: projectLinks.title, position: projectLinks.position }).from(projectLinks);
     expect(rows.sort((x, y) => x.title.localeCompare(y.title))).toEqual([
@@ -58,7 +58,7 @@ describe("liens utiles", () => {
     "refuse l'adresse %j",
     async (url) => {
       await expect(createProjectLink(projectId, { url, title: "Piège" })).resolves.toMatchObject({ ok: false });
-      expect(await getProjectLinks()).toEqual([]);
+      expect(await getProjectLinks(meId)).toEqual([]);
     },
   );
 
@@ -74,16 +74,33 @@ describe("liens utiles", () => {
   it("modifie un lien, sans accepter d'adresse dangereuse", async () => {
     const id = await add("https://a.fr");
     await expect(updateProjectLink(id, { url: "docs.google.com/spreadsheets/d/1", title: "" })).resolves.toMatchObject({ ok: true });
-    expect((await getProjectLinks())[0]).toMatchObject({ url: "https://docs.google.com/spreadsheets/d/1", title: "Google Sheets" });
+    expect((await getProjectLinks(meId))[0]).toMatchObject({ url: "https://docs.google.com/spreadsheets/d/1", title: "Google Sheets" });
     await expect(updateProjectLink(id, { url: "javascript:alert(1)" })).resolves.toMatchObject({ ok: false });
-    expect((await getProjectLinks())[0].url).toBe("https://docs.google.com/spreadsheets/d/1");
+    expect((await getProjectLinks(meId))[0].url).toBe("https://docs.google.com/spreadsheets/d/1");
   });
 
   it("supprime un lien", async () => {
     const id = await add("https://a.fr");
     await expect(deleteProjectLink(id)).resolves.toMatchObject({ ok: true });
-    expect(await getProjectLinks()).toEqual([]);
+    expect(await getProjectLinks(meId)).toEqual([]);
     await expect(deleteProjectLink(id)).resolves.toMatchObject({ ok: false, error: "Lien introuvable." });
+  });
+
+  it("reste étanche entre projets : un non-membre ne voit ni ne modifie les liens", async () => {
+    const id = await add("https://a.fr");
+    const outsider = await insertUser(db, "Dominique Petit");
+    vi.mocked(requireUser).mockResolvedValue({ ...outsider, role: "admin" });
+
+    expect(await getProjectLinks(outsider.id)).toEqual([]);
+    await expect(createProjectLink(projectId, { url: "https://b.fr" })).resolves.toMatchObject({ ok: false, error: "Projet introuvable." });
+    await expect(updateProjectLink(id, { url: "https://b.fr" })).resolves.toMatchObject({ ok: false, error: "Lien introuvable." });
+    await expect(deleteProjectLink(id)).resolves.toMatchObject({ ok: false, error: "Lien introuvable." });
+    expect(await getProjectLinks(meId)).toMatchObject([{ url: "https://a.fr/" }]);
+
+    // Une fois invité (membre simple), il peut contribuer.
+    await addMember(db, projectId, outsider.id);
+    await expect(updateProjectLink(id, { url: "https://b.fr" })).resolves.toMatchObject({ ok: true });
+    expect((await getProjectLinks(outsider.id)).map((l) => l.projectId)).toEqual([projectId]);
   });
 
   it("exige d'être connecté", async () => {

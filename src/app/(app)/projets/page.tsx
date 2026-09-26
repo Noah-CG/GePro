@@ -3,18 +3,23 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { NewProjectButton } from "@/components/projects/new-project-button";
 import { ProjectCard } from "@/components/projects/project-card";
+import { ReceivedInvitations } from "@/components/projects/received-invitations";
 import { EmptyState, PageHeader } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { todayISO } from "@/lib/dates";
-import { getProjectsWithStats } from "@/lib/queries";
+import { getProjectsWithStats, getReceivedInvitations } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Projets" };
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ archives?: string }> }) {
-  await requireUser();
+  const me = await requireUser();
   const archived = (await searchParams).archives === "1";
-  const projects = await getProjectsWithStats({ archived, today: todayISO() });
+  // Seulement les projets dont on est membre, plus les invitations reçues.
+  const [projects, invitations] = await Promise.all([
+    getProjectsWithStats(me.id, { archived, today: todayISO() }),
+    getReceivedInvitations(me),
+  ]);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -23,6 +28,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         subtitle={archived ? "Projets archivés" : `${projects.length} projet${projects.length > 1 ? "s" : ""} actif${projects.length > 1 ? "s" : ""}`}
         actions={<NewProjectButton />}
       />
+
+      <ReceivedInvitations invitations={invitations} />
 
       <div className="mb-5 flex gap-1 text-sm">
         <Link href="/projets" className={cn("rounded-lg px-3 py-1.5", !archived ? "bg-surface-2 font-medium" : "text-muted hover:text-text")}>

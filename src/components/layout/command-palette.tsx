@@ -58,10 +58,14 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const actions: { label: string; icon: ReactNode; shortcut?: string; run: () => void }[] = [
     { label: "Nouvelle tâche", icon: <Plus size={16} />, shortcut: "N", run: () => newTask() },
     { label: "Nouveau projet", icon: <FolderPlus size={16} />, shortcut: "P", run: () => newProject() },
-    { label: "Tableau de bord", icon: <LayoutDashboard size={16} />, run: () => router.push("/") },
-    ...(currentProjectId ? [{ label: "Tâches du projet", icon: <SquareKanban size={16} />, run: () => router.push(`/projets/${currentProjectId}`) }] : []),
-    { label: "Calendrier", icon: <CalendarDays size={16} />, run: () => router.push("/calendrier") },
-    { label: "Temps de travail", icon: <Timer size={16} />, run: () => router.push("/temps") },
+    ...(currentProjectId
+      ? [
+          { label: "Tableau de bord", icon: <LayoutDashboard size={16} />, run: () => router.push(`/projets/${currentProjectId}/tableau-de-bord`) },
+          { label: "Tâches du projet", icon: <SquareKanban size={16} />, run: () => router.push(`/projets/${currentProjectId}`) },
+          { label: "Calendrier", icon: <CalendarDays size={16} />, run: () => router.push(`/projets/${currentProjectId}/calendrier`) },
+          { label: "Temps de travail", icon: <Timer size={16} />, run: () => router.push(`/projets/${currentProjectId}/temps`) },
+        ]
+      : []),
     { label: "Tous les projets", icon: <FolderKanban size={16} />, run: () => router.push("/projets") },
     {
       label: resolvedTheme === "dark" ? "Passer en mode clair" : "Passer en mode sombre",

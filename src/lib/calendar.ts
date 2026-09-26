@@ -28,7 +28,9 @@ export function readCalendarParams(params: { vue?: string | string[]; date?: str
   };
 }
 
-export const calendarHref = (view: CalendarView, date: string) => `/calendrier?vue=${view}&date=${date}`;
+/** Calendrier d'un projet, sur la vue et la date données. */
+export const calendarHref = (projectId: string, view: CalendarView, date: string) =>
+  `/projets/${projectId}/calendrier?vue=${view}&date=${date}`;
 
 /** Les 7 jours (lundi → dimanche) de la semaine de `date`. */
 export function weekDays(date: string): string[] {

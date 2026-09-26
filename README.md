@@ -16,7 +16,7 @@ npm run db:setup      # crée les tables + charge les données de démo
 npm run dev           # http://localhost:3000
 ```
 
-Connexion : **camille@exemple.fr / demo1234** (administratrice). Les 5 autres membres de démo ont le même mot de passe.
+Connexion : **camille@exemple.fr / demo1234** (administratrice, propriétaire des projets de démo). Les 5 autres membres de démo ont le même mot de passe et ne voient que les projets dont ils sont membres.
 
 > La base locale n'accepte qu'un seul processus à la fois : arrêtez `npm run dev` avant de lancer un script `db:*`.
 
@@ -35,11 +35,32 @@ Connexion : **camille@exemple.fr / demo1234** (administratrice). Les 5 autres me
    npm run db:seed                  # option A : données de démo
    npm run user:create -- --name "Votre Nom" --email vous@societe.fr --password "motdepasse" --admin   # option B : base vide
    ```
-5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**, qui mène à la section **Membres de l'équipe** des paramètres du projet).
+5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**, qui mène à la section **Comptes de l'équipe** des paramètres du projet). Un compte ne voit aucun projet tant qu'il n'y est pas invité (voir [Projets étanches, membres et invitations](#projets-étanches-membres-et-invitations)).
 
 ### Déploiement sur Vercel
 
-Importez le dépôt dans Vercel. Ajoutez `DATABASE_URL` et `APP_TIMEZONE` dans *Settings → Environment Variables*, puis déployez. Les migrations se lancent depuis votre poste avec `npm run db:migrate`, `.env.local` pointant sur Neon.
+Importez le dépôt dans Vercel. Ajoutez `DATABASE_URL` et `APP_TIMEZONE` dans *Settings → Environment Variables*, puis déployez. **Les migrations s'appliquent automatiquement à chaque déploiement** (`vercel.json` : `npm run db:migrate && npm run build`) ; on peut aussi les lancer depuis son poste avec `npm run db:migrate`, `.env.local` pointant sur Neon.
+
+### Mettre à jour une base existante : isolation des projets (migration 0012)
+
+La migration `0012_isolation_projets` ajoute les membres, les invitations et le propriétaire des projets, et rattache les données existantes, **sans rien supprimer** :
+
+- **propriétaire** de chaque projet : son créateur, sinon le plus ancien administrateur, sinon le plus ancien compte ;
+- **membres** : le propriétaire, plus toute personne ayant contribué au projet (responsable ou auteur d'une tâche, d'un événement, d'une journée importante, d'un fichier, d'un document ou du salon Discord, temps pointé, synchronisation Agenda). Les autres comptes n'y ont plus accès et doivent être invités ;
+- **événements d'équipe** (sans projet) : rattachés au plus ancien projet, et copiés dans chacun des autres.
+
+Elle tient en un seul bloc SQL (tout ou rien, y compris sur Neon) et peut être relancée sans effet. Avant de déployer :
+
+```bash
+# 1. Sauvegarde (Neon : créez aussi une branche de sauvegarde dans la console, c'est instantané)
+pg_dump "$DATABASE_URL" --format=custom --no-owner --file=gepro-avant-isolation.dump
+# 2. Aperçu, en lecture seule : propriétaires, membres et événements prévus
+npm run db:isolation-preview
+# 3. Migration (ou simplement déployer : Vercel la lance au build)
+npm run db:migrate
+```
+
+Retour arrière, après avoir redéployé le code d'avant l'isolation : `npm run db:isolation-rollback -- --confirm` (membres et invitations perdus, événements d'équipe restaurés sans projet, copies retirées), ou restauration de la sauvegarde avec `pg_restore --clean --no-owner --dbname="$DATABASE_URL" gepro-avant-isolation.dump`.
 
 ## Intégration Google Docs
 
@@ -103,7 +124,7 @@ Appliquez ensuite la migration (`npm run db:migrate`) et relancez `npm run dev`.
 3. Les documents liés apparaissent dans la section **Documents**. Un clic ouvre le document **en lecture seule dans GePro**, dans un onglet GePro à lui (l'onglet en cours est conservé) : son contenu complet (titres, listes, tableaux, liens, images) est demandé à Google à chaque ouverture, au format Markdown. Sur la page du document, **Actualiser** relit le document chez Google (dernières modifications) et **Ouvrir dans Google Docs** mène à l'original.
 4. Titre et date de modification sont gardés en cache et rafraîchis en arrière-plan s'ils datent de plus de 15 minutes (ou avec **Actualiser** sur la page Documents).
 
-Chaque document est lu et synchronisé avec le compte Google de la personne qui l'a rattaché. **Tout membre de GePro peut donc lire un document rattaché, même sans y avoir accès dans Google Drive** : ne rattachez que des documents destinés à toute l'équipe.
+Chaque document est lu et synchronisé avec le compte Google de la personne qui l'a rattaché. **Tout membre du projet peut donc lire un document rattaché, même sans y avoir accès dans Google Drive** : ne rattachez que des documents destinés à tous les membres du projet.
 
 ### Sécurité
 
@@ -133,7 +154,7 @@ Facultative : il faut `DISCORD_BOT_TOKEN` et `INTEGRATIONS_ENCRYPTION_KEY`. Cré
 
 Chaque membre peut retrouver l'agenda de GePro dans son **Google Agenda** : bouton **Google Agenda** de la page **Calendrier**.
 
-- GePro crée dans le compte Google du membre un agenda nommé **« GePro »** et le remplit : **événements d'équipe** (toujours), **événements des projets cochés**, et **échéances des tâches** non terminées de ces projets (*Mes tâches*, *Toutes* ou *Aucune*). Projets archivés exclus.
+- GePro crée dans le compte Google du membre un agenda nommé **« GePro »** et le remplit : **événements des projets cochés**, et **échéances des tâches** non terminées de ces projets (*Mes tâches*, *Toutes* ou *Aucune*). Seulement des projets dont il est membre (vérifié à chaque synchronisation : un membre retiré d'un projet n'en reçoit plus rien) ; projets archivés exclus.
 - **Sens unique** : GePro est la référence. Une modification faite dans Google Agenda sur un événement GePro sera écrasée ; les événements ajoutés à la main dans l'agenda « GePro » sont laissés tels quels.
 - Les événements sont « toute la journée », sans rappel, et n'occupent pas l'agenda (disponibilité inchangée). La couleur est celle de l'événement, ou du projet pour une échéance (au plus proche des 11 couleurs de Google). Chacun renvoie vers GePro.
 - **Au fil de l'eau** : chaque création, modification ou suppression d'un événement ou d'une tâche est envoyée quelques secondes après, pour chaque membre concerné (`after()` : l'action n'est pas ralentie).
@@ -160,7 +181,7 @@ Chaque projet peut aussi recevoir des **PDF importés depuis l'ordinateur**, lis
 
 - **Importer** : **+** de la section Documents de la barre latérale, puis *Importer un PDF*, ou page **Documents** du projet (bouton ou glisser-déposer, plusieurs fichiers à la fois). 20 Mo au plus par fichier. Un PDF importé seul s'ouvre aussitôt dans un nouvel onglet GePro.
 - **Lire** : le lecteur de GePro affiche les pages telles qu'elles sont dans le PDF (texte, images, mise en page), sans iframe. Le texte se sélectionne, se copie et se trouve avec Ctrl+F (sur les pages déjà affichées). Zoom, ajustement à la largeur, accès direct à une page, liens cliquables, bouton **Télécharger**.
-- **Supprimer** : réservé à la personne qui a importé le fichier et aux administrateurs.
+- **Supprimer** : réservé à la personne qui a importé le fichier et au propriétaire ou aux administrateurs du projet.
 
 Fonctionnement :
 
@@ -199,6 +220,7 @@ Fonctionnement :
 
 ```
 users ──< sessions
+users ──< project_members >── projects ──< project_invitations
 users ──< task_assignees >── tasks >── projects       tasks ──< tasks (sous-tâches, 4 niveaux)
 users ──< external_connections ──< external_resources >── projects
 projects ──< project_events
@@ -211,15 +233,17 @@ users ──o google_calendar_syncs ──< google_calendar_sync_projects >─�
 
 | Table | Champs principaux | Notes |
 |---|---|---|
-| **users** | `id`, `name`, `email` (unique, minuscules), `password_hash` (bcrypt), `role` (`admin`/`member`), `color` | Comptes créés par un admin, pas d'inscription publique |
+| **users** | `id`, `name`, `email` (unique, minuscules), `password_hash` (bcrypt), `role` (`admin`/`member`), `color` | Comptes créés par un admin, pas d'inscription publique. Le rôle `admin` sert à gérer les comptes, **sans aucun droit sur les projets** |
 | **sessions** | `id` = SHA-256 du jeton, `user_id`, `expires_at` | Le cookie contient le jeton, la base ne stocke que son hash (30 jours) |
-| **projects** | `id`, `name`, `description`, `color`, `start_date`, `end_date`, `archived_at`, `created_by` | Archivé si `archived_at` est renseigné |
+| **projects** | `id`, `name`, `description`, `color`, `start_date`, `end_date`, `archived_at`, `created_by`, `owner_id` | Archivé si `archived_at` est renseigné. `owner_id` : le propriétaire (un seul), présent dans `project_members` avec le rôle `owner` ; un compte propriétaire de projets ne peut pas être supprimé |
+| **project_members** | `project_id`, `user_id` (clé composite), `role` (`owner`/`admin`/`member`), `joined_at` | Seuls les membres voient le projet et ses données. Un seul `owner` par projet (index unique partiel) |
+| **project_invitations** | `id`, `project_id`, `email` (minuscules), `role` (`admin`/`member`), `token_hash` (SHA-256), `status` (`pending`/`accepted`/`revoked`), `invited_by`, `expires_at`, `accepted_at` | Invitation pour un email exact, valable 7 jours, pour ce projet seulement. Une seule en attente par email et par projet |
 | **tasks** | `id`, `project_id`, `parent_id`, `title`, `description`, `status` (`todo`/`in_progress`/`done`), `priority` (`low`/`medium`/`high`), `start_date`, `due_date`, `position`, `sibling_position`, `completed_at`, `created_by` | `parent_id` : tâche parente du même projet, sur `MAX_TASK_DEPTH` = 4 niveaux au plus (`lib/task-links.ts`). `position` (ordre dans une colonne Kanban) et `sibling_position` (ordre entre tâches sœurs dans la vue liste) sont des flottants : insérer revient à prendre la moyenne des voisines. `start_date` (facultatif, jamais après `due_date`) sert au diagramme de Gantt |
 | **task_assignees** | `task_id`, `user_id` (clé composite) | Plusieurs responsables par tâche |
-| **project_events** | `id`, `project_id` (facultatif), `title`, `description`, `event_date`, `color`, `created_by` | Événements du calendrier. Sans projet : événement d'équipe, visible dans tous les projets. Modifiables par leur créateur ou un admin |
+| **project_events** | `id`, `project_id`, `title`, `description`, `event_date`, `color`, `created_by` | Événements du calendrier d'un projet. Modifiables par leur créateur ou un owner / admin du projet |
 | **important_days** | `id`, `project_id`, `date`, `title` (60 caractères au plus), `description`, `color` (rouge par défaut), `created_by`, `created_at` | Journées importantes : une au plus par date et par projet. Modifiables par tout membre |
-| **project_links** | `id`, `project_id`, `url` (http/https uniquement), `title`, `position`, `created_by`, `created_at` | Liens utiles de la barre latérale. L'icône n'est pas stockée : elle est déduite de l'adresse à l'affichage. Modifiables par tout membre |
-| **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un admin |
+| **project_links** | `id`, `project_id`, `url` (http/https uniquement), `title`, `position`, `created_by`, `created_at` | Liens utiles de la barre latérale. L'icône n'est pas stockée : elle est déduite de l'adresse à l'affichage. Modifiables par tout membre du projet |
+| **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un owner / admin du projet |
 | **project_file_chunks** | `file_id`, `position` (clé composite), `data` (`bytea`) | Contenu des fichiers, en morceaux de 960 Ko |
 | **external_connections** | `user_id`, `provider` (`google`/`github`), `account_email`, `access_token_enc`, `refresh_token_enc`, `access_token_expires_at`, `status` (`active`/`needs_reauth`) | Un compte externe par utilisateur et par fournisseur ; jetons chiffrés |
 | **project_discord** | `project_id` (clé), `guild_id`, `channel_id`, `channel_name`, `webhook_id`, `webhook_token_enc`, `linked_by` | Salon Discord relié au projet (un au plus). Jeton du webhook chiffré |
@@ -229,7 +253,8 @@ users ──o google_calendar_syncs ──< google_calendar_sync_projects >─�
 | **external_resources** | `project_id`, `provider`, `kind` (`google_doc`…), `external_id`, `title`, `url`, `external_updated_at`, `metadata` (JSON), `connection_id`, `attached_by`, `synced_at`, `sync_error` | Ressources externes rattachées à un projet (copie en cache), uniques par (`project_id`, `provider`, `external_id`) |
 
 Règles :
-- La suppression d'un projet ou d'une tâche se propage en cascade (une tâche emporte toutes ses sous-tâches, à tous les niveaux). Un membre supprimé est retiré des tâches, qui restent.
+- Toute donnée d'un projet porte un `project_id` non nul (clé étrangère `ON DELETE CASCADE`, indexée), ou l'hérite de sa parente (sous-tâches, dépendances, responsables, morceaux de fichier). Seule exception, le temps de travail (`work_sessions.project_id`, facultatif) : il appartient au membre, et supprimer le projet le garde « sans projet ».
+- La suppression d'un projet ou d'une tâche se propage en cascade (une tâche emporte toutes ses sous-tâches, à tous les niveaux). Un compte supprimé est retiré des tâches, qui restent ; un membre retiré d'un projet perd aussi ses affectations aux tâches de ce projet.
 - Une sous-tâche appartient au même projet que sa parente ; une tâche ne peut pas devenir la sous-tâche de l'une de ses propres sous-tâches.
 - Les tables d'intégration sont génériques : pour ajouter GitHub (dépôts, issues, PR), il suffira de nouvelles valeurs de `kind` et de `metadata`, sans nouvelle migration. La valeur `github` de `provider` existe déjà.
 - Les dates métier sont des `DATE` sans heure, manipulées comme chaînes `YYYY-MM-DD`, donc sans décalage de fuseau.
@@ -237,13 +262,28 @@ Règles :
 - **En retard** = échéance < aujourd'hui et statut ≠ Terminé (dans le fuseau `APP_TIMEZONE`).
 - **Cette semaine** = d'aujourd'hui à dimanche.
 
+## Projets étanches, membres et invitations
+
+Chaque projet est **étanche** : on ne voit, ne lit et ne modifie que les projets dont on est **membre**. Un projet dont on n'est pas membre est introuvable (404), par la liste, la recherche, l'adresse d'une page, une route API ou une Server Action, exactement comme un projet qui n'existe pas. Il en va de même pour tout objet désigné par son id (tâche, événement, fichier, document…).
+
+- **Créer un projet** : il est vierge (aucune tâche, aucun événement, aucun document, aucune intégration) et son créateur en est le **propriétaire** et le seul membre.
+- **Rôles** : le **propriétaire** a tous les droits, dont transmettre la propriété et supprimer le projet ; un **administrateur** invite et retire des membres, change les rôles et règle le projet (nom, archivage, salon Discord) ; un **membre** travaille sur le contenu (tâches, calendrier, documents, fichiers, temps).
+- **Inviter** (paramètres du projet → **Membres**) : par l'**email exact** du compte, sans aucune recherche parmi les comptes de l'application. GePro affiche une seule fois un **lien d'invitation** à transmettre (7 jours) ; l'invitation apparaît aussi dans la page **Projets** de la personne invitée. Seul le compte qui a cet email peut l'accepter, et il n'est ajouté qu'à ce projet.
+- **Quitter / retirer** : tout membre peut quitter un projet, sauf le propriétaire (qui doit d'abord transmettre la propriété). Un membre retiré perd l'accès ; ce qu'il a créé reste dans le projet.
+- **Supprimer** un projet (propriétaire) efface toutes ses données ; le temps de travail pointé est gardé, sans projet.
+- Le rôle **administrateur de l'application** (création des comptes) ne donne accès à aucun projet.
+
+Le contrôle d'accès est fait côté serveur uniquement, dans `src/lib/access.ts` : `requireProjectAccess` (pages, 404), `authorizeProject` / `authorizeProjectOf` (Server Actions), `getProjectRole` (routes API). Aucun `project_id` envoyé par le navigateur n'est cru sur parole.
+
 ## Navigation
 
-### Projet sélectionné
+### Projet affiché
 
-GePro affiche **un projet à la fois** : la barre latérale, le tableau de bord, les tâches et la recherche (`Ctrl/⌘ + K`) ne montrent que le projet sélectionné. On en change avec le **sélecteur tout en haut de la barre latérale** (liste filtrable au clavier, « Nouveau projet », « Tous les projets »). Ouvrir la page d'un projet le sélectionne aussi. Le choix est mémorisé dans le cookie `gepro_projet` (préférence d'affichage, sans lien avec la session).
+GePro affiche **un projet à la fois**, et c'est **l'adresse** qui le désigne : `/projets/<id>` (tâches), `/projets/<id>/tableau-de-bord`, `/projets/<id>/calendrier`, `/projets/<id>/calendrier/journees`, `/projets/<id>/temps`, `/projets/<id>/documents`, `/projets/<id>/parametres`. On en change avec le **sélecteur tout en haut de la barre latérale** (liste filtrable au clavier de ses projets, « Nouveau projet », « Tous les projets ») : il ouvre la même page dans l'autre projet.
 
-Seules restent communes à tous les projets : la liste **Tous les projets** (pour les gérer, archiver…) et la gestion des **membres** (comptes de l'équipe), rangée dans les paramètres de chaque projet par commodité. L'ancienne adresse `/taches` renvoie vers les tâches du projet sélectionné, filtres compris.
+Le dernier projet ouvert est mémorisé dans le cookie `gepro_projet`, qui ne sert qu'à choisir où aller depuis les adresses sans projet : `/`, `/taches`, `/calendrier`, `/calendrier/journees` et `/temps` redirigent vers la même page de ce projet (paramètres gardés), toujours choisi parmi ceux dont on est membre. Sans aucun projet, l'accueil affiche les invitations reçues.
+
+Seules restent communes à tous les projets : la liste **Projets** (ses projets et les invitations reçues) et la gestion des **comptes** (administrateurs de l'application), rangée dans les paramètres de chaque projet par commodité.
 
 ### Barre latérale
 
@@ -254,13 +294,13 @@ De haut en bas :
 - **Tableau de bord**, **Tâches** (avec le nombre de tâches ouvertes) et **Calendrier** du projet, **Temps de travail** (pastille verte quand votre chrono tourne), puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
 - **Documents** : les Google Docs et les PDF du projet, le **+** pour importer un PDF ou lier un Google Doc, et un lien vers la page de gestion ;
 - **Liens utiles** : liens externes du projet (voir ci-dessous) ;
-- tout en bas, **Paramètres du projet** (intégrations et, pour un administrateur, membres de l'équipe) et le menu du compte (thème, mot de passe, déconnexion).
+- tout en bas, **Paramètres du projet** (membres et invitations, intégrations et, pour un administrateur de l'application, comptes de l'équipe) et le menu du compte (thème, mot de passe, déconnexion).
 
 Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bulles, au survol comme au clavier). Les sections se replient d'un clic sur leur titre. Ces choix sont mémorisés dans les cookies `gepro_sidebar_reduite` et `gepro_sections_repliees`. Sur mobile, la barre s'ouvre en tiroir depuis le bouton ☰ de l'en-tête.
 
 ### Liens utiles
 
-Chaque projet a sa liste de **liens utiles** (dépôt GitHub, maquettes Figma, tableau Google Sheets…), dans la barre latérale. Tout membre peut en ajouter (**+**), les modifier ou les supprimer (menu **…** au survol de la ligne). Un clic ouvre le lien dans un nouvel onglet du navigateur ; l'adresse complète s'affiche au survol.
+Chaque projet a sa liste de **liens utiles** (dépôt GitHub, maquettes Figma, tableau Google Sheets…), dans la barre latérale. Tout membre du projet peut en ajouter (**+**), les modifier ou les supprimer (menu **…** au survol de la ligne). Un clic ouvre le lien dans un nouvel onglet du navigateur ; l'adresse complète s'affiche au survol.
 
 - **Service reconnu automatiquement** d'après l'adresse (`src/lib/links/registry.ts`) : environ 95 services (GitHub, GitLab, Vercel, Notion, Jira, Confluence, Figma, Miro, Google Docs/Sheets/Slides/Forms/Drive/Meet/Agenda/Maps, Discord, Zoom, YouTube, Claude…), par domaine, sous-domaine (`*.vercel.app`, `*.atlassian.net`) et chemin (`docs.google.com/spreadsheets` → Google Sheets, `*.atlassian.net/wiki` → Confluence). Les logos viennent du paquet [`simple-icons`](https://simpleicons.org), importés un par un. Canva, Slack, LinkedIn, OneDrive, SharePoint et ChatGPT n'y figurent plus (droit des marques) : ils s'affichent avec leur favicon.
 - **Site inconnu** : favicon servi par DuckDuckGo (`icons.duckduckgo.com`) et chargé par le navigateur, sinon une icône de globe. Le serveur de GePro ne va jamais chercher une adresse saisie par un utilisateur. DuckDuckGo voit donc le domaine des liens non reconnus.
@@ -293,12 +333,12 @@ Sur la page d'un projet, la bascule **Kanban / Liste / Gantt** propose une trois
 
 ### Calendrier
 
-`/calendrier` affiche, pour le projet sélectionné, les **tâches à leur échéance** et les **événements** (réunions, jalons…), plus les événements d'équipe (sans projet).
+`/projets/<id>/calendrier` affiche les **tâches à leur échéance** et les **événements** (réunions, jalons…) du projet.
 
 - Vues **Mois** (au plus 3 éléments par jour, puis « +N autres » qui ouvre la semaine) et **Semaine** (tout le contenu), flèches précédent / suivant et « Aujourd'hui ». La vue et la date sont dans l'adresse (`?vue=mois&date=2026-09-24`) : la page est partageable et rechargeable.
 - Une tâche s'ouvre dans la fenêtre de tâche habituelle ; terminée, elle est barrée et atténuée ; en retard, elle porte une icône d'alerte.
-- Un clic, un clic droit ou `Entrée` sur une zone vide d'un jour ouvre son menu : **Nouvel événement** ou **Marquer comme journée importante**. Un événement n'est modifiable ou supprimable que par son créateur ou un admin.
-- **Journées importantes** : la case du jour est entièrement remplie de sa couleur (rouge par défaut, 6 couleurs lisibles avec du texte blanc), avec le titre en gros, une étoile, et la description au survol ou au tap. En vue Semaine et sur mobile, c'est un bandeau coloré. Tout membre peut en créer, les modifier ou les retirer. Le tableau de bord affiche les 5 prochaines (avec compte à rebours), et `/calendrier/journees` les liste toutes.
+- Un clic, un clic droit ou `Entrée` sur une zone vide d'un jour ouvre son menu : **Nouvel événement** ou **Marquer comme journée importante**. Un événement n'est modifiable ou supprimable que par son créateur ou un owner / admin du projet.
+- **Journées importantes** : la case du jour est entièrement remplie de sa couleur (rouge par défaut, 6 couleurs lisibles avec du texte blanc), avec le titre en gros, une étoile, et la description au survol ou au tap. En vue Semaine et sur mobile, c'est un bandeau coloré. Tout membre peut en créer, les modifier ou les retirer. Le tableau de bord affiche les 5 prochaines (avec compte à rebours), et `/projets/<id>/calendrier/journees` les liste toutes.
 - Au clavier, la grille n'a qu'un arrêt de tabulation : flèches pour changer de jour, `Début` / `Fin` pour le lundi / dimanche, `Page préc.` / `Page suiv.` pour la période voisine, `Tab` pour atteindre les éléments du jour.
 - Sous 768 px, le calendrier devient la liste des jours qui ont du contenu.
 - Chaque vue ne fait qu'une requête, bornée sur les jours affichés (`getCalendarItems`).
@@ -306,13 +346,13 @@ Sur la page d'un projet, la bascule **Kanban / Liste / Gantt** propose une trois
 
 ### Temps de travail
 
-La page **Temps de travail** (`/temps`) regroupe tout ce qui concerne le chrono :
+La page **Temps de travail** (`/projets/<id>/temps`) regroupe tout ce qui concerne le chrono :
 
-- le **chrono** : un clic pour démarrer, un clic pour arrêter. La période est rattachée au projet sélectionné, et à l'arrêt un bandeau propose d'en rédiger le journal ;
+- le **chrono** : un clic pour démarrer, un clic pour arrêter. La période est rattachée au projet affiché, et à l'arrêt un bandeau propose d'en rédiger le journal ;
 - le temps **du jour**, **de la semaine** et **au total** ;
 - le **journal de bord** : chaque période avec ce qui y a été fait ;
 - le **temps par projet** ;
-- le temps de **l'équipe** sur le projet sélectionné cette semaine, avec les chronos en cours.
+- le temps des **membres du projet** cette semaine, avec les chronos en cours.
 
 Le temps se corrige depuis le journal. **Ajouter une période** couvre un chrono oublié, et le crayon d'une période en corrige la date, les heures, le projet et le journal, ou la supprime. Corriger un chrono en cours l'arrête à l'heure saisie.
 
@@ -320,7 +360,7 @@ Le temps se corrige depuis le journal. **Ajouter une période** couvre un chrono
 - Une fin antérieure au début tombe le lendemain.
 - Une période ne peut ni se terminer dans le futur ni chevaucher une autre période du même membre.
 
-Chacun corrige son propre temps. Un administrateur peut consulter et corriger celui de tous les membres, avec le sélecteur de membre en haut de la page (`/temps?membre=<id>`).
+Chacun corrige son propre temps. Le propriétaire et les administrateurs d'un projet peuvent consulter et corriger celui de ses membres, **sur ce projet seulement**, avec le sélecteur de membre en haut de la page (`/projets/<id>/temps?membre=<id>`). Un projet dont on n'est pas (ou plus) membre n'est jamais nommé dans son propre journal.
 
 ### Onglets
 
@@ -339,12 +379,13 @@ src/
 ├── app/                      Routes (App Router)
 │   ├── login/                Connexion
 │   └── (app)/                Pages protégées : layout = barre latérale + contexte global
-│       ├── page.tsx          Tableau de bord du projet sélectionné
-│       ├── taches/           Redirige vers les tâches du projet sélectionné (anciens liens)
-│       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
-│       ├── temps/            Temps de travail : chrono, journal de bord corrigeable, temps de l'équipe
+│       ├── page.tsx          Accueil : redirige vers le tableau de bord du projet sélectionné
+│       ├── taches/, calendrier/, temps/   Anciennes adresses : redirigent vers la page du projet sélectionné
+│       ├── invitations/      Acceptation d'une invitation (/invitations/<jeton>)
+│       ├── projets/[id]/     Pages d'un projet (404 aux non-membres) : tâches, tableau-de-bord, calendrier,
+│       │                     temps, documents, parametres (membres, invitations), discord
 │       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres, [id]/discord = salon Discord en onglet
-│       └── membres/          Fiche d'un membre ([id]) ; /membres redirige vers les paramètres du projet (#membres)
+│       └── membres/          Fiche d'un membre ([id]) ; /membres redirige vers les paramètres du projet (#comptes)
 │   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur), projects/[id]/discord/ (salon Discord : status, messages, read)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/

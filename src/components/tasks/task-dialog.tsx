@@ -257,7 +257,7 @@ export function TaskDialog({
           </div>
 
           <Field label="Responsables">
-            <AssigneePicker value={draft.assigneeIds} onChange={(ids) => set("assigneeIds", ids)} />
+            <AssigneePicker projectId={draft.projectId} value={draft.assigneeIds} onChange={(ids) => set("assigneeIds", ids)} />
           </Field>
 
           <div className="grid gap-4 sm:grid-cols-2">

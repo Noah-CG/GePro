@@ -1,9 +1,13 @@
 /**
  * Lectures en base, appelées depuis les Server Components.
  * Les objets renvoyés sont sérialisables (passables tels quels aux composants client).
+ *
+ * Étanchéité des projets : les listes qui couvrent plusieurs projets prennent l'utilisateur
+ * (`viewerId`) et se limitent aux projets dont il est membre. Les lectures d'un seul projet
+ * (`projectId`) supposent que l'appelant a vérifié l'accès (lib/access.ts).
  */
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -12,7 +16,9 @@ import {
   importantDays,
   projectEvents,
   projectFiles,
+  projectInvitations,
   projectLinks,
+  projectMembers,
   projects,
   taskAssignees,
   taskDependencies,
@@ -20,14 +26,22 @@ import {
   users,
   workSessions,
 } from "@/db/schema";
-import type { IntegrationProvider, TaskPriority, TaskStatus } from "@/db/schema";
+import type { IntegrationProvider, ProjectRole, TaskPriority, TaskStatus } from "@/db/schema";
 import { addDays, APP_TIMEZONE, endOfWeekISO, formatDateTime } from "@/lib/dates";
 import { fileTitle, formatFileSize } from "@/lib/files";
 import { isIntegrationErrorCode, type IntegrationErrorCode } from "@/lib/integrations/errors";
 
-export type Member = { id: string; name: string; email: string; role: "admin" | "member"; color: string };
+/** Personne avec qui l'on partage au moins un projet ; `projectIds` : les projets en commun. */
+export type Member = { id: string; name: string; email: string; color: string; projectIds: string[] };
 
-export type ProjectOption = { id: string; name: string; color: string; archived: boolean };
+/** Membre d'un projet, avec son rôle dans ce projet. */
+export type ProjectMember = { id: string; name: string; email: string; color: string; role: ProjectRole; joinedAt: string };
+
+/** Compte de l'application (administration des comptes). */
+export type Account = { id: string; name: string; email: string; role: "admin" | "member"; color: string };
+
+/** Projet dont on est membre, avec son rôle. */
+export type ProjectOption = { id: string; name: string; color: string; archived: boolean; role: ProjectRole };
 
 export type ProjectWithStats = {
   id: string;
@@ -37,6 +51,7 @@ export type ProjectWithStats = {
   startDate: string | null;
   endDate: string | null;
   archived: boolean;
+  role: ProjectRole;
   total: number;
   done: number;
   inProgress: number;
@@ -74,9 +89,9 @@ export type TaskView = {
 /** Événement du calendrier, tel qu'affiché. */
 export type CalendarEvent = {
   id: string;
-  projectId: string | null;
-  projectName: string | null;
-  projectColor: string | null;
+  projectId: string;
+  projectName: string;
+  projectColor: string;
   title: string;
   description: string;
   /** "YYYY-MM-DD". */
@@ -184,24 +199,169 @@ export type ProjectLinkView = { id: string; projectId: string; url: string; titl
 /** Au-delà, les métadonnées en cache sont rafraîchies à l'affichage de la page projet. */
 const RESOURCE_TTL_MS = 15 * 60_000;
 
-export async function getTeam(): Promise<Member[]> {
+/** Ids des projets dont `userId` est membre (sous-requête). */
+export const memberProjectIds = (userId: string) =>
+  db.select({ id: projectMembers.projectId }).from(projectMembers).where(eq(projectMembers.userId, userId));
+
+/**
+ * Personnes avec qui `viewerId` partage au moins un projet (lui compris). Jamais la liste de tous
+ * les comptes : on ne découvre pas les autres utilisateurs de l'application.
+ */
+export async function getTeam(viewerId: string): Promise<Member[]> {
+  const rows = await db
+    .select({ id: users.id, name: users.name, email: users.email, color: users.color, projectId: projectMembers.projectId })
+    .from(projectMembers)
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .where(inArray(projectMembers.projectId, memberProjectIds(viewerId)))
+    .orderBy(asc(users.name));
+  const byId = new Map<string, Member>();
+  for (const { projectId, ...u } of rows) {
+    const member = byId.get(u.id) ?? { ...u, projectIds: [] };
+    member.projectIds.push(projectId);
+    byId.set(u.id, member);
+  }
+  return [...byId.values()];
+}
+
+/** Membres d'un projet, propriétaire d'abord. */
+export async function getProjectMembers(projectId: string): Promise<ProjectMember[]> {
+  const rows = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      color: users.color,
+      role: projectMembers.role,
+      joinedAt: projectMembers.joinedAt,
+    })
+    .from(projectMembers)
+    .innerJoin(users, eq(users.id, projectMembers.userId))
+    .where(eq(projectMembers.projectId, projectId))
+    .orderBy(sql`case ${projectMembers.role} when 'owner' then 0 when 'admin' then 1 else 2 end`, asc(users.name));
+  return rows.map((r) => ({ ...r, joinedAt: r.joinedAt.toISOString() }));
+}
+
+/** Invitation en attente, telle qu'affichée dans les paramètres du projet. */
+export type PendingInvitation = { id: string; email: string; role: ProjectRole; expiresAt: string; invitedByName: string | null };
+
+/** Invitation reçue, telle qu'affichée à la personne invitée. */
+export type ReceivedInvitation = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectColor: string;
+  role: ProjectRole;
+  invitedByName: string | null;
+  expiresAt: string;
+};
+
+/** Invitations en attente (non expirées) d'un projet. */
+export async function getPendingInvitations(projectId: string): Promise<PendingInvitation[]> {
+  const rows = await db
+    .select({
+      id: projectInvitations.id,
+      email: projectInvitations.email,
+      role: projectInvitations.role,
+      expiresAt: projectInvitations.expiresAt,
+      invitedByName: users.name,
+    })
+    .from(projectInvitations)
+    .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
+    .where(
+      and(
+        eq(projectInvitations.projectId, projectId),
+        eq(projectInvitations.status, "pending"),
+        gte(projectInvitations.expiresAt, new Date()),
+      ),
+    )
+    .orderBy(asc(projectInvitations.createdAt));
+  return rows.map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString() }));
+}
+
+/**
+ * Invitation valable (en attente, non expirée) désignée par le hash de son jeton, avec l'email
+ * auquel elle est adressée : à comparer à celui du compte connecté avant d'en montrer quoi que ce soit.
+ */
+export async function getInvitationByTokenHash(tokenHash: string): Promise<(ReceivedInvitation & { email: string }) | null> {
+  const [row] = await db
+    .select({
+      id: projectInvitations.id,
+      email: projectInvitations.email,
+      projectId: projects.id,
+      projectName: projects.name,
+      projectColor: projects.color,
+      role: projectInvitations.role,
+      invitedByName: users.name,
+      expiresAt: projectInvitations.expiresAt,
+    })
+    .from(projectInvitations)
+    .innerJoin(projects, eq(projects.id, projectInvitations.projectId))
+    .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
+    .where(
+      and(
+        eq(projectInvitations.tokenHash, tokenHash),
+        eq(projectInvitations.status, "pending"),
+        gte(projectInvitations.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  return row ? { ...row, expiresAt: row.expiresAt.toISOString() } : null;
+}
+
+/** Invitations en attente (non expirées) adressées à cet email, projets dont on n'est pas déjà membre. */
+export async function getReceivedInvitations(user: { id: string; email: string }): Promise<ReceivedInvitation[]> {
+  const rows = await db
+    .select({
+      id: projectInvitations.id,
+      projectId: projects.id,
+      projectName: projects.name,
+      projectColor: projects.color,
+      role: projectInvitations.role,
+      invitedByName: users.name,
+      expiresAt: projectInvitations.expiresAt,
+    })
+    .from(projectInvitations)
+    .innerJoin(projects, eq(projects.id, projectInvitations.projectId))
+    .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
+    .where(
+      and(
+        eq(projectInvitations.email, user.email.toLowerCase()),
+        eq(projectInvitations.status, "pending"),
+        gte(projectInvitations.expiresAt, new Date()),
+        notInArray(projectInvitations.projectId, memberProjectIds(user.id)),
+      ),
+    )
+    .orderBy(asc(projectInvitations.createdAt));
+  return rows.map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString() }));
+}
+
+/** Tous les comptes, pour leur administration (réservé aux administrateurs de l'application). */
+export async function getAccounts(): Promise<Account[]> {
   return db
     .select({ id: users.id, name: users.name, email: users.email, role: users.role, color: users.color })
     .from(users)
     .orderBy(asc(users.name));
 }
 
-/** Liste courte des projets (sélecteurs, navigation). */
-export async function getProjectOptions(): Promise<ProjectOption[]> {
+/** Liste courte des projets de `viewerId` (sélecteurs, navigation). */
+export async function getProjectOptions(viewerId: string): Promise<ProjectOption[]> {
   const rows = await db
-    .select({ id: projects.id, name: projects.name, color: projects.color, archivedAt: projects.archivedAt })
+    .select({
+      id: projects.id,
+      name: projects.name,
+      color: projects.color,
+      archivedAt: projects.archivedAt,
+      role: projectMembers.role,
+    })
     .from(projects)
+    .innerJoin(projectMembers, and(eq(projectMembers.projectId, projects.id), eq(projectMembers.userId, viewerId)))
     .orderBy(asc(projects.name));
   return rows.map(({ archivedAt, ...p }) => ({ ...p, archived: archivedAt !== null }));
 }
 
-/** Projets avec leurs compteurs de tâches (progression, retard). */
+/** Projets de `viewerId` avec leurs compteurs de tâches (progression, retard). */
 export async function getProjectsWithStats(
+  viewerId: string,
   opts: { archived?: boolean; id?: string; today?: string } = {},
 ): Promise<ProjectWithStats[]> {
   const today = opts.today ?? new Date().toISOString().slice(0, 10);
@@ -219,26 +379,32 @@ export async function getProjectsWithStats(
       startDate: projects.startDate,
       endDate: projects.endDate,
       archivedAt: projects.archivedAt,
+      role: projectMembers.role,
       total: sql<number>`count(${tasks.id})::int`,
       done: sql<number>`count(*) filter (where ${tasks.status} = 'done')::int`,
       inProgress: sql<number>`count(*) filter (where ${tasks.status} = 'in_progress')::int`,
       overdue: sql<number>`count(*) filter (where ${tasks.status} <> 'done' and ${tasks.dueDate} < ${today})::int`,
     })
     .from(projects)
+    .innerJoin(projectMembers, and(eq(projectMembers.projectId, projects.id), eq(projectMembers.userId, viewerId)))
     .leftJoin(tasks, eq(tasks.projectId, projects.id))
     .where(conditions.length ? and(...conditions) : undefined)
-    .groupBy(projects.id)
+    .groupBy(projects.id, projectMembers.role)
     .orderBy(asc(projects.endDate), asc(projects.name));
 
   return rows.map(({ archivedAt, ...p }) => ({ ...p, archived: archivedAt !== null }));
 }
 
 /**
- * Tâches enrichies (projet + responsables).
- * Sans `projectId`, renvoie les tâches de tous les projets non archivés.
+ * Tâches enrichies (projet + responsables) : celles d'un projet (`projectId`, accès vérifié par
+ * l'appelant), ou celles des projets non archivés dont `viewerId` est membre.
  */
-export async function getTasks(opts: { projectId?: string; assigneeId?: string } = {}): Promise<TaskView[]> {
-  const scope = opts.projectId ? eq(tasks.projectId, opts.projectId) : isNull(projects.archivedAt);
+export async function getTasks(
+  opts: ({ projectId: string; viewerId?: never } | { projectId?: never; viewerId: string }) & { assigneeId?: string },
+): Promise<TaskView[]> {
+  const scope = opts.projectId
+    ? eq(tasks.projectId, opts.projectId)
+    : and(isNull(projects.archivedAt), inArray(tasks.projectId, memberProjectIds(opts.viewerId!)));
   const parent = alias(tasks, "parent");
   const rows = await db
     .select({
@@ -423,8 +589,8 @@ export async function getProjectResource(
   return row ? { resource: toResourceView(row), stale: isStale(row, Date.now()) } : null;
 }
 
-/** Toutes les ressources rattachées, pour la barre latérale (une seule requête pour tous les projets). */
-export async function getResourceLinks(): Promise<ResourceLink[]> {
+/** Ressources rattachées aux projets de `viewerId`, pour la barre latérale (une seule requête). */
+export async function getResourceLinks(viewerId: string): Promise<ResourceLink[]> {
   const rows = await db
     .select({
       id: externalResources.id,
@@ -435,15 +601,17 @@ export async function getResourceLinks(): Promise<ResourceLink[]> {
       syncError: externalResources.syncError,
     })
     .from(externalResources)
+    .where(inArray(externalResources.projectId, memberProjectIds(viewerId)))
     .orderBy(asc(externalResources.createdAt));
   return rows.map(({ connectionId, syncError, ...r }) => ({ ...r, hasProblem: resourceProblem({ connectionId, syncError }) !== null }));
 }
 
-/** Liens utiles de tous les projets, dans leur ordre d'affichage (la barre latérale filtre). */
-export async function getProjectLinks(): Promise<ProjectLinkView[]> {
+/** Liens utiles des projets de `viewerId`, dans leur ordre d'affichage (la barre latérale filtre). */
+export async function getProjectLinks(viewerId: string): Promise<ProjectLinkView[]> {
   return db
     .select({ id: projectLinks.id, projectId: projectLinks.projectId, url: projectLinks.url, title: projectLinks.title })
     .from(projectLinks)
+    .where(inArray(projectLinks.projectId, memberProjectIds(viewerId)))
     .orderBy(asc(projectLinks.position), asc(projectLinks.createdAt));
 }
 
@@ -459,8 +627,10 @@ const startedDay = sql`(${workSessions.startedAt} at time zone ${APP_TIMEZONE}):
 /** Lundi de la semaine en cours. */
 const weekStartOf = (today: string) => addDays(endOfWeekISO(today), -6);
 
-export async function getWorkSummary(userId: string, today: string): Promise<WorkSummary> {
+/** Temps de travail de `userId` ; `projectId` : seulement celui passé sur ce projet. */
+export async function getWorkSummary(userId: string, today: string, projectId?: string): Promise<WorkSummary> {
   const weekStart = weekStartOf(today);
+  const scope = and(eq(workSessions.userId, userId), projectId ? eq(workSessions.projectId, projectId) : undefined);
   const [[totals], [running]] = await Promise.all([
     db
       .select({
@@ -470,11 +640,11 @@ export async function getWorkSummary(userId: string, today: string): Promise<Wor
         sessions: sql<number>`count(${workSessions.endedAt})::int`,
       })
       .from(workSessions)
-      .where(eq(workSessions.userId, userId)),
+      .where(scope),
     db
       .select({ startedAt: workSessions.startedAt })
       .from(workSessions)
-      .where(and(eq(workSessions.userId, userId), isNull(workSessions.endedAt)))
+      .where(and(scope, isNull(workSessions.endedAt)))
       .limit(1),
   ]);
   return { ...totals, runningSince: running?.startedAt.toISOString() ?? null };
@@ -490,12 +660,24 @@ export async function getRunningSince(userId: string): Promise<string | null> {
   return row?.startedAt.toISOString() ?? null;
 }
 
-/** Dernières périodes de travail d'un membre, la plus récente d'abord. */
-export async function getWorkSessions(userId: string, limit = 20): Promise<WorkSessionView[]> {
+/**
+ * Projet d'une période tel que `viewerId` peut le voir : un projet dont il n'est pas membre
+ * (ou plus) n'est ni nommé ni désigné, la période apparaît « sans projet ».
+ */
+const visibleProject = (viewerId: string) =>
+  and(eq(projects.id, workSessions.projectId), inArray(workSessions.projectId, memberProjectIds(viewerId)));
+
+type WorkScope = { viewerId: string; projectId?: string };
+
+const workWhere = (userId: string, { projectId }: WorkScope) =>
+  and(eq(workSessions.userId, userId), projectId ? eq(workSessions.projectId, projectId) : undefined);
+
+/** Dernières périodes de travail d'un membre, la plus récente d'abord ; `projectId` : sur ce projet seulement. */
+export async function getWorkSessions(userId: string, scope: WorkScope, limit = 20): Promise<WorkSessionView[]> {
   const rows = await db
     .select({
       id: workSessions.id,
-      projectId: workSessions.projectId,
+      projectId: projects.id,
       startedAt: workSessions.startedAt,
       endedAt: workSessions.endedAt,
       note: workSessions.note,
@@ -503,22 +685,22 @@ export async function getWorkSessions(userId: string, limit = 20): Promise<WorkS
       projectColor: projects.color,
     })
     .from(workSessions)
-    .leftJoin(projects, eq(projects.id, workSessions.projectId))
-    .where(eq(workSessions.userId, userId))
+    .leftJoin(projects, visibleProject(scope.viewerId))
+    .where(workWhere(userId, scope))
     .orderBy(desc(workSessions.startedAt))
     .limit(limit);
   return rows.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), endedAt: r.endedAt?.toISOString() ?? null }));
 }
 
 /** Temps de travail d'un membre réparti par projet, du plus long au plus court. */
-export async function getWorkByProject(userId: string): Promise<ProjectTime[]> {
+export async function getWorkByProject(userId: string, scope: WorkScope): Promise<ProjectTime[]> {
   const ms = workedMs();
   return db
-    .select({ projectId: workSessions.projectId, name: projects.name, color: projects.color, ms })
+    .select({ projectId: projects.id, name: projects.name, color: projects.color, ms })
     .from(workSessions)
-    .leftJoin(projects, eq(projects.id, workSessions.projectId))
-    .where(eq(workSessions.userId, userId))
-    .groupBy(workSessions.projectId, projects.name, projects.color)
+    .leftJoin(projects, visibleProject(scope.viewerId))
+    .where(workWhere(userId, scope))
+    .groupBy(projects.id, projects.name, projects.color)
     .orderBy(desc(ms));
 }
 
@@ -555,12 +737,12 @@ export async function getProjectFile(projectId: string, fileId: string): Promise
   return row ? toFileView(row) : null;
 }
 
-/** Tous les fichiers importés, pour la barre latérale (une seule requête pour tous les projets). */
-export async function getFileLinks(): Promise<FileLink[]> {
+/** Fichiers importés dans les projets de `viewerId`, pour la barre latérale (une seule requête). */
+export async function getFileLinks(viewerId: string): Promise<FileLink[]> {
   const rows = await db
     .select({ id: projectFiles.id, projectId: projectFiles.projectId, name: projectFiles.name })
     .from(projectFiles)
-    .where(eq(projectFiles.status, "ready"))
+    .where(and(eq(projectFiles.status, "ready"), inArray(projectFiles.projectId, memberProjectIds(viewerId))))
     .orderBy(asc(projectFiles.createdAt));
   return rows.map(({ name, ...r }) => ({ ...r, title: fileTitle(name) }));
 }
@@ -614,8 +796,7 @@ const jsonArray = (value: unknown): string[] =>
   Array.isArray(value) ? value : typeof value === "string" ? (JSON.parse(value) as string[]) : [];
 
 /**
- * Tâches (par échéance) et événements entre `from` et `to` inclus ("YYYY-MM-DD"), pour le projet
- * sélectionné ; les événements sans projet (équipe) sont toujours inclus.
+ * Tâches (par échéance) et événements d'un projet entre `from` et `to` inclus ("YYYY-MM-DD").
  *
  * Une seule requête, bornée sur l'intervalle affiché : UNION ALL des deux sources, responsables
  * agrégés en JSON. Dates et énumérations sont converties en texte côté SQL pour que Neon et
@@ -659,7 +840,7 @@ export async function getCalendarItems({
 }: {
   from: string;
   to: string;
-  projectId: string | null;
+  projectId: string;
 }): Promise<CalendarItems> {
   const { rows } = await db.execute<CalendarRow>(sql`
     select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date, t.start_date::text as start_date,
@@ -679,15 +860,15 @@ export async function getCalendarItems({
            null, null,
            null, e.color, e.created_by
       from ${projectEvents} e
-      left join ${projects} p on p.id = e.project_id
-     where (e.project_id = ${projectId}::uuid or e.project_id is null)
+      join ${projects} p on p.id = e.project_id
+     where e.project_id = ${projectId}::uuid
        and e.event_date between ${from}::date and ${to}::date
     order by date, kind, title
   `);
 
   const [linksOf, days] = await Promise.all([
     getTaskLinks(rows.filter((r) => r.kind === "task").map((r) => r.id)),
-    projectId ? getImportantDays(projectId, { from, to }) : [],
+    getImportantDays(projectId, { from, to }),
   ]);
   const result: CalendarItems = { tasks: [], events: [], importantDays: days };
   for (const r of rows) {
@@ -713,9 +894,9 @@ export async function getCalendarItems({
     } else {
       result.events.push({
         id: r.id,
-        projectId: r.project_id,
-        projectName: r.project_name,
-        projectColor: r.project_color,
+        projectId: r.project_id!,
+        projectName: r.project_name!,
+        projectColor: r.project_color!,
         title: r.title,
         description: r.description,
         date: r.date,

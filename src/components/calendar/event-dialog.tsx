@@ -13,12 +13,10 @@ import { SimpleSelect } from "@/components/ui/select";
 import { COLORS } from "@/lib/constants";
 import type { CalendarEvent } from "@/lib/queries";
 
-/** Valeur du sélecteur de projet pour un événement d'équipe (Radix Select refuse ""). */
-const TEAM = "equipe";
-
 /**
  * Fenêtre de création / modification d'un événement du calendrier. Seul le créateur ou un
- * admin peut modifier ou supprimer un événement : pour les autres, il s'affiche en lecture seule.
+ * owner / admin du projet peut modifier ou supprimer un événement : pour les autres, il
+ * s'affiche en lecture seule.
  */
 export function EventDialog({
   open,
@@ -33,7 +31,8 @@ export function EventDialog({
   event?: CalendarEvent;
 }) {
   const { me, projects, membersById, currentProjectId, toast } = useApp();
-  const canEdit = !event || me.role === "admin" || event.createdBy === me.id;
+  const role = projects.find((p) => p.id === event?.projectId)?.role;
+  const canEdit = !event || role === "owner" || role === "admin" || event.createdBy === me.id;
   const creator = event?.createdBy ? membersById.get(event.createdBy) : undefined;
 
   const [draft, setDraft] = useState({
@@ -41,7 +40,7 @@ export function EventDialog({
     description: event?.description ?? "",
     eventDate: event?.date ?? date,
     color: event?.color ?? COLORS[0],
-    projectId: event ? (event.projectId ?? TEAM) : (currentProjectId ?? TEAM),
+    projectId: event?.projectId ?? currentProjectId ?? "",
   });
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -51,18 +50,15 @@ export function EventDialog({
   const set = (key: keyof typeof draft, value: string) => setDraft((d) => ({ ...d, [key]: value }));
 
   // Projets proposés : les actifs, plus celui de l'événement s'il a été archivé depuis.
-  const projectOptions = [
-    { value: TEAM, label: "Aucun : toute l'équipe" },
-    ...projects
-      .filter((p) => !p.archived || p.id === event?.projectId)
-      .map((p, i) => ({ value: p.id, label: p.name, dot: p.color, separatorBefore: i === 0 })),
-  ];
+  const projectOptions = projects
+    .filter((p) => !p.archived || p.id === event?.projectId)
+    .map((p) => ({ value: p.id, label: p.name, dot: p.color }));
 
   function submit(e?: FormEvent) {
     e?.preventDefault();
     if (!canEdit) return;
     setError(null);
-    const input = { ...draft, projectId: draft.projectId === TEAM ? null : draft.projectId };
+    const input = draft;
     startSaving(async () => {
       const res = event ? await updateEvent(event.id, input) : await createEvent(input);
       if (!res.ok) return setError(res.error);

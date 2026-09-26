@@ -12,11 +12,12 @@ vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 let projectId: string;
+let me: Awaited<ReturnType<typeof insertUser>>;
 
 beforeEach(async () => {
   await resetDb(db);
-  const me = await insertUser(db);
-  projectId = (await insertProject(db)).id;
+  me = await insertUser(db);
+  projectId = (await insertProject(db, "Refonte du site", me.id)).id;
   vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
 });
 
@@ -69,7 +70,7 @@ describe("sous-tâches", () => {
   });
 
   it("refuse une parente d'un autre projet", async () => {
-    const otherProject = (await insertProject(db, "Autre projet")).id;
+    const otherProject = (await insertProject(db, "Autre projet", me.id)).id;
     const foreign = await add("Ailleurs", { project: otherProject });
     await expect(createTask({ projectId, title: "Ici", parentId: foreign })).resolves.toMatchObject({ ok: false });
   });
@@ -84,7 +85,7 @@ describe("sous-tâches", () => {
   });
 
   it("les sous-tâches suivent leur parente dans un autre projet", async () => {
-    const otherProject = (await insertProject(db, "Autre projet")).id;
+    const otherProject = (await insertProject(db, "Autre projet", me.id)).id;
     const parent = await add("Parente");
     const sub = await add("Sous-tâche", { parentId: parent });
     const deep = await add("Sous-sous-tâche", { parentId: sub });
@@ -130,13 +131,13 @@ describe("dépendances", () => {
   });
 
   it("refuse un prérequis d'un autre projet", async () => {
-    const otherProject = (await insertProject(db, "Autre projet")).id;
+    const otherProject = (await insertProject(db, "Autre projet", me.id)).id;
     const foreign = await add("Ailleurs", { project: otherProject });
     await expect(createTask({ projectId, title: "Ici", dependsOnIds: [foreign] })).resolves.toMatchObject({ ok: false });
   });
 
   it("changer de projet retire les dépendances devenues inter-projets", async () => {
-    const otherProject = (await insertProject(db, "Autre projet")).id;
+    const otherProject = (await insertProject(db, "Autre projet", me.id)).id;
     const a = await add("A");
     const b = await add("B", { dependsOnIds: [a] });
     await updateTask(a, { projectId: otherProject, title: "A" });

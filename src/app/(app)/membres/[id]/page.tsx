@@ -7,41 +7,42 @@ import { TaskRates } from "@/components/tasks/task-rates";
 import { Avatar } from "@/components/ui/avatar";
 import { buttonClass } from "@/components/ui/button";
 import { Card, PageHeader, Section, Stat } from "@/components/ui/misc";
-import { requireUser } from "@/lib/auth";
+import { requireUser, type SessionUser } from "@/lib/auth";
 import { compareByDueThenPriority } from "@/lib/constants";
 import { todayISO } from "@/lib/dates";
 import { membersSettingsHref } from "@/lib/members";
-import { getTasks, getTeam, type TaskView } from "@/lib/queries";
+import { getAccounts, getTasks, type TaskView } from "@/lib/queries";
 import { getSelectedProjectId } from "@/lib/selected-project";
 
 type Props = { params: Promise<{ id: string }> };
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
-async function loadMember(id: string) {
-  if (!UUID.test(id)) return null;
-  return (await getTeam()).find((m) => m.id === id) ?? null;
+/** Fiche visible par son titulaire et par les administrateurs de l'application. */
+async function loadMember(me: SessionUser, id: string) {
+  if (!UUID.test(id) || (me.role !== "admin" && me.id !== id)) return null;
+  return (await getAccounts()).find((m) => m.id === id) ?? null;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const member = await loadMember((await params).id);
+  const member = await loadMember(await requireUser(), (await params).id);
   return { title: member?.name ?? "Membre" };
 }
 
 /**
- * Fiche d'un membre : les tâches qui lui sont assignées (projets non archivés). Son temps de
- * travail est sur la page Temps de travail. Visible par les administrateurs, et par chacun
- * pour sa propre fiche.
+ * Fiche d'un membre : les tâches qui lui sont assignées dans les projets (non archivés) dont on
+ * est soi-même membre. Son temps de travail est sur la page Temps de travail. Visible par les
+ * administrateurs de l'application, et par chacun pour sa propre fiche.
  */
 export default async function MemberPage({ params }: Props) {
   const me = await requireUser();
   const { id } = await params;
   if (me.role !== "admin" && me.id !== id) redirect("/");
-  const member = await loadMember(id);
+  const member = await loadMember(me, id);
   if (!member) notFound();
 
   const today = todayISO();
-  const tasks = await getTasks({ assigneeId: id });
+  const tasks = await getTasks({ viewerId: me.id, assigneeId: id });
 
   const byStatus = (status: TaskView["status"]) =>
     tasks
@@ -56,7 +57,7 @@ export default async function MemberPage({ params }: Props) {
   return (
     <div className="mx-auto max-w-6xl">
       {me.role === "admin" && (
-        <Link href={membersSettingsHref(await getSelectedProjectId())} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-text">
+        <Link href={membersSettingsHref(await getSelectedProjectId(me.id))} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-text">
           <ArrowLeft size={14} /> Membres
         </Link>
       )}

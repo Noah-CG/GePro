@@ -5,12 +5,15 @@ import { Plus, X } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { useApp } from "@/components/layout/app-provider";
 
-/** Sélection multiple des responsables : pastilles retirables + liste des membres pas encore assignés. */
-export function AssigneePicker({ value, onChange }: { value: string[]; onChange: (ids: string[]) => void }) {
+/**
+ * Sélection multiple des responsables : pastilles retirables + liste des membres du projet pas
+ * encore assignés (seuls les membres du projet peuvent l'être, ce que le serveur vérifie aussi).
+ */
+export function AssigneePicker({ projectId, value, onChange }: { projectId: string; value: string[]; onChange: (ids: string[]) => void }) {
   const { team, membersById, me } = useApp();
   const add = (id: string) => onChange([...value, id]);
   const remove = (id: string) => onChange(value.filter((v) => v !== id));
-  const available = team.filter((m) => !value.includes(m.id));
+  const available = team.filter((m) => m.projectIds.includes(projectId) && !value.includes(m.id));
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">

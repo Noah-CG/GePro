@@ -53,6 +53,10 @@ describe("projectSwitchHref", () => {
     [`/projets/${A}/documents/${C}`, `/projets/${B}/documents`],
     [`/projets/${A}/parametres`, `/projets/${B}/parametres`],
     [`/projets/${A}/discord`, `/projets/${B}/discord`],
+    [`/projets/${A}/tableau-de-bord`, `/projets/${B}/tableau-de-bord`],
+    [`/projets/${A}/calendrier`, `/projets/${B}/calendrier`],
+    [`/projets/${A}/calendrier/journees`, `/projets/${B}/calendrier/journees`],
+    [`/projets/${A}/temps`, `/projets/${B}/temps`],
   ])("depuis %s → %s", (from, expected) => {
     expect(projectSwitchHref(from, B)).toBe(expected);
   });

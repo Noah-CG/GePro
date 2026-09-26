@@ -24,7 +24,7 @@ beforeEach(async () => {
   await resetDb(db);
   const user = await insertUser(db);
   vi.mocked(requireUser).mockResolvedValue({ ...user, role: "member" });
-  projectId = (await insertProject(db)).id;
+  projectId = (await insertProject(db, "Refonte du site", user.id)).id;
 });
 
 describe("date de début des tâches", () => {

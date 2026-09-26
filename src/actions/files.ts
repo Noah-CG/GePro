@@ -3,7 +3,8 @@
 import { and, eq, lt, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { projectFileChunks, projectFiles, projects } from "@/db/schema";
+import { projectFileChunks, projectFiles } from "@/db/schema";
+import { atLeast, authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { chunkCount, cleanFileName, expectedChunkSize, isPdfSignature, pdfFileError, PDF_MIME } from "@/lib/files";
 import { isUuid } from "@/lib/validation";
@@ -37,16 +38,14 @@ export async function startFileUpload(
   projectId: string,
   file: { name: string; size: number; type: string },
 ): Promise<ActionResult<{ id: string; chunkCount: number }>> {
-  const me = await requireUser();
-  if (!isUuid(projectId)) return fail("Projet introuvable.");
+  const auth = await authorizeProject(projectId);
+  if (!auth.ok) return fail(auth.error);
+  const me = auth.access.user;
   const name = cleanFileName(String(file?.name ?? ""));
   const size = Number(file?.size);
   if (!Number.isSafeInteger(size)) return fail("Fichier invalide.");
   const error = pdfFileError({ name, size, type: String(file?.type ?? "") });
   if (error) return fail(error);
-
-  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
-  if (!project) return fail("Projet introuvable.");
 
   // Ménage : les imports abandonnés depuis plus d'un jour n'aboutiront plus.
   await db
@@ -106,6 +105,12 @@ export async function finishFileUpload(id: string): Promise<ActionResult<{ id: s
   if (received.count !== file.chunkCount || received.bytes !== file.size) {
     return fail("L'import est incomplet : relancez-le.");
   }
+  // Retiré du projet pendant l'import : le fichier n'y apparaît pas.
+  const auth = await authorizeProject(file.projectId);
+  if (!auth.ok) {
+    await db.delete(projectFiles).where(eq(projectFiles.id, file.id));
+    return fail(auth.error);
+  }
 
   await db.update(projectFiles).set({ status: "ready" }).where(eq(projectFiles.id, file.id));
   refresh();
@@ -120,17 +125,18 @@ export async function cancelFileUpload(id: string): Promise<ActionResult> {
   return ok(undefined);
 }
 
-/** Supprime un fichier importé : seule la personne qui l'a importé, ou un admin, le peut. */
+/** Supprime un fichier importé : seule la personne qui l'a importé, ou un owner / admin du projet, le peut. */
 export async function deleteFile(id: string): Promise<ActionResult> {
-  const me = await requireUser();
-  if (!isUuid(id)) return fail("Fichier introuvable.");
+  const auth = await authorizeProjectOf("file", id);
+  if (!auth.ok) return fail(auth.error);
+  const { user: me, role } = auth.access;
   const [file] = await db
     .select({ uploadedBy: projectFiles.uploadedBy })
     .from(projectFiles)
     .where(and(eq(projectFiles.id, id), eq(projectFiles.status, "ready")));
   if (!file) return fail("Fichier introuvable.");
-  if (me.role !== "admin" && file.uploadedBy !== me.id) {
-    return fail("Seule la personne qui a importé ce fichier ou un administrateur peut le supprimer.");
+  if (!atLeast(role, "admin") && file.uploadedBy !== me.id) {
+    return fail("Seule la personne qui a importé ce fichier ou un administrateur du projet peut le supprimer.");
   }
 
   await db.delete(projectFiles).where(eq(projectFiles.id, id));

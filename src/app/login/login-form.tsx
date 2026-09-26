@@ -5,11 +5,13 @@ import { login, type LoginState } from "@/actions/auth";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 
-export function LoginForm() {
+/** `next` : page où revenir après la connexion (lien d'invitation, par exemple). */
+export function LoginForm({ next }: { next: string }) {
   const [state, action, pending] = useActionState<LoginState, FormData>(login, {});
 
   return (
     <form action={action} className="space-y-4 rounded-2xl border border-border bg-surface p-6 shadow-sm">
+      <input type="hidden" name="suite" value={next} />
       <Field label="Email" htmlFor="email">
         <Input id="email" name="email" type="email" autoComplete="email" autoFocus required defaultValue={state.email} />
       </Field>

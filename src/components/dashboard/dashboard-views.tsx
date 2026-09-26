@@ -128,7 +128,7 @@ export function TeamDashboard({ me, project, today, weekEnd, tasks, team, import
           <ImportantDaysWidget projectId={project.id} days={importantDays} today={today} />
           <ProjectProgress project={project} />
 
-          <Section title="Charge de l'équipe" action={<Link href="/temps" className="text-xs text-muted hover:text-text">Temps de travail</Link>}>
+          <Section title="Charge de l'équipe" action={<Link href={`/projets/${project.id}/temps`} className="text-xs text-muted hover:text-text">Temps de travail</Link>}>
             {workload.length === 0 && <p className="p-4 text-sm text-muted">Aucune tâche ouverte assignée sur ce projet.</p>}
             <ul className="space-y-3 p-4 empty:hidden">
               {workload.map((w) => {

@@ -68,8 +68,7 @@ export const eventInput = z.object({
   description: z.string().max(5000).default(""),
   eventDate: requiredDate,
   color,
-  /** Facultatif : sans projet, l'événement concerne toute l'équipe. */
-  projectId: z.uuid("Projet invalide").nullable().or(z.literal("").transform(() => null)).default(null),
+  projectId: z.uuid("Choisissez un projet"),
 });
 export type EventInput = z.input<typeof eventInput>;
 
@@ -94,6 +93,16 @@ export const memberInput = z.object({
 export type MemberInput = z.input<typeof memberInput>;
 
 export const password = z.string().min(8, "8 caractères minimum");
+
+/** Invitation à un projet : email exact (pas de recherche parmi les comptes), rôle donné à l'arrivée. */
+export const invitationInput = z.object({
+  email: z.email("Email invalide").transform((e) => e.trim().toLowerCase()),
+  role: z.enum(["admin", "member"]).default("member"),
+});
+export type InvitationInput = z.input<typeof invitationInput>;
+
+/** Rôle modifiable d'un membre (le propriétaire change par transfert de propriété). */
+export const memberRoleInput = z.enum(["admin", "member"]);
 
 export const isUuid = (value: string) => z.uuid().safeParse(value).success;
 

@@ -34,7 +34,7 @@ async function connect(userId: string, scope = `${GOOGLE_SCOPE} ${CALENDAR_SCOPE
   );
 }
 
-async function insertEvent(title: string, projectId: string | null, eventDate = "2026-09-30") {
+async function insertEvent(title: string, projectId: string, eventDate = "2026-09-30") {
   const [row] = await db.insert(projectEvents).values({ title, projectId, eventDate }).returning();
   return row;
 }
@@ -53,12 +53,12 @@ beforeEach(async () => {
   scheduled.length = 0;
   me = await insertUser(db, "Camille Martin");
   other = await insertUser(db, "Léa Dubois");
-  chosen = await insertProject(db, "Refonte du site");
-  const ignored = await insertProject(db, "Autre projet");
-  const archived = await insertProject(db, "Projet archivé");
+  chosen = await insertProject(db, "Refonte du site", me.id);
+  const ignored = await insertProject(db, "Autre projet", me.id);
+  const archived = await insertProject(db, "Projet archivé", me.id);
   await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, archived.id));
 
-  await insertEvent("Séminaire d'équipe", null);
+  await insertEvent("Séminaire d'équipe", chosen.id);
   await insertEvent("Réunion client", chosen.id);
   await insertEvent("Hors sélection", ignored.id);
   await insertEvent("Dans un projet archivé", archived.id);
@@ -73,7 +73,7 @@ beforeEach(async () => {
 });
 
 describe("synchronisation complète", () => {
-  it("crée l'agenda GePro et y met les événements d'équipe, ceux des projets choisis et mes échéances", async () => {
+  it("crée l'agenda GePro et y met les événements des projets choisis et mes échéances", async () => {
     expect(await reconcileCalendar(me.id)).toEqual({ upserted: 3, deleted: 0, total: 3 });
     expect(google.calls[0]).toMatchObject({ method: "POST", path: "/calendars", body: { summary: "GePro", timeZone: "Europe/Paris" } });
     expect(await summaries()).toEqual(["Réunion client", "Séminaire d'équipe", "Échéance : Ma tâche"]);
@@ -108,7 +108,7 @@ describe("synchronisation complète", () => {
 
     await saveCalendarSyncSettings(me.id, { tasksMode: "mine", projectIds: [] });
     await reconcileCalendar(me.id);
-    expect(google.events(id).map((e) => e.summary).sort()).toEqual(["Perso", "Séminaire d'équipe"]);
+    expect(google.events(id).map((e) => e.summary).sort()).toEqual(["Perso"]);
   });
 
   it("recrée l'agenda supprimé dans Google", async () => {
@@ -154,7 +154,7 @@ describe("au fil des modifications", () => {
   });
 
   it("retire un événement supprimé", async () => {
-    const event = await insertEvent("Éphémère", null);
+    const event = await insertEvent("Éphémère", chosen.id);
     await syncCalendarItems([{ kind: "event", id: event.id }]);
     expect(await summaries()).toContain("Éphémère");
 
@@ -186,7 +186,7 @@ describe("déclenchement et arrêt", () => {
 
   it("programme la mise à jour après la réponse", async () => {
     await reconcileCalendar(me.id);
-    const event = await insertEvent("Nouveau jalon", null);
+    const event = await insertEvent("Nouveau jalon", chosen.id);
     await scheduleCalendarSync([{ kind: "event", id: event.id }]);
     await Promise.all(scheduled);
     expect(await summaries()).toContain("Nouveau jalon");

@@ -29,7 +29,7 @@ import {
   type GoogleCalendarSync,
 } from "@/db/schema";
 import { APP_TIMEZONE } from "@/lib/dates";
-import { getSubtaskIds } from "@/lib/queries";
+import { getSubtaskIds, memberProjectIds } from "@/lib/queries";
 import { isUuid } from "@/lib/validation";
 import { withGoogleAccess } from "./connections";
 import { diffCalendar, googleEventId, toCalendarEvent, type CalendarItem, type CalendarSource } from "./calendar-events";
@@ -109,7 +109,8 @@ async function settingsOf(userId: string, tasksMode: CalendarTasksMode): Promise
 
 /**
  * Éléments GePro attendus dans l'agenda d'un membre, éventuellement restreints à certains ids.
- * Projets archivés exclus ; tâches terminées ou sans échéance exclues.
+ * Seulement les projets choisis dont il est (encore) membre ; projets archivés exclus ; tâches
+ * terminées ou sans échéance exclues.
  */
 export async function desiredItems(
   userId: string,
@@ -117,9 +118,11 @@ export async function desiredItems(
   only?: { eventIds: string[]; taskIds: string[] },
 ): Promise<CalendarItem[]> {
   const activeProject = (column: typeof projectEvents.projectId | typeof tasks.projectId): SQL =>
-    projectIds.length ? and(inArray(column, projectIds), isNull(projects.archivedAt))! : sql`false`;
+    projectIds.length
+      ? and(inArray(column, projectIds), inArray(column, memberProjectIds(userId)), isNull(projects.archivedAt))!
+      : sql`false`;
 
-  const wantEvents = !only || only.eventIds.length > 0;
+  const wantEvents = projectIds.length > 0 && (!only || only.eventIds.length > 0);
   const wantTasks = tasksMode !== "none" && projectIds.length > 0 && (!only || only.taskIds.length > 0);
 
   const [eventRows, taskRows] = await Promise.all([
@@ -135,13 +138,8 @@ export async function desiredItems(
             projectName: projects.name,
           })
           .from(projectEvents)
-          .leftJoin(projects, eq(projects.id, projectEvents.projectId))
-          .where(
-            and(
-              or(isNull(projectEvents.projectId), activeProject(projectEvents.projectId)),
-              only ? inArray(projectEvents.id, only.eventIds) : undefined,
-            ),
-          )
+          .innerJoin(projects, eq(projects.id, projectEvents.projectId))
+          .where(and(activeProject(projectEvents.projectId), only ? inArray(projectEvents.id, only.eventIds) : undefined))
       : [],
     wantTasks
       ? db
@@ -311,16 +309,32 @@ export async function scheduleCalendarSync(sources: CalendarSource[] | (() => Pr
   if (list.length) runAfter(() => syncCalendarItems(list));
 }
 
-/** Projet modifié (nom, couleur, archivage) : synchronisation complète des membres qui l'ont choisi. */
-export async function scheduleProjectCalendarSync(projectId: string): Promise<void> {
-  if (!isUuid(projectId) || !(await anySync())) return;
+/** Synchronisation complète, après la réponse, des agendas de ces membres (projet supprimé, membre retiré…). */
+export async function scheduleReconcile(userIds: string[]): Promise<void> {
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return;
+  const syncing = await db
+    .select({ userId: googleCalendarSyncs.userId })
+    .from(googleCalendarSyncs)
+    .where(inArray(googleCalendarSyncs.userId, unique));
+  if (syncing.length) runAfter(async () => {
+    for (const { userId } of syncing) await reconcileCalendar(userId).catch(() => {});
+  });
+}
+
+/** Membres qui ont choisi ce projet pour leur agenda Google. */
+export async function calendarSyncUsersOf(projectId: string): Promise<string[]> {
+  if (!isUuid(projectId) || !(await anySync())) return [];
   const rows = await db
     .select({ userId: googleCalendarSyncProjects.userId })
     .from(googleCalendarSyncProjects)
     .where(eq(googleCalendarSyncProjects.projectId, projectId));
-  if (rows.length) runAfter(async () => {
-    for (const { userId } of rows) await reconcileCalendar(userId).catch(() => {});
-  });
+  return rows.map((r) => r.userId);
+}
+
+/** Projet modifié (nom, couleur, archivage) : synchronisation complète des membres qui l'ont choisi. */
+export async function scheduleProjectCalendarSync(projectId: string): Promise<void> {
+  await scheduleReconcile(await calendarSyncUsersOf(projectId));
 }
 
 /** Ouverture du calendrier : synchronisation complète en arrière-plan si la dernière date de plus de 6 h. */

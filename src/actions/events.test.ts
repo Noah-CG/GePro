@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { projectEvents } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { insertProject, insertUser, resetDb } from "@/test/db";
+import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import { createEvent, deleteEvent, updateEvent } from "./events";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
@@ -19,7 +19,7 @@ let projectId: string;
 const actAs = (user: User, role: "admin" | "member" = "member") => vi.mocked(requireUser).mockResolvedValue({ ...user, role });
 
 const input = { title: "Comité de pilotage", description: "Salle 2", eventDate: "2026-10-02", color: "#f43f5e" };
-const DENIED = "Seul le créateur de l'événement ou un administrateur peut le modifier ou le supprimer.";
+const DENIED = "Seul le créateur de l'événement ou un administrateur du projet peut le modifier ou le supprimer.";
 
 const findEvent = async (id: string) => (await db.select().from(projectEvents).where(eq(projectEvents.id, id)))[0];
 
@@ -36,7 +36,10 @@ beforeEach(async () => {
   camille = await insertUser(db, "Camille Martin");
   lea = await insertUser(db, "Léa Dubois");
   admin = await insertUser(db, "Hugo Moreau");
-  projectId = (await insertProject(db)).id;
+  // Camille est propriétaire, Léa membre et Hugo administrateur du projet.
+  projectId = (await insertProject(db, "Refonte du site", camille.id)).id;
+  await addMember(db, projectId, lea.id);
+  await addMember(db, projectId, admin.id, "admin");
 });
 
 describe("createEvent", () => {
@@ -45,11 +48,10 @@ describe("createEvent", () => {
     expect(await findEvent(id)).toMatchObject({ ...input, projectId, createdBy: camille.id });
   });
 
-  it("crée un événement d'équipe, sans projet", async () => {
+  it("refuse un événement sans projet", async () => {
     actAs(lea);
-    const res = await createEvent({ ...input, projectId: "" });
-    expect(res.ok).toBe(true);
-    expect(await findEvent((res as { data: { id: string } }).data.id)).toMatchObject({ projectId: null, createdBy: lea.id });
+    expect(await createEvent({ ...input, projectId: "" })).toEqual({ ok: false, error: "Choisissez un projet" });
+    expect(await db.select().from(projectEvents)).toHaveLength(0);
   });
 
   it.each([
@@ -59,7 +61,7 @@ describe("createEvent", () => {
     ["couleur invalide", { color: "rouge" }, "Couleur invalide"],
   ])("refuse une saisie invalide : %s", async (_, patch, error) => {
     actAs(camille);
-    expect(await createEvent({ ...input, ...patch })).toEqual({ ok: false, error });
+    expect(await createEvent({ ...input, projectId, ...patch })).toEqual({ ok: false, error });
     expect(await db.select().from(projectEvents)).toHaveLength(0);
   });
 
@@ -75,28 +77,28 @@ describe("createEvent", () => {
 describe("updateEvent", () => {
   it("le créateur peut modifier son événement", async () => {
     const id = await camilleEvent();
-    expect(await updateEvent(id, { ...input, title: "Comité reporté", eventDate: "2026-10-09" })).toEqual({ ok: true, data: undefined });
+    expect(await updateEvent(id, { ...input, projectId, title: "Comité reporté", eventDate: "2026-10-09" })).toEqual({ ok: true, data: undefined });
     expect(await findEvent(id)).toMatchObject({ title: "Comité reporté", eventDate: "2026-10-09" });
   });
 
   it("un autre membre ne peut pas le modifier", async () => {
     const id = await camilleEvent();
     actAs(lea);
-    expect(await updateEvent(id, { ...input, title: "Piraté" })).toEqual({ ok: false, error: DENIED });
+    expect(await updateEvent(id, { ...input, projectId, title: "Piraté" })).toEqual({ ok: false, error: DENIED });
     expect((await findEvent(id)).title).toBe("Comité de pilotage");
   });
 
-  it("un admin peut modifier l'événement d'un autre", async () => {
+  it("un administrateur du projet peut modifier l'événement d'un autre", async () => {
     const id = await camilleEvent();
     actAs(admin, "admin");
-    expect(await updateEvent(id, { ...input, title: "Corrigé par l'admin" })).toEqual({ ok: true, data: undefined });
+    expect(await updateEvent(id, { ...input, projectId, title: "Corrigé par l'admin" })).toEqual({ ok: true, data: undefined });
     expect((await findEvent(id)).title).toBe("Corrigé par l'admin");
   });
 
   it("événement introuvable", async () => {
     actAs(admin, "admin");
-    expect(await updateEvent("00000000-0000-4000-8000-000000000000", input)).toEqual({ ok: false, error: "Événement introuvable." });
-    expect(await updateEvent("pas-un-id", input)).toEqual({ ok: false, error: "Événement introuvable." });
+    expect(await updateEvent("00000000-0000-4000-8000-000000000000", { ...input, projectId })).toEqual({ ok: false, error: "Événement introuvable." });
+    expect(await updateEvent("pas-un-id", { ...input, projectId })).toEqual({ ok: false, error: "Événement introuvable." });
   });
 });
 
@@ -114,7 +116,7 @@ describe("deleteEvent", () => {
     expect(await findEvent(id)).toBeDefined();
   });
 
-  it("un admin peut supprimer l'événement d'un autre", async () => {
+  it("un administrateur du projet peut supprimer l'événement d'un autre", async () => {
     const id = await camilleEvent();
     actAs(admin, "admin");
     expect(await deleteEvent(id)).toEqual({ ok: true, data: undefined });

@@ -5,27 +5,29 @@ import { notFound } from "next/navigation";
 import { FileActions } from "@/components/files/file-actions";
 import { PdfIcon } from "@/components/files/pdf-icon";
 import { PdfViewer } from "@/components/files/pdf-viewer";
-import { requireUser } from "@/lib/auth";
+import { atLeast, requireProjectAccess } from "@/lib/access";
 import { getProjectFile } from "@/lib/queries";
 import { isUuid } from "@/lib/validation";
 
 type Props = { params: Promise<{ id: string; fileId: string }> };
 
+/** Fichier d'un projet dont on est membre (sinon 404). */
 async function loadFile({ id, fileId }: { id: string; fileId: string }) {
-  if (!isUuid(id) || !isUuid(fileId)) return null;
-  return getProjectFile(id, fileId);
+  const access = await requireProjectAccess(id);
+  const file = isUuid(fileId) ? await getProjectFile(id, fileId) : null;
+  return file ? { ...access, file } : null;
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const file = await loadFile(await params);
-  return { title: file?.title ?? "PDF" };
+  const found = await loadFile(await params);
+  return { title: found?.file.title ?? "PDF" };
 }
 
 /** Lecture d'un PDF importé, en lecture seule, dans le lecteur de GePro. */
 export default async function PdfDocumentPage({ params }: Props) {
-  const me = await requireUser();
-  const file = await loadFile(await params);
-  if (!file) notFound();
+  const found = await loadFile(await params);
+  if (!found) notFound();
+  const { file, user: me, role } = found;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -48,7 +50,7 @@ export default async function PdfDocumentPage({ params }: Props) {
           fileId={file.id}
           projectId={file.projectId}
           name={file.name}
-          canDelete={me.role === "admin" || file.uploadedBy === me.id}
+          canDelete={atLeast(role, "admin") || file.uploadedBy === me.id}
         />
       </header>
 

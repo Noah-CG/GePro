@@ -3,10 +3,10 @@
 import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { importantDays, projects } from "@/db/schema";
-import { requireUser } from "@/lib/auth";
+import { importantDays } from "@/db/schema";
+import { authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { formatDayLong } from "@/lib/dates";
-import { firstError, importantDayInput, isUuid, type ImportantDayInput } from "@/lib/validation";
+import { firstError, importantDayInput, type ImportantDayInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
 // TODO(journées importantes) : journées récurrentes (anniversaire de lancement…), notifications à
@@ -20,14 +20,17 @@ const refresh = () => revalidatePath("/", "layout");
  * Une seule journée importante par date et par projet.
  */
 export async function saveImportantDay(id: string | null, input: ImportantDayInput): Promise<ActionResult<{ id: string }>> {
-  const me = await requireUser();
-  if (id !== null && !isUuid(id)) return fail("Journée importante introuvable.");
+  if (id !== null) {
+    const current = await authorizeProjectOf("importantDay", id);
+    if (!current.ok) return fail(current.error);
+  }
   const parsed = importantDayInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
   const data = parsed.data;
-
-  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, data.projectId));
-  if (!project) return fail("Projet introuvable.");
+  // Projet visé (celui de la journée, ou un autre si elle en change) : il faut en être membre.
+  const auth = await authorizeProject(data.projectId);
+  if (!auth.ok) return fail(auth.error);
+  const me = auth.access.user;
 
   const [taken] = await db
     .select({ id: importantDays.id })
@@ -51,8 +54,8 @@ export async function saveImportantDay(id: string | null, input: ImportantDayInp
 
 /** Retire une journée importante (la date redevient une journée ordinaire). */
 export async function removeImportantDay(id: string): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(id)) return fail("Journée importante introuvable.");
+  const auth = await authorizeProjectOf("importantDay", id);
+  if (!auth.ok) return fail(auth.error);
   const [row] = await db.delete(importantDays).where(eq(importantDays.id, id)).returning({ id: importantDays.id });
   if (!row) return fail("Journée importante introuvable.");
   refresh();

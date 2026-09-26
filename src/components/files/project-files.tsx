@@ -81,10 +81,11 @@ export function ProjectFiles({ projectId, files }: { projectId: string; files: F
 }
 
 function FileRow({ file: f }: { file: FileView }) {
-  const { me, toast } = useApp();
+  const { me, projects, toast } = useApp();
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
-  const canDelete = me.role === "admin" || f.uploadedBy === me.id;
+  const role = projects.find((p) => p.id === f.projectId)?.role;
+  const canDelete = role === "owner" || role === "admin" || f.uploadedBy === me.id;
 
   function remove() {
     if (!confirming) return setConfirming(true);

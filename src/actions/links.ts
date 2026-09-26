@@ -3,9 +3,9 @@
 import { eq, max } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { projectLinks, projects } from "@/db/schema";
-import { requireUser } from "@/lib/auth";
-import { firstError, isUuid, projectLinkInput, type ProjectLinkInput } from "@/lib/validation";
+import { projectLinks } from "@/db/schema";
+import { authorizeProject, authorizeProjectOf } from "@/lib/access";
+import { firstError, projectLinkInput, type ProjectLinkInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
 // TODO(liens utiles) : réordonner les liens par glisser-déposer (la colonne `position` est prête),
@@ -14,18 +14,13 @@ import { fail, ok, type ActionResult } from "./result";
 /** Rafraîchit la barre latérale (chargée par le layout) après une modification. */
 const refresh = () => revalidatePath("/", "layout");
 
-/**
- * Ajoute un lien utile à la fin de la liste du projet. Tout membre le peut : GePro n'a pas de
- * membres par projet, chaque compte a accès à tous les projets (comme pour les tâches).
- */
+/** Ajoute un lien utile à la fin de la liste du projet. Tout membre du projet le peut, comme pour les tâches. */
 export async function createProjectLink(projectId: string, input: ProjectLinkInput): Promise<ActionResult<{ id: string }>> {
-  const me = await requireUser();
-  if (!isUuid(projectId)) return fail("Projet introuvable.");
+  const auth = await authorizeProject(projectId);
+  if (!auth.ok) return fail(auth.error);
+  const me = auth.access.user;
   const parsed = projectLinkInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
-
-  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId));
-  if (!project) return fail("Projet introuvable.");
 
   const [{ last }] = await db
     .select({ last: max(projectLinks.position) })
@@ -41,8 +36,8 @@ export async function createProjectLink(projectId: string, input: ProjectLinkInp
 
 /** Modifie l'adresse et le titre d'un lien utile. */
 export async function updateProjectLink(id: string, input: ProjectLinkInput): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(id)) return fail("Lien introuvable.");
+  const auth = await authorizeProjectOf("link", id);
+  if (!auth.ok) return fail(auth.error);
   const parsed = projectLinkInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
 
@@ -53,8 +48,8 @@ export async function updateProjectLink(id: string, input: ProjectLinkInput): Pr
 }
 
 export async function deleteProjectLink(id: string): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(id)) return fail("Lien introuvable.");
+  const auth = await authorizeProjectOf("link", id);
+  if (!auth.ok) return fail(auth.error);
   const [row] = await db.delete(projectLinks).where(eq(projectLinks.id, id)).returning({ id: projectLinks.id });
   if (!row) return fail("Lien introuvable.");
   refresh();

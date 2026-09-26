@@ -41,9 +41,9 @@ export function CalendarView({
   date: string;
   today: string;
   items: CalendarItems;
-  /** Projet sélectionné : sans projet, pas de journées importantes (elles appartiennent à un projet). */
-  projectId: string | null;
-  projectName: string | null;
+  /** Projet affiché (celui de l'adresse). */
+  projectId: string;
+  projectName: string;
   /** Bouton de synchronisation avec Google Agenda, affiché dans l'en-tête. */
   sync?: ReactNode;
 }) {
@@ -54,8 +54,8 @@ export function CalendarView({
   const itemsByDay = useMemo(() => groupByDay(items), [items]);
 
   const handlers = {
-    // Sans projet sélectionné, seule la création d'un événement est possible : pas de menu.
-    onCreate: (day: string, anchor: DOMRect) => (projectId ? setMenu({ day, anchor }) : setEventTarget({ date: day })),
+    hrefFor: (v: View, day: string) => calendarHref(projectId, v, day),
+    onCreate: (day: string, anchor: DOMRect) => setMenu({ day, anchor }),
     onOpenTask: editTask,
     onOpenEvent: (event: CalendarEvent) => setEventTarget({ date: event.date, event }),
     onOpenImportantDay: (day: ImportantDayView) => setImportantTarget({ date: day.date, day }),
@@ -69,17 +69,17 @@ export function CalendarView({
     <div className="flex flex-col md:h-[calc(100dvh-6.5rem)]">
       <PageHeader
         title={<span className="first-letter:uppercase">{periodTitle(view, date)}</span>}
-        subtitle={projectName ? `Calendrier · ${projectName}` : "Calendrier de l'équipe"}
+        subtitle={`Calendrier · ${projectName}`}
         actions={
           <>
             <nav aria-label="Période" className="flex items-center gap-1">
-              <Link href={calendarHref(view, shiftPeriod(view, date, -1))} aria-label={`${unit} précédent${view === "semaine" ? "e" : ""}`} className={buttonClass({ size: "icon", variant: "ghost" })}>
+              <Link href={calendarHref(projectId, view, shiftPeriod(view, date, -1))} aria-label={`${unit} précédent${view === "semaine" ? "e" : ""}`} className={buttonClass({ size: "icon", variant: "ghost" })}>
                 <ChevronLeft size={16} />
               </Link>
-              <Link href={calendarHref(view, today)} className={buttonClass({ size: "sm" })}>
+              <Link href={calendarHref(projectId, view, today)} className={buttonClass({ size: "sm" })}>
                 Aujourd&apos;hui
               </Link>
-              <Link href={calendarHref(view, shiftPeriod(view, date, 1))} aria-label={`${unit} suivant${view === "semaine" ? "e" : ""}`} className={buttonClass({ size: "icon", variant: "ghost" })}>
+              <Link href={calendarHref(projectId, view, shiftPeriod(view, date, 1))} aria-label={`${unit} suivant${view === "semaine" ? "e" : ""}`} className={buttonClass({ size: "icon", variant: "ghost" })}>
                 <ChevronRight size={16} />
               </Link>
             </nav>
@@ -92,7 +92,7 @@ export function CalendarView({
               ).map((v) => (
                 <Link
                   key={v.value}
-                  href={calendarHref(v.value, date)}
+                  href={calendarHref(projectId, v.value, date)}
                   aria-current={view === v.value ? "page" : undefined}
                   className={cn(
                     "flex h-7 items-center rounded-md px-2.5 text-sm",
@@ -103,11 +103,9 @@ export function CalendarView({
                 </Link>
               ))}
             </nav>
-            {projectId && (
-              <Link href="/calendrier/journees" className={buttonClass({ size: "sm", variant: "ghost" })}>
-                <Star size={14} /> <span className="hidden lg:inline">Journées importantes</span>
-              </Link>
-            )}
+            <Link href={`/projets/${projectId}/calendrier/journees`} className={buttonClass({ size: "sm", variant: "ghost" })}>
+              <Star size={14} /> <span className="hidden lg:inline">Journées importantes</span>
+            </Link>
             {sync}
             <Button variant="primary" size="sm" onClick={() => setEventTarget({ date: visibleDays.includes(today) ? today : date })}>
               <Plus size={14} /> Nouvel événement
@@ -144,16 +142,14 @@ export function CalendarView({
         onImportantDay={(day) => setImportantTarget({ date: day, day: menuImportant })}
       />
 
-      {projectId && (
-        <ImportantDayDialog
-          key={importantTarget ? (importantTarget.day?.id ?? `nouvelle-${importantTarget.date}`) : "fermee"}
-          open={importantTarget !== null}
-          onOpenChange={(open) => !open && setImportantTarget(null)}
-          projectId={projectId}
-          date={importantTarget?.date ?? today}
-          day={importantTarget?.day}
-        />
-      )}
+      <ImportantDayDialog
+        key={importantTarget ? (importantTarget.day?.id ?? `nouvelle-${importantTarget.date}`) : "fermee"}
+        open={importantTarget !== null}
+        onOpenChange={(open) => !open && setImportantTarget(null)}
+        projectId={projectId}
+        date={importantTarget?.date ?? today}
+        day={importantTarget?.day}
+      />
 
       <EventDialog
         // La clé force un formulaire neuf à chaque ouverture.
