@@ -90,7 +90,7 @@ Si le webhook est supprimé côté Discord, GePro le recrée automatiquement au 
 - **Rendu** : gras, italique, souligné, barré, spoilers, code, citations, liens, mentions de membres, de rôles et de salons, emojis personnalisés, horodatages `<t:…>`, images jointes, autres fichiers en lien, embeds simples. Aucun HTML n'est interprété : le markdown est analysé en arbre (`src/lib/discord/markdown.ts`) puis rendu en composants React.
 - Les messages écrits depuis GePro portent le badge **via GePro**, ceux des bots le badge **BOT**.
 
-Tout membre connecté à GePro peut lire et écrire dans le salon d'un projet (GePro n'a pas de droits par projet) : ne reliez qu'un salon destiné à toute l'équipe.
+Tout membre du projet peut lire et écrire dans son salon (les autres comptes n'y ont pas accès : les routes répondent 404) ; seuls le propriétaire et les administrateurs du projet peuvent relier ou délier le salon. Ne reliez qu'un salon destiné à tous les membres du projet.
 
 ## Dépannage
 
