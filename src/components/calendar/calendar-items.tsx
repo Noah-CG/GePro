@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, CalendarClock, Users } from "lucide-react";
+import { AlertCircle, CalendarClock } from "lucide-react";
 import { useApp } from "@/components/layout/app-provider";
 import { AvatarStack } from "@/components/ui/avatar";
 import { StatusIcon } from "@/components/ui/badges";
@@ -56,12 +56,11 @@ export function TaskChip({ task, tabIndex, onOpen }: { task: TaskView; tabIndex?
  * pour le distinguer d'une tâche même sans voir les couleurs.
  */
 export function EventChip({ event, tabIndex, onOpen }: { event: CalendarEvent; tabIndex?: number; onOpen: (event: CalendarEvent) => void }) {
-  const scope = event.projectName ?? "équipe";
   return (
     <button
       type="button"
       tabIndex={tabIndex}
-      aria-label={`Événement : ${event.title} (${scope})`}
+      aria-label={`Événement : ${event.title} (${event.projectName})`}
       title={event.title}
       onClick={(e) => {
         e.stopPropagation();
@@ -72,7 +71,6 @@ export function EventChip({ event, tabIndex, onOpen }: { event: CalendarEvent; t
     >
       <CalendarClock size={12} className="shrink-0" style={{ color: event.color }} aria-hidden />
       <span className="min-w-0 flex-1 truncate">{event.title}</span>
-      {!event.projectId && <Users size={11} className="shrink-0 text-muted" aria-hidden />}
     </button>
   );
 }

@@ -73,9 +73,9 @@ export type TaskView = {
 /** Événement du calendrier, tel qu'affiché. */
 export type CalendarEvent = {
   id: string;
-  projectId: string | null;
-  projectName: string | null;
-  projectColor: string | null;
+  projectId: string;
+  projectName: string;
+  projectColor: string;
   title: string;
   description: string;
   /** "YYYY-MM-DD". */
@@ -602,8 +602,7 @@ const jsonArray = (value: unknown): string[] =>
   Array.isArray(value) ? value : typeof value === "string" ? (JSON.parse(value) as string[]) : [];
 
 /**
- * Tâches (par échéance) et événements entre `from` et `to` inclus ("YYYY-MM-DD"), pour le projet
- * sélectionné ; les événements sans projet (équipe) sont toujours inclus.
+ * Tâches (par échéance) et événements d'un projet entre `from` et `to` inclus ("YYYY-MM-DD").
  *
  * Une seule requête, bornée sur l'intervalle affiché : UNION ALL des deux sources, responsables
  * agrégés en JSON. Dates et énumérations sont converties en texte côté SQL pour que Neon et
@@ -647,7 +646,7 @@ export async function getCalendarItems({
 }: {
   from: string;
   to: string;
-  projectId: string | null;
+  projectId: string;
 }): Promise<CalendarItems> {
   const { rows } = await db.execute<CalendarRow>(sql`
     select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date, t.start_date::text as start_date,
@@ -667,15 +666,15 @@ export async function getCalendarItems({
            null, null,
            null, e.color, e.created_by
       from ${projectEvents} e
-      left join ${projects} p on p.id = e.project_id
-     where (e.project_id = ${projectId}::uuid or e.project_id is null)
+      join ${projects} p on p.id = e.project_id
+     where e.project_id = ${projectId}::uuid
        and e.event_date between ${from}::date and ${to}::date
     order by date, kind, title
   `);
 
   const [linksOf, days] = await Promise.all([
     getTaskLinks(rows.filter((r) => r.kind === "task").map((r) => r.id)),
-    projectId ? getImportantDays(projectId, { from, to }) : [],
+    getImportantDays(projectId, { from, to }),
   ]);
   const result: CalendarItems = { tasks: [], events: [], importantDays: days };
   for (const r of rows) {
@@ -701,9 +700,9 @@ export async function getCalendarItems({
     } else {
       result.events.push({
         id: r.id,
-        projectId: r.project_id,
-        projectName: r.project_name,
-        projectColor: r.project_color,
+        projectId: r.project_id!,
+        projectName: r.project_name!,
+        projectColor: r.project_color!,
         title: r.title,
         description: r.description,
         date: r.date,

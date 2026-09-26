@@ -67,8 +67,7 @@ export const eventInput = z.object({
   description: z.string().max(5000).default(""),
   eventDate: requiredDate,
   color,
-  /** Facultatif : sans projet, l'événement concerne toute l'équipe. */
-  projectId: z.uuid("Projet invalide").nullable().or(z.literal("").transform(() => null)).default(null),
+  projectId: z.uuid("Choisissez un projet"),
 });
 export type EventInput = z.input<typeof eventInput>;
 

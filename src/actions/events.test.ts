@@ -45,11 +45,10 @@ describe("createEvent", () => {
     expect(await findEvent(id)).toMatchObject({ ...input, projectId, createdBy: camille.id });
   });
 
-  it("crée un événement d'équipe, sans projet", async () => {
+  it("refuse un événement sans projet", async () => {
     actAs(lea);
-    const res = await createEvent({ ...input, projectId: "" });
-    expect(res.ok).toBe(true);
-    expect(await findEvent((res as { data: { id: string } }).data.id)).toMatchObject({ projectId: null, createdBy: lea.id });
+    expect(await createEvent({ ...input, projectId: "" })).toEqual({ ok: false, error: "Choisissez un projet" });
+    expect(await db.select().from(projectEvents)).toHaveLength(0);
   });
 
   it.each([
@@ -59,7 +58,7 @@ describe("createEvent", () => {
     ["couleur invalide", { color: "rouge" }, "Couleur invalide"],
   ])("refuse une saisie invalide : %s", async (_, patch, error) => {
     actAs(camille);
-    expect(await createEvent({ ...input, ...patch })).toEqual({ ok: false, error });
+    expect(await createEvent({ ...input, projectId, ...patch })).toEqual({ ok: false, error });
     expect(await db.select().from(projectEvents)).toHaveLength(0);
   });
 
@@ -75,28 +74,28 @@ describe("createEvent", () => {
 describe("updateEvent", () => {
   it("le créateur peut modifier son événement", async () => {
     const id = await camilleEvent();
-    expect(await updateEvent(id, { ...input, title: "Comité reporté", eventDate: "2026-10-09" })).toEqual({ ok: true, data: undefined });
+    expect(await updateEvent(id, { ...input, projectId, title: "Comité reporté", eventDate: "2026-10-09" })).toEqual({ ok: true, data: undefined });
     expect(await findEvent(id)).toMatchObject({ title: "Comité reporté", eventDate: "2026-10-09" });
   });
 
   it("un autre membre ne peut pas le modifier", async () => {
     const id = await camilleEvent();
     actAs(lea);
-    expect(await updateEvent(id, { ...input, title: "Piraté" })).toEqual({ ok: false, error: DENIED });
+    expect(await updateEvent(id, { ...input, projectId, title: "Piraté" })).toEqual({ ok: false, error: DENIED });
     expect((await findEvent(id)).title).toBe("Comité de pilotage");
   });
 
   it("un admin peut modifier l'événement d'un autre", async () => {
     const id = await camilleEvent();
     actAs(admin, "admin");
-    expect(await updateEvent(id, { ...input, title: "Corrigé par l'admin" })).toEqual({ ok: true, data: undefined });
+    expect(await updateEvent(id, { ...input, projectId, title: "Corrigé par l'admin" })).toEqual({ ok: true, data: undefined });
     expect((await findEvent(id)).title).toBe("Corrigé par l'admin");
   });
 
   it("événement introuvable", async () => {
     actAs(admin, "admin");
-    expect(await updateEvent("00000000-0000-4000-8000-000000000000", input)).toEqual({ ok: false, error: "Événement introuvable." });
-    expect(await updateEvent("pas-un-id", input)).toEqual({ ok: false, error: "Événement introuvable." });
+    expect(await updateEvent("00000000-0000-4000-8000-000000000000", { ...input, projectId })).toEqual({ ok: false, error: "Événement introuvable." });
+    expect(await updateEvent("pas-un-id", { ...input, projectId })).toEqual({ ok: false, error: "Événement introuvable." });
   });
 });
 

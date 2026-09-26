@@ -26,7 +26,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   const { view, date } = readCalendarParams(params, today);
   const project = await getSelectedProject();
   const [items, syncView] = await Promise.all([
-    getCalendarItems({ ...visibleRange(view, date), projectId: project?.id ?? null }),
+    project ? getCalendarItems({ ...visibleRange(view, date), projectId: project.id }) : { tasks: [], events: [], importantDays: [] },
     getCalendarSyncView(me.id),
   ]);
   // Rattrapage en arrière-plan (après la réponse) si la dernière synchronisation complète est ancienne.

@@ -21,7 +21,7 @@ beforeEach(async () => {
 const addTask = async (title: string, dueDate: string | null, project = projectId) =>
   (await db.insert(tasks).values({ projectId: project, title, dueDate }).returning())[0];
 
-const addEvent = async (title: string, eventDate: string, project: string | null = projectId) =>
+const addEvent = async (title: string, eventDate: string, project = projectId) =>
   (await db.insert(projectEvents).values({ projectId: project, title, eventDate, color: "#f43f5e", createdBy: userId }).returning())[0];
 
 const range = { from: "2026-09-28", to: "2026-10-04" };
@@ -41,14 +41,13 @@ describe("getCalendarItems", () => {
     expect(e.map((x) => x.title)).toEqual(["Comité"]);
   });
 
-  it("se limite au projet sélectionné, plus les événements d'équipe (sans projet)", async () => {
+  it("se limite au projet demandé : rien d'un autre projet", async () => {
     await addTask("Autre projet", "2026-09-30", otherProjectId);
     await addEvent("Autre projet", "2026-09-30", otherProjectId);
-    await addEvent("Séminaire d'équipe", "2026-09-30", null);
 
     const { tasks: t, events: e } = await getCalendarItems({ ...range, projectId });
     expect(t).toEqual([]);
-    expect(e).toMatchObject([{ title: "Séminaire d'équipe", projectId: null, projectName: null }]);
+    expect(e).toEqual([]);
   });
 
   it("renvoie des tâches au format TaskView, dates \"YYYY-MM-DD\" et responsables compris", async () => {
@@ -83,13 +82,5 @@ describe("getCalendarItems", () => {
     const { events } = await getCalendarItems({ ...range, projectId });
     expect(events.map((e) => `${e.date} ${e.title}`)).toEqual(["2026-09-28 Lancement", "2026-10-02 Atelier", "2026-10-02 Revue"]);
     expect(events[0]).toMatchObject({ projectId, projectName: "Refonte", color: "#f43f5e", createdBy: userId, description: "" });
-  });
-
-  it("sans projet sélectionné : seulement les événements d'équipe", async () => {
-    await addTask("Tâche", "2026-09-30");
-    await addEvent("Équipe", "2026-09-30", null);
-    const { tasks: t, events: e } = await getCalendarItems({ ...range, projectId: null });
-    expect(t).toEqual([]);
-    expect(e.map((x) => x.title)).toEqual(["Équipe"]);
   });
 });

@@ -3,6 +3,7 @@
 import { eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
+import { createProjectWithOwner } from "@/db/create-project";
 import { projects } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { scheduleProjectCalendarSync } from "@/lib/integrations/calendar-sync";
@@ -16,10 +17,8 @@ export async function createProject(input: ProjectInput): Promise<ActionResult<{
   const parsed = projectInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
 
-  const [project] = await db
-    .insert(projects)
-    .values({ ...parsed.data, createdBy: me.id })
-    .returning({ id: projects.id });
+  // Projet vierge, dont le créateur est le propriétaire et le seul membre.
+  const project = await createProjectWithOwner(db, parsed.data, me.id);
   refresh();
   return ok({ id: project.id });
 }

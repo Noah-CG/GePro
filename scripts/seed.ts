@@ -1,5 +1,6 @@
 /**
  * Données d'exemple réalistes : 6 membres, 5 projets (dont 1 archivé), ~35 tâches.
+ * Camille est propriétaire de chaque projet ; ses membres sont les responsables de ses tâches.
  * Les dates sont calculées par rapport à aujourd'hui pour que le tableau de bord
  * affiche toujours des tâches en retard et des tâches de la semaine.
  *
@@ -8,11 +9,13 @@
  */
 import "./env";
 import { db, isLocalDb } from "../src/db";
+import { createProjectWithOwner } from "../src/db/create-project";
 import {
   externalConnections,
   externalResources,
   projectEvents,
   projectFiles,
+  projectMembers,
   projects,
   sessions,
   taskAssignees,
@@ -162,18 +165,20 @@ async function main() {
 
   let taskCount = 0;
   for (const p of PROJECTS) {
-    const [project] = await db
-      .insert(projects)
-      .values({
+    const project = await createProjectWithOwner(
+      db,
+      {
         name: p.name,
         description: p.description,
         color: p.color,
         startDate: addDays(today, p.start),
         endDate: addDays(today, p.end),
         archivedAt: p.archived ? new Date() : null,
-        createdBy: admin,
-      })
-      .returning({ id: projects.id });
+      },
+      admin,
+    );
+    const memberIds = [...new Set(p.tasks.flatMap((t) => t[4].map(userId)))].filter((id) => id !== admin);
+    if (memberIds.length) await db.insert(projectMembers).values(memberIds.map((id) => ({ projectId: project.id, userId: id })));
 
     const rows = await db
       .insert(tasks)

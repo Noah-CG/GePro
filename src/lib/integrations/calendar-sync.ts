@@ -119,7 +119,7 @@ export async function desiredItems(
   const activeProject = (column: typeof projectEvents.projectId | typeof tasks.projectId): SQL =>
     projectIds.length ? and(inArray(column, projectIds), isNull(projects.archivedAt))! : sql`false`;
 
-  const wantEvents = !only || only.eventIds.length > 0;
+  const wantEvents = projectIds.length > 0 && (!only || only.eventIds.length > 0);
   const wantTasks = tasksMode !== "none" && projectIds.length > 0 && (!only || only.taskIds.length > 0);
 
   const [eventRows, taskRows] = await Promise.all([
@@ -135,13 +135,8 @@ export async function desiredItems(
             projectName: projects.name,
           })
           .from(projectEvents)
-          .leftJoin(projects, eq(projects.id, projectEvents.projectId))
-          .where(
-            and(
-              or(isNull(projectEvents.projectId), activeProject(projectEvents.projectId)),
-              only ? inArray(projectEvents.id, only.eventIds) : undefined,
-            ),
-          )
+          .innerJoin(projects, eq(projects.id, projectEvents.projectId))
+          .where(and(activeProject(projectEvents.projectId), only ? inArray(projectEvents.id, only.eventIds) : undefined))
       : [],
     wantTasks
       ? db
