@@ -51,8 +51,9 @@ async function main() {
   console.log(`Projets : ${owners.length}`);
   console.table(owners.map(({ project, owner, source }) => ({ projet: project, propriétaire: owner ?? "AUCUN (échec)", source })));
 
-  const members = await rows<{ project: string; name: string; email: string }>(sql`
-    with owners as (
+  // Mêmes règles que la migration : propriétaire, puis contributeurs.
+  const planned = sql`
+    owners as (
       select id as project_id, coalesce(
         created_by,
         (select id from users where role = 'admin' order by created_at, id limit 1),
@@ -68,7 +69,13 @@ async function main() {
       union select project_id, user_id from work_sessions
       union select project_id, linked_by from project_discord
       union select project_id, user_id from google_calendar_sync_projects
-    )
+    ), planned as (
+      select project_id, user_id from owners
+      union select project_id, user_id from contributors where project_id is not null and user_id is not null
+    )`;
+
+  const members = await rows<{ project: string; name: string; email: string }>(sql`
+    with ${planned}
     select distinct p.name as project, u.name, u.email
     from contributors c
     join projects p on p.id = c.project_id
@@ -87,11 +94,9 @@ async function main() {
   `);
   const [first] = await rows<{ name: string }>(sql`select name from projects order by created_at, id limit 1`);
   const withoutAccess = await rows<{ name: string; email: string }>(sql`
+    with ${planned}
     select u.name, u.email from users u
-    where not exists (select 1 from projects p where p.created_by = u.id)
-      and not exists (select 1 from task_assignees a where a.user_id = u.id)
-      and not exists (select 1 from tasks t where t.created_by = u.id)
-      and not exists (select 1 from work_sessions w where w.user_id = u.id and w.project_id is not null)
+    where not exists (select 1 from planned m where m.user_id = u.id)
     order by u.name
   `);
 
