@@ -25,7 +25,7 @@ export function ImportantDaysWidget({ projectId, days, today }: { projectId: str
       title="Journées importantes"
       count={days.length}
       action={
-        <Link href="/calendrier/journees" className="text-xs text-muted hover:text-text">
+        <Link href={`/projets/${projectId}/calendrier/journees`} className="text-xs text-muted hover:text-text">
           Tout voir
         </Link>
       }
@@ -48,7 +48,7 @@ export function ImportantDaysWidget({ projectId, days, today }: { projectId: str
             return (
               <li key={day.id}>
                 <Link
-                  href={calendarHref("mois", day.date)}
+                  href={calendarHref(projectId, "mois", day.date)}
                   className={cn("flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2/60", soon && "bg-danger-soft/40")}
                   title={day.description || undefined}
                 >

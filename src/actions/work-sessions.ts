@@ -7,7 +7,6 @@ import { workSessions } from "@/db/schema";
 import { atLeast, getProjectRole } from "@/lib/access";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { addDays, formatDateTime, formatTime, zonedInstant } from "@/lib/dates";
-import { getSelectedProjectId } from "@/lib/selected-project";
 import { firstError, workNote, workSessionInput, type WorkSessionInput } from "@/lib/validation";
 import { endsNextDay } from "@/lib/work-time";
 import { fail, ok, type ActionResult } from "./result";
@@ -19,14 +18,14 @@ const UUID = /^[0-9a-f-]{36}$/i;
 export type StoppedSession = { id: string; durationMs: number };
 
 /**
- * Démarre le chrono du membre connecté, rattaché au projet sélectionné.
+ * Démarre le chrono du membre connecté, rattaché au projet affiché (`projectId`, celui de
+ * l'adresse ; null : sans projet), dont il doit être membre.
  * Sans effet s'il tourne déjà (index unique sur le chrono en cours) : un double clic ou un
  * second onglet ne crée pas deux périodes.
  */
-export async function startWorkTimer(): Promise<ActionResult> {
+export async function startWorkTimer(projectId: string | null): Promise<ActionResult> {
   const me = await requireUser();
-  // Projet sélectionné parmi ceux dont on est membre (voir lib/selected-project.ts).
-  const projectId = await getSelectedProjectId(me.id);
+  if (projectId !== null && !(await getProjectRole(me.id, projectId))) return fail("Projet introuvable.");
   await db.insert(workSessions).values({ userId: me.id, projectId }).onConflictDoNothing();
   refresh();
   return ok(undefined);

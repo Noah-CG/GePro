@@ -30,7 +30,7 @@ export function ImportantDaysList({ projectId, projectName, days, today }: { pro
         subtitle={projectName}
         actions={
           <>
-            <Link href={calendarHref("mois", today)} className={buttonClass({ size: "sm", variant: "ghost" })}>
+            <Link href={calendarHref(projectId, "mois", today)} className={buttonClass({ size: "sm", variant: "ghost" })}>
               <CalendarDays size={14} /> Calendrier
             </Link>
             <Button variant="primary" size="sm" onClick={() => setTarget({})}>
@@ -92,7 +92,7 @@ function DaySection({
               </p>
               {day.description && <p className="mt-0.5 line-clamp-2 text-xs text-muted">{day.description}</p>}
             </button>
-            <Link href={calendarHref("mois", day.date)} className="shrink-0 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-2 hover:text-text">
+            <Link href={calendarHref(day.projectId, "mois", day.date)} className="shrink-0 rounded-md px-2 py-1 text-xs text-muted hover:bg-surface-2 hover:text-text">
               Voir
             </Link>
           </li>

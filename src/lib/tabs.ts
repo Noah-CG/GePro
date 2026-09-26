@@ -36,6 +36,7 @@ export type TabKind =
 const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 const KINDS: [RegExp, TabKind][] = [
   [/^\/$/, "dashboard"],
+  [new RegExp(`^/projets/${UUID}/tableau-de-bord$`, "i"), "dashboard"],
   [/^\/taches$/, "tasks"],
   [/^\/projets$/, "projects"],
   [new RegExp(`^/projets/${UUID}$`, "i"), "project"],
@@ -46,7 +47,9 @@ const KINDS: [RegExp, TabKind][] = [
   [new RegExp(`^/projets/${UUID}/discord$`, "i"), "discord"],
   [/^\/membres$/, "members"],
   [/^\/calendrier$/, "calendar"],
+  [new RegExp(`^/projets/${UUID}/calendrier(/journees)?$`, "i"), "calendar"],
   [/^\/temps$/, "time"],
+  [new RegExp(`^/projets/${UUID}/temps$`, "i"), "time"],
   [/^\/ecrans$/, "screens"],
 ];
 

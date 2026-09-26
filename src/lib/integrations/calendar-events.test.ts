@@ -50,7 +50,7 @@ describe("événement Google", () => {
       end: { date: "2026-10-01" },
       transparency: "transparent",
       reminders: { useDefault: false },
-      source: { title: "GePro", url: "https://gepro.exemple.fr/calendrier?vue=semaine&date=2026-09-30" },
+      source: { title: "GePro", url: `https://gepro.exemple.fr/projets/${PROJECT_ID}/calendrier?vue=semaine&date=2026-09-30` },
     });
     expect(resource.description).toContain("Présentation de la maquette");
     expect(resource.description).toContain("Projet : Refonte du site");
@@ -61,10 +61,6 @@ describe("événement Google", () => {
     expect(resource.summary).toBe("Échéance : Livrer la maquette");
     expect(resource.colorId).toBe(nearestColorId("#10b981"));
     expect(resource).not.toHaveProperty("source");
-  });
-
-  it("événement d'équipe (sans projet)", () => {
-    expect(toCalendarEvent({ ...event, projectId: null, projectName: null }, null).description).toContain("Événement d'équipe");
   });
 
   it("franchit les fins de mois et d'année", () => {

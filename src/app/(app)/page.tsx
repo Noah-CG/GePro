@@ -1,67 +1,32 @@
-import { FolderKanban, User, Users } from "lucide-react";
+import { FolderKanban } from "lucide-react";
 import type { Metadata } from "next";
-import Link from "next/link";
-import { MyDashboard, TeamDashboard } from "@/components/dashboard/dashboard-views";
+import { ReceivedInvitations } from "@/components/projects/received-invitations";
 import { EmptyState, PageHeader } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
-import { endOfWeekISO, formatLong, todayISO } from "@/lib/dates";
-import { getImportantDays, getProjectsWithStats, getTasks, getTeam } from "@/lib/queries";
-import { getSelectedProjectId } from "@/lib/selected-project";
-import { cn } from "@/lib/utils";
+import { formatLong, todayISO } from "@/lib/dates";
+import { getReceivedInvitations } from "@/lib/queries";
+import { getSelectedProjectId, redirectToSelectedProject } from "@/lib/selected-project";
 
 export const metadata: Metadata = { title: "Tableau de bord" };
 
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
+
 /**
- * Tableau de bord du projet sélectionné (aucune donnée des autres projets), en deux vues :
- * « Équipe » (pilotage du projet) et « Mes tâches » (?pour=moi, ma journée de travail).
+ * Accueil : le tableau de bord du projet sélectionné (/projets/<id>/tableau-de-bord). Sans aucun
+ * projet (nouveau compte, pas encore invité), une page d'accueil avec les invitations reçues.
  */
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ pour?: string }> }) {
+export default async function HomePage({ searchParams }: Props) {
   const me = await requireUser();
-  const mine = (await searchParams).pour === "moi";
-  const today = todayISO();
-  const weekEnd = endOfWeekISO(today);
+  if (await getSelectedProjectId(me.id)) return redirectToSelectedProject(me.id, "tableau-de-bord", await searchParams);
 
-  const projectId = await getSelectedProjectId(me.id);
-  if (!projectId) {
-    return (
-      <div className="mx-auto max-w-6xl">
-        <PageHeader title={`Bonjour ${me.name.split(" ")[0]} 👋`} subtitle={formatLong(today)} />
-        <EmptyState icon={<FolderKanban size={28} />} title="Aucun projet pour l'instant">
-          Créez votre premier projet avec le bouton en haut de la barre latérale ou la touche P.
-        </EmptyState>
-      </div>
-    );
-  }
-
-  const [tasks, [project], team, importantDays] = await Promise.all([
-    getTasks({ projectId, ...(mine && { assigneeId: me.id }) }),
-    getProjectsWithStats(me.id, { id: projectId, today }),
-    mine ? null : getTeam(me.id).then((team) => team.filter((m) => m.projectIds.includes(projectId))),
-    getImportantDays(projectId, { from: today, limit: 5 }),
-  ]);
-  const common = { me, project, today, weekEnd, tasks, importantDays };
-
-  const tab = (active: boolean) =>
-    cn("flex items-center gap-1.5 rounded-md px-3 py-1.5", active ? "bg-accent text-accent-fg font-medium shadow-sm" : "text-muted hover:text-text");
-
+  const invitations = await getReceivedInvitations(me);
   return (
     <div className="mx-auto max-w-6xl">
-      <PageHeader
-        title={`Bonjour ${me.name.split(" ")[0]} 👋`}
-        subtitle={`${project.name} · ${formatLong(today)}`}
-        actions={
-          <nav aria-label="Vue du tableau de bord" className="flex rounded-lg border border-border bg-surface p-1 text-sm">
-            <Link href="/" className={tab(!mine)} aria-current={!mine ? "page" : undefined}>
-              <Users size={15} /> Équipe
-            </Link>
-            <Link href="/?pour=moi" className={tab(mine)} aria-current={mine ? "page" : undefined}>
-              <User size={15} /> Mes tâches
-            </Link>
-          </nav>
-        }
-      />
-
-      {team ? <TeamDashboard {...common} team={team} /> : <MyDashboard {...common} />}
+      <PageHeader title={`Bonjour ${me.name.split(" ")[0]} 👋`} subtitle={formatLong(todayISO())} />
+      <ReceivedInvitations invitations={invitations} />
+      <EmptyState icon={<FolderKanban size={28} />} title="Aucun projet pour l'instant">
+        Créez votre premier projet avec le bouton en haut de la barre latérale ou la touche P, ou acceptez une invitation.
+      </EmptyState>
     </div>
   );
 }

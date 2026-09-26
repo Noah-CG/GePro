@@ -1,28 +1,10 @@
-import { FolderKanban } from "lucide-react";
-import type { Metadata } from "next";
-import { ImportantDaysList } from "@/components/calendar/important-days-list";
-import { EmptyState, PageHeader } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
-import { todayISO } from "@/lib/dates";
-import { getImportantDays } from "@/lib/queries";
-import { getSelectedProject } from "@/lib/selected-project";
+import { redirectToSelectedProject } from "@/lib/selected-project";
 
-export const metadata: Metadata = { title: "Journées importantes" };
+type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-/** Toutes les journées importantes du projet sélectionné : à venir, puis passées. */
-export default async function ImportantDaysPage() {
+/** Ancienne adresse des journées importantes : celles du projet sélectionné. */
+export default async function ImportantDaysRedirect({ searchParams }: Props) {
   const me = await requireUser();
-  const project = await getSelectedProject(me.id);
-  if (!project) {
-    return (
-      <div className="mx-auto max-w-3xl">
-        <PageHeader title="Journées importantes" />
-        <EmptyState icon={<FolderKanban size={28} />} title="Aucun projet pour l'instant">
-          Les journées importantes appartiennent à un projet : créez-en un d&apos;abord.
-        </EmptyState>
-      </div>
-    );
-  }
-  const days = await getImportantDays(project.id);
-  return <ImportantDaysList projectId={project.id} projectName={project.name} days={days} today={todayISO()} />;
+  return redirectToSelectedProject(me.id, "calendrier/journees", await searchParams);
 }

@@ -15,8 +15,8 @@ export type CalendarItem =
       description: string;
       date: string;
       color: string;
-      projectId: string | null;
-      projectName: string | null;
+      projectId: string;
+      projectName: string;
     }
   | {
       kind: "task";
@@ -79,11 +79,11 @@ export function nearestColorId(hex: string): string | undefined {
 
 /** Événement Google « toute la journée » d'un élément GePro, avec l'empreinte de son contenu. */
 export function toCalendarEvent(item: CalendarItem, appUrl: string | null): CalendarEventResource {
-  const project = item.projectName ? `Projet : ${item.projectName}` : "Événement d'équipe";
+  const project = `Projet : ${item.projectName}`;
   const link = appUrl
     ? item.kind === "task"
       ? `${appUrl}/projets/${item.projectId}`
-      : `${appUrl}/calendrier?vue=semaine&date=${item.date}`
+      : `${appUrl}/projets/${item.projectId}/calendrier?vue=semaine&date=${item.date}`
     : null;
   const description = [item.description.trim(), project, link ? `Ouvrir dans GePro : ${link}` : ""].filter(Boolean).join("\n\n");
   const colorId = nearestColorId(item.kind === "task" ? item.projectColor : item.color);

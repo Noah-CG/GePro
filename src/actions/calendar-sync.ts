@@ -23,7 +23,7 @@ const settingsInput = z.object({
 });
 export type CalendarSyncInput = z.input<typeof settingsInput>;
 
-const refresh = () => revalidatePath("/calendrier");
+const refresh = () => revalidatePath("/projets/[id]/calendrier", "page");
 
 /** Message si le compte Google ne permet pas (encore) d'écrire dans Google Agenda, sinon null. */
 async function accountProblem(userId: string): Promise<string | null> {

@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
  * `large` : version mise en avant (vue « Mes tâches »).
  */
 export function WorkTimer({ summary, large }: { summary: WorkSummary; large?: boolean }) {
-  const { toast } = useApp();
+  const { toast, currentProjectId } = useApp();
   const [pending, startTransition] = useTransition();
   const [runningSince, setRunningSince] = useOptimistic(summary.runningSince);
   // Heure courante, connue seulement après l'hydratation (évite un écart serveur / navigateur).
@@ -41,7 +41,7 @@ export function WorkTimer({ summary, large }: { summary: WorkSummary; large?: bo
       setRunningSince(running ? null : new Date().toISOString());
       if (!running) {
         setStopped(null);
-        const res = await startWorkTimer();
+        const res = await startWorkTimer(currentProjectId);
         if (!res.ok) toast(res.error, "error");
         return;
       }

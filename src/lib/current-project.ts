@@ -40,6 +40,8 @@ export function resolveSelectedProjectId({
  */
 export function projectSwitchHref(pathname: string, targetId: string): string | null {
   if (!projectIdFromPath(pathname)) return null;
-  const section = pathname.match(/^\/projets\/[^/]+\/(documents|parametres|discord)(?:\/|$)/)?.[1];
+  const section = pathname.match(
+    /^\/projets\/[^/]+\/(documents|parametres|discord|tableau-de-bord|calendrier\/journees|calendrier|temps)(?:\/|$)/,
+  )?.[1];
   return section ? `/projets/${targetId}/${section}` : `/projets/${targetId}`;
 }

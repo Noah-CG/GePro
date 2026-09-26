@@ -39,6 +39,10 @@ describe("type de page et titre", () => {
     ["/membres", "members"],
     ["/calendrier?vue=semaine&date=2026-09-24", "calendar"],
     ["/temps?membre=abc", "time"],
+    [`/projets/${P}/tableau-de-bord?pour=moi`, "dashboard"],
+    [`/projets/${P}/calendrier?vue=semaine&date=2026-09-24`, "calendar"],
+    [`/projets/${P}/calendrier/journees`, "calendar"],
+    [`/projets/${P}/temps?membre=abc`, "time"],
     ["/ecrans", "screens"],
     ["/inconnu", "page"],
   ])("%s → %s", (url, kind) => {

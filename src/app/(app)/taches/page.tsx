@@ -1,19 +1,10 @@
-import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
-import { getSelectedProjectId } from "@/lib/selected-project";
+import { redirectToSelectedProject } from "@/lib/selected-project";
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
-/**
- * Ancienne page « Toutes les tâches ». Le site n'affiche plus que le projet sélectionné : on
- * redirige vers ses tâches en gardant les filtres (anciens liens et favoris restent valides).
- */
+/** Ancienne page « Toutes les tâches » : les tâches du projet sélectionné, filtres gardés. */
 export default async function TasksPage({ searchParams }: Props) {
   const me = await requireUser();
-  const projectId = await getSelectedProjectId(me.id);
-  const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(await searchParams)) {
-    for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) query.append(key, v);
-  }
-  redirect(projectId ? `/projets/${projectId}${query.size ? `?${query}` : ""}` : "/projets");
+  return redirectToSelectedProject(me.id, "", await searchParams);
 }

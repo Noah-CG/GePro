@@ -143,7 +143,12 @@ export function Sidebar({
         {/* Navigation du projet (seule cette zone défile) */}
         <div className={cn("scroll-thin min-h-0 flex-1 space-y-4 overflow-y-auto", collapsed ? "flex flex-col items-center" : "-mx-1 px-1")}>
           <div className={cn("space-y-0.5", collapsed && "flex flex-col items-center gap-1 space-y-0")}>
-            <SidebarNavItem href="/" icon={LayoutDashboard} label="Tableau de bord" active={pathname === "/"} />
+            <SidebarNavItem
+              href={project ? `${base}/tableau-de-bord` : "/"}
+              icon={LayoutDashboard}
+              label="Tableau de bord"
+              active={pathname === "/" || pathname === `${base}/tableau-de-bord`}
+            />
             {project && (
               <SidebarNavItem
                 href={base}
@@ -154,12 +159,14 @@ export function Sidebar({
                 badge={project.total - project.done}
               />
             )}
-            <SidebarNavItem href="/calendrier" icon={CalendarDays} label="Calendrier" active={pathname.startsWith("/calendrier")} />
+            {project && (
+              <SidebarNavItem href={`${base}/calendrier`} icon={CalendarDays} label="Calendrier" active={pathname.startsWith(`${base}/calendrier`)} />
+            )}
             <SidebarNavItem
-              href="/temps"
+              href={project ? `${base}/temps` : "/temps"}
               icon={Timer}
               label="Temps de travail"
-              active={pathname.startsWith("/temps")}
+              active={pathname.startsWith("/temps") || (!!project && pathname.startsWith(`${base}/temps`))}
               live={data.timerRunning ? "Chrono en cours" : undefined}
               tooltip={data.timerRunning ? "Temps de travail (chrono en cours)" : undefined}
             />

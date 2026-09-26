@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
-import { calendarHref, dayAriaLabel, isSameMonth, monthWeeks, periodTitle, shiftPeriod, weekDays, type CalendarView, type DayItems } from "@/lib/calendar";
+import { dayAriaLabel, isSameMonth, monthWeeks, periodTitle, shiftPeriod, weekDays, type CalendarView, type DayItems } from "@/lib/calendar";
 import { addDays, endOfWeekISO, formatDayLong, formatWeekdayShort, startOfWeekISO } from "@/lib/dates";
 import type { CalendarEvent, ImportantDayView, TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,8 @@ import { EventChip, TaskChip } from "./calendar-items";
 import { ImportantDayBand, ImportantDayTitle } from "./important-day";
 
 export type GridHandlers = {
+  /** Adresse du calendrier (du projet affiché) sur cette vue et ce jour. */
+  hrefFor: (view: CalendarView, day: string) => string;
   /**
    * Clic (ou clic droit, ou Entrée) sur une zone vide d'un jour : menu des actions de ce jour
    * (nouvel événement, journée importante), placé contre `anchor`.
@@ -41,7 +43,21 @@ const ARROWS: Record<string, number> = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: 
  * suiv. pour la période voisine, Entrée ou Espace pour créer un événement. Aller au-delà des
  * jours affichés charge la période correspondante et y garde le focus.
  */
-export function useGridNavigation({ view, days, date, today, onCreate }: { view: CalendarView; days: string[]; date: string; today: string; onCreate: GridHandlers["onCreate"] }) {
+export function useGridNavigation({
+  view,
+  days,
+  date,
+  today,
+  onCreate,
+  hrefFor,
+}: {
+  view: CalendarView;
+  days: string[];
+  date: string;
+  today: string;
+  onCreate: GridHandlers["onCreate"];
+  hrefFor: GridHandlers["hrefFor"];
+}) {
   const router = useRouter();
   const visible = useMemo(() => new Set(days), [days]);
   const [active, setActive] = useState(() => (visible.has(today) && (view === "semaine" || isSameMonth(today, date)) ? today : date));
@@ -61,7 +77,7 @@ export function useGridNavigation({ view, days, date, today, onCreate }: { view:
     setActive(day);
     if (visible.has(day)) return cells.current.get(day)?.focus();
     pendingFocus.current = true;
-    router.push(calendarHref(view, day), { scroll: false });
+    router.push(hrefFor(view, day), { scroll: false });
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLElement>, day: string) {
@@ -188,6 +204,7 @@ export function MonthGrid({
   date,
   today,
   itemsByDay,
+  hrefFor,
   onCreate,
   onOpenTask,
   onOpenEvent,
@@ -195,7 +212,7 @@ export function MonthGrid({
 }: { date: string; today: string; itemsByDay: Map<string, DayItems> } & GridHandlers) {
   const weeks = useMemo(() => monthWeeks(date), [date]);
   const days = useMemo(() => weeks.flat(), [weeks]);
-  const { active, cellProps } = useGridNavigation({ view: "mois", days, date, today, onCreate });
+  const { active, cellProps } = useGridNavigation({ view: "mois", days, date, today, onCreate, hrefFor });
 
   return (
     <div role="grid" aria-label={`Calendrier de ${periodTitle("mois", date)}`} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
@@ -243,7 +260,7 @@ export function MonthGrid({
                         items={items}
                         max={important ? 1 : 3}
                         tabIndex={tabIndex}
-                        moreHref={calendarHref("semaine", day)}
+                        moreHref={hrefFor("semaine", day)}
                         onOpenTask={onOpenTask}
                         onOpenEvent={onOpenEvent}
                       />
@@ -264,13 +281,14 @@ export function WeekGrid({
   date,
   today,
   itemsByDay,
+  hrefFor,
   onCreate,
   onOpenTask,
   onOpenEvent,
   onOpenImportantDay,
 }: { date: string; today: string; itemsByDay: Map<string, DayItems> } & GridHandlers) {
   const days = useMemo(() => weekDays(date), [date]);
-  const { active, cellProps } = useGridNavigation({ view: "semaine", days, date, today, onCreate });
+  const { active, cellProps } = useGridNavigation({ view: "semaine", days, date, today, onCreate, hrefFor });
 
   return (
     <div role="grid" aria-label={`Calendrier de la semaine du ${periodTitle("semaine", date)}`} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-surface">
