@@ -1,6 +1,7 @@
 /** Schémas de validation partagés par les Server Actions. */
 import { z } from "zod";
 import { DEFAULT_IMPORTANT_DAY_COLOR, IMPORTANT_DAY_COLORS, IMPORTANT_DAY_TITLE_MAX } from "./constants";
+import { defaultLinkTitle, detectLink } from "./links/detect";
 
 const isoDate = z
   .string()
@@ -102,7 +103,34 @@ export const attachDocInput = z.object({
   link: z.string().trim().min(1, "Collez le lien d'un Google Doc ou choisissez-en un").max(500, "Lien trop long"),
 });
 
-export const docSearchQuery = z.string().trim().max(100, "Recherche trop longue");
+export const LINK_URL_MAX = 2048;
+export const LINK_TITLE_MAX = 120;
+
+/**
+ * Lien utile : adresse normalisée (http ou https uniquement, voir lib/links/detect.ts) et titre,
+ * qui vaut par défaut le nom du service reconnu, sinon le domaine.
+ */
+export const projectLinkInput = z
+  .object({
+    url: z
+      .string()
+      .trim()
+      .min(1, "L'adresse est obligatoire")
+      .max(LINK_URL_MAX, "Adresse trop longue")
+      .transform((value, ctx) => {
+        const link = detectLink(value);
+        if (!link) {
+          ctx.addIssue({ code: "custom", message: "Adresse invalide : seuls les liens http et https sont acceptés." });
+          return z.NEVER;
+        }
+        return link;
+      }),
+    title: z.string().trim().max(LINK_TITLE_MAX, `${LINK_TITLE_MAX} caractères au maximum`).default(""),
+  })
+  .transform(({ url, title }) => ({ url: url.href, title: title || defaultLinkTitle(url) }));
+export type ProjectLinkInput = z.input<typeof projectLinkInput>;
+
+export const docSearchQuery =z.string().trim().max(100, "Recherche trop longue");
 
 /** Premier message d'erreur lisible d'une validation Zod. */
 /** Journal de bord d'une période de travail. */
