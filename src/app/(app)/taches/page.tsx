@@ -9,8 +9,8 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
  * redirige vers ses tâches en gardant les filtres (anciens liens et favoris restent valides).
  */
 export default async function TasksPage({ searchParams }: Props) {
-  await requireUser();
-  const projectId = await getSelectedProjectId();
+  const me = await requireUser();
+  const projectId = await getSelectedProjectId(me.id);
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(await searchParams)) {
     for (const v of Array.isArray(value) ? value : value === undefined ? [] : [value]) query.append(key, v);

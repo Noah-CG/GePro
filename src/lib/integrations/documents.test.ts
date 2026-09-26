@@ -12,12 +12,14 @@ vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestD
 
 let resourceId: string;
 let projectId: string;
+let userId: string;
 
 beforeEach(async () => {
   await resetDb(db);
   vi.spyOn(console, "error").mockImplementation(() => {});
   const user = await insertUser(db, "Camille Martin");
-  projectId = (await insertProject(db)).id;
+  userId = user.id;
+  projectId = (await insertProject(db, "Refonte du site", user.id)).id;
   await saveGoogleConnection(
     user.id,
     { accessToken: "access-1", refreshToken: "refresh-1", expiresAt: new Date(Date.now() + 3_600_000), scope: GOOGLE_SCOPE },
@@ -87,7 +89,7 @@ describe("état de synchronisation affiché", () => {
     const { resources, stale } = await getProjectResources(projectId);
     expect(resources[0]).toMatchObject({ projectId, title: "Cahier des charges", problem: null, attachedByName: "Camille Martin" });
     expect(stale).toBe(false);
-    expect(await getResourceLinks()).toEqual([
+    expect(await getResourceLinks(userId)).toEqual([
       { id: resourceId, projectId, externalId: DOC_ID, title: "Cahier des charges", hasProblem: false },
     ]);
   });
@@ -96,7 +98,7 @@ describe("état de synchronisation affiché", () => {
     await db.update(externalResources).set({ syncError: "forbidden" });
     const found = await getProjectResource(projectId, resourceId);
     expect(found).toMatchObject({ resource: { problem: "forbidden" }, stale: true });
-    expect((await getResourceLinks())[0].hasProblem).toBe(true);
+    expect((await getResourceLinks(userId))[0].hasProblem).toBe(true);
   });
 
   it("compte déconnecté : problème « disconnected », aucune tentative prévue", async () => {

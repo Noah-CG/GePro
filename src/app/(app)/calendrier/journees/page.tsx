@@ -11,8 +11,8 @@ export const metadata: Metadata = { title: "Journées importantes" };
 
 /** Toutes les journées importantes du projet sélectionné : à venir, puis passées. */
 export default async function ImportantDaysPage() {
-  await requireUser();
-  const project = await getSelectedProject();
+  const me = await requireUser();
+  const project = await getSelectedProject(me.id);
   if (!project) {
     return (
       <div className="mx-auto max-w-3xl">

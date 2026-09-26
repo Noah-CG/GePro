@@ -15,10 +15,11 @@ vi.mock("@/lib/auth", () => ({ getCurrentUser: vi.fn() }));
 /** Contenu de test : 2 morceaux complets et un dernier de 10 octets. */
 const content = new Uint8Array(2 * CHUNK_SIZE + 10).map((_, i) => i % 251);
 let fileId: string;
+let ownerId: string;
 
 /** Enregistre un fichier directement en base, découpé comme le fait l'import. */
 async function insertFile(bytes: Uint8Array, status: "ready" | "uploading" = "ready", name = "Compte rendu été.pdf") {
-  const project = await insertProject(db);
+  const project = await insertProject(db, "Refonte du site", ownerId);
   const [file] = await db
     .insert(projectFiles)
     .values({ projectId: project.id, name, size: bytes.length, chunkCount: chunkCount(bytes.length), status })
@@ -41,6 +42,7 @@ const sameBytes = async (res: Response, expected: Uint8Array) => Buffer.from(awa
 beforeEach(async () => {
   await resetDb(db);
   const user = await insertUser(db);
+  ownerId = user.id;
   vi.mocked(getCurrentUser).mockResolvedValue({ ...user, role: "member" });
   fileId = await insertFile(content);
 });

@@ -3,7 +3,8 @@
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { externalConnections, externalResources, projects, type ExternalConnection } from "@/db/schema";
+import { externalConnections, externalResources, type ExternalConnection } from "@/db/schema";
+import { authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/dates";
 import { deleteGoogleConnection, getConnection, withGoogleAccess } from "@/lib/integrations/connections";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/integrations/errors";
 import { parseDocId } from "@/lib/integrations/doc-links";
 import { getDoc, isGoogleConfigured, searchDocs, type GoogleDoc } from "@/lib/integrations/google";
-import { attachDocInput, docSearchQuery, firstError, isUuid } from "@/lib/validation";
+import { attachDocInput, docSearchQuery, firstError } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
 /** Document proposé dans la fenêtre de rattachement. */
@@ -70,15 +71,14 @@ export async function searchGoogleDocs(query: string): Promise<ActionResult<DocO
 
 /** Rattache un Google Doc (lien collé ou identifiant issu de la recherche) à un projet. */
 export async function attachGoogleDoc(projectId: string, link: string): Promise<ActionResult> {
-  const me = await requireUser();
+  const auth = await authorizeProject(projectId);
+  if (!auth.ok) return fail(auth.error);
+  const me = auth.access.user;
   const parsed = attachDocInput.safeParse({ projectId, link });
   if (!parsed.success) return fail(firstError(parsed.error));
 
   const fileId = parseDocId(parsed.data.link);
   if (!fileId) return fail(integrationErrorMessage("invalid_link"));
-
-  const [project] = await db.select({ id: projects.id }).from(projects).where(eq(projects.id, projectId)).limit(1);
-  if (!project) return fail("Projet introuvable.");
 
   let doc: GoogleDoc;
   let connection: ExternalConnection;
@@ -110,8 +110,8 @@ export async function attachGoogleDoc(projectId: string, link: string): Promise<
 }
 
 export async function detachResource(id: string): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(id)) return fail("Document introuvable.");
+  const auth = await authorizeProjectOf("resource", id);
+  if (!auth.ok) return fail(auth.error);
   const [row] = await db
     .delete(externalResources)
     .where(eq(externalResources.id, id))
@@ -128,8 +128,8 @@ export async function detachResource(id: string): Promise<ActionResult> {
  * Une erreur passagère (quota, réseau) laisse le cache intact et est renvoyée à l'appelant.
  */
 export async function refreshProjectResources(projectId: string): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(projectId)) return fail("Projet introuvable.");
+  const auth = await authorizeProject(projectId);
+  if (!auth.ok) return fail(auth.error);
 
   const rows = await db
     .select({ resource: externalResources, connection: externalConnections })

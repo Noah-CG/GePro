@@ -31,6 +31,8 @@ export function ProjectMenu({ project }: { project: ProjectWithStats }) {
   const { openInNewTab } = useTabs();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
+  // Modifier et archiver : propriétaire et administrateurs du projet (vérifié aussi côté serveur).
+  const canManage = project.role === "owner" || project.role === "admin";
 
   const toggleArchive = () =>
     startTransition(async () => {
@@ -48,15 +50,17 @@ export function ProjectMenu({ project }: { project: ProjectWithStats }) {
       </Popover.Trigger>
       <Popover.Portal>
         <Popover.Content align="end" sideOffset={4} className="z-50 w-60 rounded-xl border border-border bg-surface p-1 shadow-xl">
-          <button
-            className={row}
-            onClick={() => {
-              setOpen(false);
-              editProject(project);
-            }}
-          >
-            <Pencil size={14} className="text-muted" /> Modifier
-          </button>
+          {canManage && (
+            <button
+              className={row}
+              onClick={() => {
+                setOpen(false);
+                editProject(project);
+              }}
+            >
+              <Pencil size={14} className="text-muted" /> Modifier
+            </button>
+          )}
           <Link href={`/projets/${project.id}/parametres`} className={row} onClick={() => setOpen(false)}>
             <Settings size={14} className="text-muted" /> Paramètres
           </Link>
@@ -69,16 +73,18 @@ export function ProjectMenu({ project }: { project: ProjectWithStats }) {
           >
             <AppWindow size={14} className="text-muted" /> Ouvrir dans un nouvel onglet
           </button>
-          <button className={row} onClick={toggleArchive} disabled={pending} aria-busy={pending || undefined}>
-            {pending ? (
-              <Spinner size={14} className="text-muted" />
-            ) : project.archived ? (
-              <ArchiveRestore size={14} className="text-muted" />
-            ) : (
-              <Archive size={14} className="text-muted" />
-            )}
-            {project.archived ? "Désarchiver" : "Archiver"}
-          </button>
+          {canManage && (
+            <button className={row} onClick={toggleArchive} disabled={pending} aria-busy={pending || undefined}>
+              {pending ? (
+                <Spinner size={14} className="text-muted" />
+              ) : project.archived ? (
+                <ArchiveRestore size={14} className="text-muted" />
+              ) : (
+                <Archive size={14} className="text-muted" />
+              )}
+              {project.archived ? "Désarchiver" : "Archiver"}
+            </button>
+          )}
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>

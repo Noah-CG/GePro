@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { projectEvents } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { insertProject, insertUser, resetDb } from "@/test/db";
+import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import { createEvent, deleteEvent, updateEvent } from "./events";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
@@ -19,7 +19,7 @@ let projectId: string;
 const actAs = (user: User, role: "admin" | "member" = "member") => vi.mocked(requireUser).mockResolvedValue({ ...user, role });
 
 const input = { title: "Comité de pilotage", description: "Salle 2", eventDate: "2026-10-02", color: "#f43f5e" };
-const DENIED = "Seul le créateur de l'événement ou un administrateur peut le modifier ou le supprimer.";
+const DENIED = "Seul le créateur de l'événement ou un administrateur du projet peut le modifier ou le supprimer.";
 
 const findEvent = async (id: string) => (await db.select().from(projectEvents).where(eq(projectEvents.id, id)))[0];
 
@@ -36,7 +36,10 @@ beforeEach(async () => {
   camille = await insertUser(db, "Camille Martin");
   lea = await insertUser(db, "Léa Dubois");
   admin = await insertUser(db, "Hugo Moreau");
-  projectId = (await insertProject(db)).id;
+  // Camille est propriétaire, Léa membre et Hugo administrateur du projet.
+  projectId = (await insertProject(db, "Refonte du site", camille.id)).id;
+  await addMember(db, projectId, lea.id);
+  await addMember(db, projectId, admin.id, "admin");
 });
 
 describe("createEvent", () => {
@@ -85,7 +88,7 @@ describe("updateEvent", () => {
     expect((await findEvent(id)).title).toBe("Comité de pilotage");
   });
 
-  it("un admin peut modifier l'événement d'un autre", async () => {
+  it("un administrateur du projet peut modifier l'événement d'un autre", async () => {
     const id = await camilleEvent();
     actAs(admin, "admin");
     expect(await updateEvent(id, { ...input, projectId, title: "Corrigé par l'admin" })).toEqual({ ok: true, data: undefined });
@@ -113,7 +116,7 @@ describe("deleteEvent", () => {
     expect(await findEvent(id)).toBeDefined();
   });
 
-  it("un admin peut supprimer l'événement d'un autre", async () => {
+  it("un administrateur du projet peut supprimer l'événement d'un autre", async () => {
     const id = await camilleEvent();
     actAs(admin, "admin");
     expect(await deleteEvent(id)).toEqual({ ok: true, data: undefined });

@@ -3,11 +3,8 @@
  * traduction des erreurs en réponses JSON `{ error, message, retryAfter? }`.
  */
 import "server-only";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { projects } from "@/db/schema";
+import { getProjectRole } from "@/lib/access";
 import { getCurrentUser, type SessionUser } from "@/lib/auth";
-import { isUuid } from "@/lib/validation";
 import { isDiscordConfigured } from "./client";
 import { DiscordError, discordErrorMessage, httpStatusOf, type DiscordErrorCode } from "./errors";
 import type { DiscordApiError } from "./model";
@@ -27,8 +24,8 @@ export function errorResponse(code: DiscordErrorCode, retryAfter?: number): Resp
 }
 
 /**
- * Vérifie la session, le projet et son salon, puis exécute `handler`. GePro n'a pas de notion de
- * membres par projet : toute personne connectée voit tous les projets, comme dans le reste de l'app.
+ * Vérifie la session, l'appartenance au projet et son salon, puis exécute `handler`. Un projet
+ * dont on n'est pas membre répond comme un projet inexistant (404).
  */
 export async function withProjectDiscord(params: Promise<{ id: string }>, handler: Handler): Promise<Response> {
   // Pas de redirection vers /login : c'est le panneau Discord qui appelle ces adresses.
@@ -36,8 +33,7 @@ export async function withProjectDiscord(params: Promise<{ id: string }>, handle
   if (!user) return errorResponse("unauthenticated");
 
   const { id } = await params;
-  const [project] = isUuid(id) ? await db.select({ id: projects.id }).from(projects).where(eq(projects.id, id)).limit(1) : [];
-  if (!project) return errorResponse("project_not_found");
+  if (!(await getProjectRole(user.id, id))) return errorResponse("project_not_found");
   if (!isDiscordConfigured()) return errorResponse("not_configured");
 
   const link = await getProjectDiscord(id);

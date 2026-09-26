@@ -15,7 +15,8 @@ import type { CalendarEvent } from "@/lib/queries";
 
 /**
  * Fenêtre de création / modification d'un événement du calendrier. Seul le créateur ou un
- * admin peut modifier ou supprimer un événement : pour les autres, il s'affiche en lecture seule.
+ * owner / admin du projet peut modifier ou supprimer un événement : pour les autres, il
+ * s'affiche en lecture seule.
  */
 export function EventDialog({
   open,
@@ -30,7 +31,8 @@ export function EventDialog({
   event?: CalendarEvent;
 }) {
   const { me, projects, membersById, currentProjectId, toast } = useApp();
-  const canEdit = !event || me.role === "admin" || event.createdBy === me.id;
+  const role = projects.find((p) => p.id === event?.projectId)?.role;
+  const canEdit = !event || role === "owner" || role === "admin" || event.createdBy === me.id;
   const creator = event?.createdBy ? membersById.get(event.createdBy) : undefined;
 
   const [draft, setDraft] = useState({

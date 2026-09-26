@@ -12,9 +12,10 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = { title: "Projets" };
 
 export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ archives?: string }> }) {
-  await requireUser();
+  const me = await requireUser();
   const archived = (await searchParams).archives === "1";
-  const projects = await getProjectsWithStats({ archived, today: todayISO() });
+  // Seulement les projets dont on est membre.
+  const projects = await getProjectsWithStats(me.id, { archived, today: todayISO() });
 
   return (
     <div className="mx-auto max-w-6xl">

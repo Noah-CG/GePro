@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { db } from "@/db";
 import { projectFileChunks, projectFiles } from "@/db/schema";
+import { getProjectRole } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
 import { CHUNK_SIZE, chunkSpan, parseRange, type ByteRange } from "@/lib/files";
 import { isUuid } from "@/lib/validation";
@@ -14,21 +15,23 @@ type Props = { params: Promise<{ id: string }> };
  * Gère les requêtes partielles (`Range`) : pdf.js ne télécharge que les morceaux utiles à la
  * page affichée. La réponse est lue en base morceau par morceau, au fil de l'envoi.
  * `?telechargement=1` propose l'enregistrement du fichier au lieu de son affichage.
+ * Seulement pour les membres du projet du fichier : sinon 404, comme un fichier inexistant.
  */
 export async function GET(request: NextRequest, { params }: Props) {
   // Pas de redirection vers /login : ce sont pdf.js ou le navigateur qui appellent cette adresse.
-  if (!(await getCurrentUser())) return new Response("Connexion requise.", { status: 401 });
+  const me = await getCurrentUser();
+  if (!me) return new Response("Connexion requise.", { status: 401 });
 
   const { id } = await params;
   const file = isUuid(id)
     ? (
         await db
-          .select({ name: projectFiles.name, mimeType: projectFiles.mimeType, size: projectFiles.size })
+          .select({ name: projectFiles.name, mimeType: projectFiles.mimeType, size: projectFiles.size, projectId: projectFiles.projectId })
           .from(projectFiles)
           .where(and(eq(projectFiles.id, id), eq(projectFiles.status, "ready")))
       )[0]
     : undefined;
-  if (!file) return new Response("Fichier introuvable.", { status: 404 });
+  if (!file || !(await getProjectRole(me.id, file.projectId))) return new Response("Fichier introuvable.", { status: 404 });
 
   const range = parseRange(request.headers.get("range"), file.size);
   if (range === "unsatisfiable") {

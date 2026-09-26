@@ -1,10 +1,10 @@
 "use server";
 
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { db } from "@/db";
-import { projects } from "@/db/schema";
+import { projectMembers } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import {
   getCalendarSyncView,
@@ -54,9 +54,15 @@ export async function saveCalendarSync(input: CalendarSyncInput): Promise<Action
   const problem = await accountProblem(me.id);
   if (problem) return fail(problem);
 
+  // Seulement des projets dont on est membre : sinon « introuvable », comme un projet inexistant.
   const ids = [...new Set(parsed.data.projectIds)];
-  const existing = ids.length ? await db.select({ id: projects.id }).from(projects).where(inArray(projects.id, ids)) : [];
-  if (existing.length !== ids.length) return fail("Projet introuvable.");
+  const mine = ids.length
+    ? await db
+        .select({ id: projectMembers.projectId })
+        .from(projectMembers)
+        .where(and(eq(projectMembers.userId, me.id), inArray(projectMembers.projectId, ids)))
+    : [];
+  if (mine.length !== ids.length) return fail("Projet introuvable.");
 
   await saveCalendarSyncSettings(me.id, { tasksMode: parsed.data.tasksMode, projectIds: ids });
   const result = await runReconcile(me.id);

@@ -21,7 +21,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const today = todayISO();
   const weekEnd = endOfWeekISO(today);
 
-  const projectId = await getSelectedProjectId();
+  const projectId = await getSelectedProjectId(me.id);
   if (!projectId) {
     return (
       <div className="mx-auto max-w-6xl">
@@ -35,8 +35,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
   const [tasks, [project], team, importantDays] = await Promise.all([
     getTasks({ projectId, ...(mine && { assigneeId: me.id }) }),
-    getProjectsWithStats({ id: projectId, today }),
-    mine ? null : getTeam(),
+    getProjectsWithStats(me.id, { id: projectId, today }),
+    mine ? null : getTeam(me.id).then((team) => team.filter((m) => m.projectIds.includes(projectId))),
     getImportantDays(projectId, { from: today, limit: 5 }),
   ]);
   const common = { me, project, today, weekEnd, tasks, importantDays };

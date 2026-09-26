@@ -1,32 +1,24 @@
 import { ArrowLeft } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { DiscordChannelCard } from "@/components/discord/discord-channel-card";
 import { GoogleConnectionCard, type Notice } from "@/components/integrations/google-connection-card";
 import { PageHeader } from "@/components/ui/misc";
-import { requireUser } from "@/lib/auth";
 import { isDiscordConfigured } from "@/lib/discord/client";
 import { getDiscordChannelView } from "@/lib/discord/service";
 import { integrationErrorMessage, isIntegrationErrorCode } from "@/lib/integrations/errors";
 import { isGoogleConfigured } from "@/lib/integrations/google";
-import { getConnectionView, getProjectsWithStats } from "@/lib/queries";
-import { isUuid } from "@/lib/validation";
+import { loadProjectPage } from "@/lib/project-page";
+import { getConnectionView } from "@/lib/queries";
 
 type Props = {
   params: Promise<{ id: string }>;
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-async function loadProject(id: string) {
-  if (!isUuid(id)) return null;
-  const [project] = await getProjectsWithStats({ id });
-  return project ?? null;
-}
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const project = await loadProject((await params).id);
-  return { title: project ? `Paramètres · ${project.name}` : "Paramètres" };
+  const { project } = await loadProjectPage((await params).id);
+  return { title: `Paramètres · ${project.name}` };
 }
 
 /** Message de retour après la connexion Google (?google=connected ou ?google=error&reason=<code>). */
@@ -37,10 +29,8 @@ function oauthNotice(google: unknown, reason: unknown): Notice | null {
 }
 
 export default async function ProjectSettingsPage({ params, searchParams }: Props) {
-  const me = await requireUser();
   const { id } = await params;
-  const project = await loadProject(id);
-  if (!project) notFound();
+  const { project, user: me } = await loadProjectPage(id);
   const { google, reason } = await searchParams;
   const [connection, discordChannel] = await Promise.all([getConnectionView(me.id, "google"), getDiscordChannelView(project.id)]);
 

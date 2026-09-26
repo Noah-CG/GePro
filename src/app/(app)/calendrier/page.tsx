@@ -24,7 +24,7 @@ export default async function CalendarPage({ searchParams }: Props) {
   const today = todayISO();
   const params = await searchParams;
   const { view, date } = readCalendarParams(params, today);
-  const project = await getSelectedProject();
+  const project = await getSelectedProject(me.id);
   const [items, syncView] = await Promise.all([
     project ? getCalendarItems({ ...visibleRange(view, date), projectId: project.id }) : { tasks: [], events: [], importantDays: [] },
     getCalendarSyncView(me.id),

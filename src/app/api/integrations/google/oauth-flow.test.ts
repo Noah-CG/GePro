@@ -59,7 +59,7 @@ beforeEach(async () => {
   await resetDb(db);
   const user = await insertUser(db);
   userId = user.id;
-  projectId = (await insertProject(db)).id;
+  projectId = (await insertProject(db, "Refonte du site", user.id)).id;
   vi.mocked(requireUser).mockResolvedValue({ ...user, role: "member" });
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -16,14 +16,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const today = todayISO();
   const discordConfigured = isDiscordConfigured();
   const [team, projects, projectStats, resources, files, googleConnection, runningSince, discordChannels, cookieStore] = await Promise.all([
-    getTeam(),
-    getProjectOptions(),
-    getProjectsWithStats({ today }),
-    getResourceLinks(),
-    getFileLinks(),
+    getTeam(me.id),
+    getProjectOptions(me.id),
+    getProjectsWithStats(me.id, { today }),
+    getResourceLinks(me.id),
+    getFileLinks(me.id),
     getConnectionView(me.id, "google"),
     getRunningSince(me.id),
-    discordConfigured ? getDiscordChannelViews() : {},
+    discordConfigured ? getDiscordChannelViews(me.id) : {},
     cookies(),
   ]);
 

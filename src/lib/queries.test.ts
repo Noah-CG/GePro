@@ -14,8 +14,8 @@ let userId: string;
 beforeEach(async () => {
   await resetDb(db);
   userId = (await insertUser(db, "Camille Martin")).id;
-  projectId = (await insertProject(db, "Refonte")).id;
-  otherProjectId = (await insertProject(db, "Autre projet")).id;
+  projectId = (await insertProject(db, "Refonte", userId)).id;
+  otherProjectId = (await insertProject(db, "Autre projet", userId)).id;
 });
 
 const addTask = async (title: string, dueDate: string | null, project = projectId) =>

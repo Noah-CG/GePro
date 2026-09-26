@@ -11,11 +11,12 @@ vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 let projectId: string;
+let me: Awaited<ReturnType<typeof insertUser>>;
 
 beforeEach(async () => {
   await resetDb(db);
-  const me = await insertUser(db);
-  projectId = (await insertProject(db)).id;
+  me = await insertUser(db);
+  projectId = (await insertProject(db, "Refonte du site", me.id)).id;
   vi.mocked(requireUser).mockResolvedValue({ ...me, role: "member" });
 });
 
@@ -36,7 +37,7 @@ describe("journées importantes", () => {
     await add("2026-03-12");
     await expect(saveImportantDay(null, { projectId, date: "2026-03-12", title: "Autre" })).resolves.toMatchObject({ ok: false });
     // Un autre projet peut marquer la même date.
-    const other = (await insertProject(db, "Autre projet")).id;
+    const other = (await insertProject(db, "Autre projet", me.id)).id;
     await expect(saveImportantDay(null, { projectId: other, date: "2026-03-12", title: "Autre" })).resolves.toMatchObject({ ok: true });
   });
 

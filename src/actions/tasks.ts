@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { scheduleCalendarSync, taskWithSubtasks } from "@/lib/integrations/calendar-sync";
 import { db } from "@/db";
 import { taskAssignees, taskDependencies, tasks, type TaskStatus } from "@/db/schema";
-import { requireUser } from "@/lib/auth";
+import { allMembers, authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { getSubtaskIds } from "@/lib/queries";
 import { createsCycle, nestingError } from "@/lib/task-links";
 import { firstError, isUuid, taskDatesInput, taskInput, type TaskDatesInput, type TaskInput } from "@/lib/validation";
@@ -13,6 +13,8 @@ import { fail, ok, type ActionResult } from "./result";
 
 /** Rafraîchit toutes les pages (tableau de bord, listes, projets) après une modification. */
 const refresh = () => revalidatePath("/", "layout");
+
+const NOT_MEMBER = "Un des responsables n'est pas membre du projet.";
 
 /** Remplace la liste des responsables d'une tâche. */
 async function setAssignees(taskId: string, userIds: string[]) {
@@ -54,12 +56,12 @@ async function checkLinks(
   const deps = [...new Set(dependsOnIds)];
   if (deps.length === 0) return null;
   if (id && deps.includes(id)) return "Une tâche ne peut pas dépendre d'elle-même.";
+  // Une tâche d'un autre projet est « introuvable » : on ne révèle pas son existence.
   const found = await db
-    .select({ projectId: tasks.projectId })
+    .select({ id: tasks.id })
     .from(tasks)
-    .where(inArray(tasks.id, deps));
+    .where(and(inArray(tasks.id, deps), eq(tasks.projectId, projectId)));
   if (found.length !== deps.length) return "Une des tâches prérequises est introuvable.";
-  if (found.some((t) => t.projectId !== projectId)) return "Les tâches prérequises doivent appartenir au même projet.";
   if (id) {
     const edges = await db
       .select({ taskId: taskDependencies.taskId, dependsOnId: taskDependencies.dependsOnId })
@@ -90,10 +92,13 @@ async function nextSiblingPosition(projectId: string, parentId: string | null) {
 }
 
 export async function createTask(input: TaskInput): Promise<ActionResult<{ id: string }>> {
-  const me = await requireUser();
   const parsed = taskInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
   const { assigneeIds, dependsOnIds, ...data } = parsed.data;
+  const auth = await authorizeProject(data.projectId);
+  if (!auth.ok) return fail(auth.error);
+  const me = auth.access.user;
+  if (!(await allMembers(data.projectId, assigneeIds))) return fail(NOT_MEMBER);
   const invalid = await checkLinks(null, data.projectId, data.parentId, dependsOnIds);
   if (invalid) return fail(invalid);
 
@@ -116,10 +121,17 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
 }
 
 export async function updateTask(id: string, input: TaskInput): Promise<ActionResult> {
-  await requireUser();
+  const auth = await authorizeProjectOf("task", id);
+  if (!auth.ok) return fail(auth.error);
   const parsed = taskInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
   const { assigneeIds, dependsOnIds, ...data } = parsed.data;
+  // Déplacée vers un autre projet : il faut en être membre aussi.
+  if (data.projectId !== auth.access.projectId) {
+    const target = await authorizeProject(data.projectId);
+    if (!target.ok) return fail(target.error);
+  }
+  if (!(await allMembers(data.projectId, assigneeIds))) return fail(NOT_MEMBER);
 
   const [current] = await db
     .select({ status: tasks.status, projectId: tasks.projectId, parentId: tasks.parentId })
@@ -167,7 +179,8 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
  * Terminer une tâche ne termine pas ses sous-tâches (et inversement).
  */
 export async function moveTask(id: string, status: TaskStatus, position?: number): Promise<ActionResult> {
-  await requireUser();
+  const auth = await authorizeProjectOf("task", id);
+  if (!auth.ok) return fail(auth.error);
   const [current] = await db
     .select({ status: tasks.status, projectId: tasks.projectId })
     .from(tasks)
@@ -189,8 +202,8 @@ export async function moveTask(id: string, status: TaskStatus, position?: number
 
 /** Nouvelles dates d'une tâche (glisser-déposer ou clavier dans le diagramme de Gantt). */
 export async function setTaskDates(id: string, input: TaskDatesInput): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(id)) return fail("Tâche introuvable.");
+  const auth = await authorizeProjectOf("task", id);
+  if (!auth.ok) return fail(auth.error);
   const parsed = taskDatesInput.safeParse(input);
   if (!parsed.success) return fail(firstError(parsed.error));
 
@@ -203,8 +216,9 @@ export async function setTaskDates(id: string, input: TaskDatesInput): Promise<A
 
 /** Rattache une tâche à une parente, ou la détache (`parentId` nul) : glisser-déposer de la vue liste. */
 export async function setTaskParent(id: string, parentId: string | null): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(id) || (parentId !== null && !isUuid(parentId))) return fail("Tâche introuvable.");
+  const auth = await authorizeProjectOf("task", id);
+  if (!auth.ok) return fail(auth.error);
+  if (parentId !== null && !isUuid(parentId)) return fail("Tâche introuvable.");
   const [current] = await db.select({ projectId: tasks.projectId }).from(tasks).where(eq(tasks.id, id));
   if (!current) return fail("Tâche introuvable.");
   const invalid = await checkLinks(id, current.projectId, parentId, []);
@@ -220,8 +234,8 @@ export async function setTaskParent(id: string, parentId: string | null): Promis
 
 /** Supprime une tâche et, en cascade, toutes ses sous-tâches (à tous les niveaux). */
 export async function deleteTask(id: string): Promise<ActionResult> {
-  await requireUser();
-  if (!isUuid(id)) return fail("Tâche introuvable.");
+  const auth = await authorizeProjectOf("task", id);
+  if (!auth.ok) return fail(auth.error);
   // Avant la suppression : ses sous-tâches disparaissent avec elle (cascade).
   await scheduleCalendarSync(() => taskWithSubtasks(id));
   await db.delete(tasks).where(eq(tasks.id, id));
@@ -234,8 +248,7 @@ export type TaskOption = { id: string; title: string; status: TaskStatus; parent
 
 /** Tâches d'un projet, pour choisir une tâche parente ou des dépendances. */
 export async function getTaskOptions(projectId: string): Promise<TaskOption[]> {
-  await requireUser();
-  if (!isUuid(projectId)) return [];
+  if (!(await authorizeProject(projectId)).ok) return [];
   return db
     .select({ id: tasks.id, title: tasks.title, status: tasks.status, parentId: tasks.parentId, projectId: tasks.projectId })
     .from(tasks)

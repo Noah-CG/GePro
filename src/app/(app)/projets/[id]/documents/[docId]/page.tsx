@@ -7,7 +7,7 @@ import { DocumentActions } from "@/components/integrations/document-actions";
 import { GoogleDocsIcon } from "@/components/integrations/google-docs-icon";
 import { MarkdownDocument } from "@/components/integrations/markdown-document";
 import { ResourceAutoRefresh } from "@/components/integrations/resource-auto-refresh";
-import { requireUser } from "@/lib/auth";
+import { requireProjectAccess } from "@/lib/access";
 import { readDocumentContent } from "@/lib/integrations/documents";
 import { resourceProblemMessage } from "@/lib/integrations/errors";
 import { getProjectResource } from "@/lib/queries";
@@ -15,8 +15,10 @@ import { isUuid } from "@/lib/validation";
 
 type Props = { params: Promise<{ id: string; docId: string }> };
 
+/** Document d'un projet dont on est membre (sinon 404). */
 async function loadResource({ id, docId }: { id: string; docId: string }) {
-  if (!isUuid(id) || !isUuid(docId)) return null;
+  await requireProjectAccess(id);
+  if (!isUuid(docId)) return null;
   return getProjectResource(id, docId);
 }
 
@@ -27,7 +29,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 /** Lecture d'un Google Doc rattaché, en lecture seule. */
 export default async function DocumentPage({ params }: Props) {
-  await requireUser();
   const found = await loadResource(await params);
   if (!found) notFound();
   const { resource: doc, stale } = found;

@@ -1,16 +1,17 @@
 import { CalendarDays, Clock, History, Timer } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { LiveDuration } from "@/components/time/live-duration";
 import { MemberPicker } from "@/components/time/member-picker";
 import { HistoryLink, WorkJournal } from "@/components/time/work-session-list";
 import { WorkTimer } from "@/components/time/work-timer";
 import { Avatar } from "@/components/ui/avatar";
 import { Card, PageHeader, Section, Stat } from "@/components/ui/misc";
+import { atLeast } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { formatDateTime, formatDuration, formatTime, todayISO, zonedParts } from "@/lib/dates";
-import { getProjectTeamWork, getTeam, getWorkByProject, getWorkSessions, getWorkSummary } from "@/lib/queries";
+import { getProjectMembers, getProjectTeamWork, getWorkByProject, getWorkSessions, getWorkSummary } from "@/lib/queries";
 import { getSelectedProject } from "@/lib/selected-project";
 import { isUuid } from "@/lib/validation";
 
@@ -24,25 +25,29 @@ const RECENT_SESSIONS = 20;
 /**
  * Temps de travail : le chrono, le journal de bord (périodes corrigeables), le temps par projet
  * et celui de l'équipe sur le projet sélectionné. `?membre=<id>` affiche le temps d'un autre
- * membre (administrateurs seulement).
+ * membre du projet, sur ce projet seulement (propriétaire et administrateurs du projet).
  */
 export default async function TimePage({ searchParams }: Props) {
   const me = await requireUser();
   const { membre, historique } = await searchParams;
-  if (membre && me.role !== "admin" && membre !== me.id) redirect("/temps");
+  const project = await getSelectedProject(me.id);
+  const team = project ? await getProjectMembers(project.id) : [];
+  const canManage = !!project && atLeast(project.role, "admin");
 
-  const team = await getTeam();
-  const member = team.find((m) => m.id === (membre && isUuid(membre) ? membre : me.id));
-  if (!member) notFound();
-  const self = member.id === me.id;
+  const targetId = membre && isUuid(membre) ? membre : me.id;
+  const other = targetId === me.id ? null : team.find((m) => m.id === targetId);
+  if (targetId !== me.id && (!canManage || !other)) redirect("/temps");
+  const member = other ?? me;
+  const self = !other;
   const showAll = historique === "tout";
   const today = todayISO();
 
-  const project = await getSelectedProject();
+  // Le temps d'un autre membre : seulement celui passé sur ce projet.
+  const scopeProjectId = self ? undefined : project!.id;
   const [work, sessions, byProject, teamWork] = await Promise.all([
-    getWorkSummary(member.id, today),
-    getWorkSessions(member.id, showAll ? 1000 : RECENT_SESSIONS),
-    getWorkByProject(member.id),
+    getWorkSummary(member.id, today, scopeProjectId),
+    getWorkSessions(member.id, { viewerId: me.id, projectId: scopeProjectId }, showAll ? 1000 : RECENT_SESSIONS),
+    getWorkByProject(member.id, { viewerId: me.id, projectId: scopeProjectId }),
     project ? getProjectTeamWork(project.id, today) : Promise.resolve([]),
   ]);
 
@@ -76,8 +81,8 @@ export default async function TimePage({ searchParams }: Props) {
             </span>
           )
         }
-        subtitle={self ? "Votre chrono, votre journal de bord et le temps de l'équipe" : member.email}
-        actions={me.role === "admin" && team.length > 1 && <MemberPicker team={team} value={member.id} meId={me.id} />}
+        subtitle={self ? "Votre chrono, votre journal de bord et le temps de l'équipe" : `${member.email} · ${project!.name}`}
+        actions={canManage && team.length > 1 && <MemberPicker team={team} value={member.id} meId={me.id} />}
       />
 
       {self && (
@@ -97,7 +102,7 @@ export default async function TimePage({ searchParams }: Props) {
         <div className="min-w-0">
           <WorkJournal
             total={work.sessions + (work.runningSince ? 1 : 0)}
-            editable={self || me.role === "admin"}
+            editable={self || canManage}
             userId={member.id}
             memberName={self ? undefined : member.name}
             today={today}
@@ -164,7 +169,7 @@ export default async function TimePage({ searchParams }: Props) {
                         )}
                       </span>
                       <div className="min-w-0 flex-1">
-                        {me.role === "admin" || m.id === me.id ? (
+                        {canManage || m.id === me.id ? (
                           <Link href={m.id === me.id ? "/temps" : `/temps?membre=${m.id}`} className="block truncate hover:text-accent hover:underline">
                             {m.name}
                           </Link>

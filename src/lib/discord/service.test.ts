@@ -36,7 +36,7 @@ let projectId: string;
 beforeEach(async () => {
   await resetDb(db);
   userId = (await insertUser(db)).id;
-  projectId = (await insertProject(db)).id;
+  projectId = (await insertProject(db, "Refonte du site", userId)).id;
 });
 
 const codeOf = (promise: Promise<unknown>) =>
@@ -89,7 +89,7 @@ describe("rattachement d'un salon", () => {
 
   it("liste le salon de chaque projet, sans aucun secret", async () => {
     await linked();
-    expect(await getDiscordChannelViews()).toEqual({ [projectId]: { guildId: GUILD_ID, channelId: CHANNEL_ID, channelName: "général" } });
+    expect(await getDiscordChannelViews(userId)).toEqual({ [projectId]: { guildId: GUILD_ID, channelId: CHANNEL_ID, channelName: "général" } });
   });
 
   it("refuse un salon qui n'est pas textuel", async () => {

@@ -4,10 +4,10 @@ import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { Spinner } from "@/components/ui/button";
 import { SimpleSelect } from "@/components/ui/select";
-import type { Member } from "@/lib/queries";
+type Person = { id: string; name: string; color: string };
 
-/** Choix du membre dont on consulte le temps de travail (administrateurs). */
-export function MemberPicker({ team, value, meId }: { team: Member[]; value: string; meId: string }) {
+/** Choix du membre du projet dont on consulte le temps de travail (propriétaire et administrateurs du projet). */
+export function MemberPicker({ team, value, meId }: { team: Person[]; value: string; meId: string }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const options = team.map((m) => ({ value: m.id, label: m.id === meId ? `${m.name} (moi)` : m.name, dot: m.color }));

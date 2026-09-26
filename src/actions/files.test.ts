@@ -5,7 +5,7 @@ import { projectFileChunks, projectFiles } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { CHUNK_SIZE, MAX_FILE_SIZE } from "@/lib/files";
 import { getFileLinks, getProjectFile, getProjectFiles } from "@/lib/queries";
-import { insertProject, insertUser, resetDb } from "@/test/db";
+import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import { cancelFileUpload, deleteFile, finishFileUpload, startFileUpload, uploadFileChunk } from "./files";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
@@ -67,7 +67,10 @@ beforeEach(async () => {
   camille = await insertUser(db, "Camille Martin");
   lea = await insertUser(db, "Léa Dubois");
   admin = await insertUser(db, "Hugo Moreau");
-  projectId = (await insertProject(db)).id;
+  // Camille est propriétaire, Léa membre et Hugo administrateur du projet.
+  projectId = (await insertProject(db, "Refonte du site", camille.id)).id;
+  await addMember(db, projectId, lea.id);
+  await addMember(db, projectId, admin.id, "admin");
 });
 
 describe("import d'un PDF", () => {
@@ -91,7 +94,7 @@ describe("import d'un PDF", () => {
       expect.objectContaining({ id, title: "Cahier des charges", sizeLabel: "1,9 Mo", uploadedBy: camille.id, uploadedByName: "Camille Martin" }),
     ]);
     expect(await getProjectFile(projectId, id)).toMatchObject({ id, name: "Cahier des charges.pdf" });
-    expect(await getFileLinks()).toEqual([{ id, projectId, title: "Cahier des charges" }]);
+    expect(await getFileLinks(camille.id)).toEqual([{ id, projectId, title: "Cahier des charges" }]);
   });
 
   it("accepte un morceau renvoyé après une coupure", async () => {
@@ -185,12 +188,12 @@ describe("deleteFile", () => {
     actAs(lea);
     expect(await deleteFile(id)).toEqual({
       ok: false,
-      error: "Seule la personne qui a importé ce fichier ou un administrateur peut le supprimer.",
+      error: "Seule la personne qui a importé ce fichier ou un administrateur du projet peut le supprimer.",
     });
     expect(await findFile(id)).toBeDefined();
   });
 
-  it("laisse un administrateur supprimer le fichier", async () => {
+  it("laisse un administrateur du projet supprimer le fichier", async () => {
     const id = await camilleFile();
     actAs(admin, "admin");
     expect((await deleteFile(id)).ok).toBe(true);

@@ -53,9 +53,9 @@ beforeEach(async () => {
   scheduled.length = 0;
   me = await insertUser(db, "Camille Martin");
   other = await insertUser(db, "Léa Dubois");
-  chosen = await insertProject(db, "Refonte du site");
-  const ignored = await insertProject(db, "Autre projet");
-  const archived = await insertProject(db, "Projet archivé");
+  chosen = await insertProject(db, "Refonte du site", me.id);
+  const ignored = await insertProject(db, "Autre projet", me.id);
+  const archived = await insertProject(db, "Projet archivé", me.id);
   await db.update(projects).set({ archivedAt: new Date() }).where(eq(projects.id, archived.id));
 
   await insertEvent("Séminaire d'équipe", chosen.id);

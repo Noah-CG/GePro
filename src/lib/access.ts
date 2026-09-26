@@ -15,7 +15,7 @@
  * compte ne sert qu'à gérer les comptes : il ne donne aucun droit sur les projets.
  */
 import "server-only";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 import { db } from "@/db";
@@ -77,6 +77,18 @@ export async function authorizeProject(projectId: unknown, minRole: ProjectRole 
   if (!role) return { ok: false, error: PROJECT_NOT_FOUND };
   if (!atLeast(role, minRole)) return { ok: false, error: FORBIDDEN[minRole as Exclude<ProjectRole, "member">] };
   return { ok: true, access: { user, projectId: projectId as string, role } };
+}
+
+/** Vrai si tous les `userIds` sont membres du projet (responsables d'une tâche, par exemple). */
+export async function allMembers(projectId: string, userIds: string[]): Promise<boolean> {
+  const unique = [...new Set(userIds)];
+  if (unique.length === 0) return true;
+  if (!unique.every(isUuid)) return false;
+  const rows = await db
+    .select({ userId: projectMembers.userId })
+    .from(projectMembers)
+    .where(and(eq(projectMembers.projectId, projectId), inArray(projectMembers.userId, unique)));
+  return rows.length === unique.length;
 }
 
 /** Objets désignés par leur id, et le projet auquel chacun appartient. */
