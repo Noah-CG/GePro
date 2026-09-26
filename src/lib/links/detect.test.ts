@@ -1,7 +1,7 @@
 import * as simpleIcons from "simple-icons";
 import { describe, expect, it } from "vitest";
 import { contrastRatio, iconColors } from "./colors";
-import { defaultLinkTitle, detectLink, faviconUrl, normalizeLinkUrl } from "./detect";
+import { defaultLinkTitle, detectLink, faviconUrl, isFaviconPlaceholder, normalizeLinkUrl } from "./detect";
 import { LINK_SERVICES } from "./registry";
 
 const serviceOf = (input: string) => detectLink(input)?.service?.key ?? null;
@@ -95,6 +95,12 @@ describe("titre par défaut et favicon", () => {
 
   it("demande le favicon au service public, par domaine", () => {
     expect(faviconUrl("exemple.fr")).toBe("https://icons.duckduckgo.com/ip3/exemple.fr.ico");
+  });
+
+  it("reconnaît l'image de remplacement de DuckDuckGo (site sans favicon)", () => {
+    expect(isFaviconPlaceholder(48, 48)).toBe(true);
+    expect(isFaviconPlaceholder(32, 32)).toBe(false);
+    expect(isFaviconPlaceholder(16, 16)).toBe(false);
   });
 });
 

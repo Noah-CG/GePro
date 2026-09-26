@@ -86,3 +86,13 @@ export function defaultLinkTitle(link: DetectedLink): string {
 export function faviconUrl(domain: string): string {
   return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(domain)}.ico`;
 }
+
+/**
+ * Sans favicon, DuckDuckGo répond 404 mais avec une image de remplacement (PNG 48 × 48) que le
+ * navigateur affiche sans déclencher `onError`, et le statut HTTP n'est pas lisible depuis une
+ * <img>. On la reconnaît donc à sa taille pour afficher notre icône générique à la place. Un
+ * vrai favicon de 48 × 48, plus rare, prend aussi l'icône générique : sans gravité.
+ */
+export function isFaviconPlaceholder(width: number, height: number): boolean {
+  return width === 48 && height === 48;
+}
