@@ -123,5 +123,21 @@ BEGIN
     UPDATE "project_events" SET "project_id" = first_project WHERE "project_id" IS NULL;
   END IF;
   ALTER TABLE "project_events" ALTER COLUMN "project_id" SET NOT NULL;
+
+  -- 4. Transfert de propriété d'un seul tenant (l'appel est une seule instruction) : l'ancien
+  --    propriétaire devient administrateur, `new_owner` (déjà membre) devient propriétaire.
+  CREATE FUNCTION "transfer_project_ownership"(p_project uuid, p_new_owner uuid) RETURNS boolean
+  LANGUAGE plpgsql AS $fn$
+  BEGIN
+    IF NOT EXISTS (SELECT 1 FROM "project_members" WHERE "project_id" = p_project AND "user_id" = p_new_owner) THEN
+      RETURN false;
+    END IF;
+    UPDATE "project_members" SET "role" = 'admin'
+    WHERE "project_id" = p_project AND "role" = 'owner' AND "user_id" <> p_new_owner;
+    UPDATE "project_members" SET "role" = 'owner' WHERE "project_id" = p_project AND "user_id" = p_new_owner;
+    UPDATE "projects" SET "owner_id" = p_new_owner, "updated_at" = now() WHERE "id" = p_project;
+    RETURN true;
+  END
+  $fn$;
 END
 $migration$;

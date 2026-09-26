@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { createSession, destroySession, hashPassword, requireUser, verifyPassword } from "@/lib/auth";
+import { afterLoginPath } from "@/lib/invitations";
 import { firstError, password as passwordSchema } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -22,7 +23,7 @@ export async function login(_prev: LoginState, form: FormData): Promise<LoginSta
   }
 
   await createSession(user.id);
-  redirect("/");
+  redirect(afterLoginPath(form.get("suite")));
 }
 
 export async function logout() {

@@ -26,6 +26,7 @@ BEGIN
     DROP TABLE "migration_0011_team_events";
   END IF;
 
+  DROP FUNCTION IF EXISTS "transfer_project_ownership"(uuid, uuid);
   DROP TABLE "project_invitations";
   DROP TABLE "project_members";
   ALTER TABLE "projects" DROP COLUMN "owner_id";

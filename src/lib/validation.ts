@@ -93,6 +93,16 @@ export type MemberInput = z.input<typeof memberInput>;
 
 export const password = z.string().min(8, "8 caractères minimum");
 
+/** Invitation à un projet : email exact (pas de recherche parmi les comptes), rôle donné à l'arrivée. */
+export const invitationInput = z.object({
+  email: z.email("Email invalide").transform((e) => e.trim().toLowerCase()),
+  role: z.enum(["admin", "member"]).default("member"),
+});
+export type InvitationInput = z.input<typeof invitationInput>;
+
+/** Rôle modifiable d'un membre (le propriétaire change par transfert de propriété). */
+export const memberRoleInput = z.enum(["admin", "member"]);
+
 export const isUuid = (value: string) => z.uuid().safeParse(value).success;
 
 /** Rattachement d'un Google Doc : lien collé ou identifiant choisi dans la recherche. */

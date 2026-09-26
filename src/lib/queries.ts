@@ -7,7 +7,7 @@
  * (`projectId`) supposent que l'appelant a vérifié l'accès (lib/access.ts).
  */
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -16,6 +16,7 @@ import {
   importantDays,
   projectEvents,
   projectFiles,
+  projectInvitations,
   projectMembers,
   projects,
   taskAssignees,
@@ -234,6 +235,100 @@ export async function getProjectMembers(projectId: string): Promise<ProjectMembe
     .where(eq(projectMembers.projectId, projectId))
     .orderBy(sql`case ${projectMembers.role} when 'owner' then 0 when 'admin' then 1 else 2 end`, asc(users.name));
   return rows.map((r) => ({ ...r, joinedAt: r.joinedAt.toISOString() }));
+}
+
+/** Invitation en attente, telle qu'affichée dans les paramètres du projet. */
+export type PendingInvitation = { id: string; email: string; role: ProjectRole; expiresAt: string; invitedByName: string | null };
+
+/** Invitation reçue, telle qu'affichée à la personne invitée. */
+export type ReceivedInvitation = {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectColor: string;
+  role: ProjectRole;
+  invitedByName: string | null;
+  expiresAt: string;
+};
+
+/** Invitations en attente (non expirées) d'un projet. */
+export async function getPendingInvitations(projectId: string): Promise<PendingInvitation[]> {
+  const rows = await db
+    .select({
+      id: projectInvitations.id,
+      email: projectInvitations.email,
+      role: projectInvitations.role,
+      expiresAt: projectInvitations.expiresAt,
+      invitedByName: users.name,
+    })
+    .from(projectInvitations)
+    .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
+    .where(
+      and(
+        eq(projectInvitations.projectId, projectId),
+        eq(projectInvitations.status, "pending"),
+        gte(projectInvitations.expiresAt, new Date()),
+      ),
+    )
+    .orderBy(asc(projectInvitations.createdAt));
+  return rows.map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString() }));
+}
+
+/**
+ * Invitation valable (en attente, non expirée) désignée par le hash de son jeton, avec l'email
+ * auquel elle est adressée : à comparer à celui du compte connecté avant d'en montrer quoi que ce soit.
+ */
+export async function getInvitationByTokenHash(tokenHash: string): Promise<(ReceivedInvitation & { email: string }) | null> {
+  const [row] = await db
+    .select({
+      id: projectInvitations.id,
+      email: projectInvitations.email,
+      projectId: projects.id,
+      projectName: projects.name,
+      projectColor: projects.color,
+      role: projectInvitations.role,
+      invitedByName: users.name,
+      expiresAt: projectInvitations.expiresAt,
+    })
+    .from(projectInvitations)
+    .innerJoin(projects, eq(projects.id, projectInvitations.projectId))
+    .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
+    .where(
+      and(
+        eq(projectInvitations.tokenHash, tokenHash),
+        eq(projectInvitations.status, "pending"),
+        gte(projectInvitations.expiresAt, new Date()),
+      ),
+    )
+    .limit(1);
+  return row ? { ...row, expiresAt: row.expiresAt.toISOString() } : null;
+}
+
+/** Invitations en attente (non expirées) adressées à cet email, projets dont on n'est pas déjà membre. */
+export async function getReceivedInvitations(user: { id: string; email: string }): Promise<ReceivedInvitation[]> {
+  const rows = await db
+    .select({
+      id: projectInvitations.id,
+      projectId: projects.id,
+      projectName: projects.name,
+      projectColor: projects.color,
+      role: projectInvitations.role,
+      invitedByName: users.name,
+      expiresAt: projectInvitations.expiresAt,
+    })
+    .from(projectInvitations)
+    .innerJoin(projects, eq(projects.id, projectInvitations.projectId))
+    .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
+    .where(
+      and(
+        eq(projectInvitations.email, user.email.toLowerCase()),
+        eq(projectInvitations.status, "pending"),
+        gte(projectInvitations.expiresAt, new Date()),
+        notInArray(projectInvitations.projectId, memberProjectIds(user.id)),
+      ),
+    )
+    .orderBy(asc(projectInvitations.createdAt));
+  return rows.map((r) => ({ ...r, expiresAt: r.expiresAt.toISOString() }));
 }
 
 /** Tous les comptes, pour leur administration (réservé aux administrateurs de l'application). */

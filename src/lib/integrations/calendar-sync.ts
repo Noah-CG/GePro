@@ -310,10 +310,15 @@ export async function scheduleCalendarSync(sources: CalendarSource[] | (() => Pr
 }
 
 /** Synchronisation complète, après la réponse, des agendas de ces membres (projet supprimé, membre retiré…). */
-export function scheduleReconcile(userIds: string[]): void {
+export async function scheduleReconcile(userIds: string[]): Promise<void> {
   const unique = [...new Set(userIds)];
-  if (unique.length) runAfter(async () => {
-    for (const userId of unique) await reconcileCalendar(userId).catch(() => {});
+  if (unique.length === 0) return;
+  const syncing = await db
+    .select({ userId: googleCalendarSyncs.userId })
+    .from(googleCalendarSyncs)
+    .where(inArray(googleCalendarSyncs.userId, unique));
+  if (syncing.length) runAfter(async () => {
+    for (const { userId } of syncing) await reconcileCalendar(userId).catch(() => {});
   });
 }
 
@@ -329,7 +334,7 @@ export async function calendarSyncUsersOf(projectId: string): Promise<string[]> 
 
 /** Projet modifié (nom, couleur, archivage) : synchronisation complète des membres qui l'ont choisi. */
 export async function scheduleProjectCalendarSync(projectId: string): Promise<void> {
-  scheduleReconcile(await calendarSyncUsersOf(projectId));
+  await scheduleReconcile(await calendarSyncUsersOf(projectId));
 }
 
 /** Ouverture du calendrier : synchronisation complète en arrière-plan si la dernière date de plus de 6 h. */

@@ -62,7 +62,7 @@ export async function deleteProject(id: string): Promise<ActionResult> {
   // Avant la suppression (la cascade efface ce lien) : agendas Google à nettoyer ensuite.
   const syncing = await calendarSyncUsersOf(id);
   await db.delete(projects).where(eq(projects.id, id));
-  scheduleReconcile(syncing);
+  await scheduleReconcile(syncing);
   refresh();
   return ok(undefined);
 }

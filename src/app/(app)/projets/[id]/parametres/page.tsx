@@ -3,13 +3,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DiscordChannelCard } from "@/components/discord/discord-channel-card";
 import { GoogleConnectionCard, type Notice } from "@/components/integrations/google-connection-card";
+import { ProjectDangerZone, ProjectMembers } from "@/components/projects/project-members";
 import { PageHeader } from "@/components/ui/misc";
 import { isDiscordConfigured } from "@/lib/discord/client";
 import { getDiscordChannelView } from "@/lib/discord/service";
 import { integrationErrorMessage, isIntegrationErrorCode } from "@/lib/integrations/errors";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { loadProjectPage } from "@/lib/project-page";
-import { getConnectionView } from "@/lib/queries";
+import { atLeast } from "@/lib/access";
+import { getConnectionView, getPendingInvitations, getProjectMembers } from "@/lib/queries";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -30,9 +32,15 @@ function oauthNotice(google: unknown, reason: unknown): Notice | null {
 
 export default async function ProjectSettingsPage({ params, searchParams }: Props) {
   const { id } = await params;
-  const { project, user: me } = await loadProjectPage(id);
+  const { project, user: me, role } = await loadProjectPage(id);
   const { google, reason } = await searchParams;
-  const [connection, discordChannel] = await Promise.all([getConnectionView(me.id, "google"), getDiscordChannelView(project.id)]);
+  const manager = atLeast(role, "admin");
+  const [connection, discordChannel, members, invitations] = await Promise.all([
+    getConnectionView(me.id, "google"),
+    getDiscordChannelView(project.id),
+    getProjectMembers(project.id),
+    manager ? getPendingInvitations(project.id) : [],
+  ]);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -41,7 +49,16 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
       </Link>
       <PageHeader title="Paramètres du projet" />
 
-      <section>
+      <section className="mb-8">
+        <h2 className="mb-1 text-sm font-semibold">Membres</h2>
+        <p className="mb-3 text-sm text-muted">
+          Seuls les membres voient le projet et ses données. On n&apos;y entre que sur invitation
+          {manager ? "." : " d'un propriétaire ou d'un administrateur."}
+        </p>
+        <ProjectMembers projectId={project.id} myRole={role} members={members} invitations={invitations} />
+      </section>
+
+      <section className="mb-8">
         <h2 className="mb-1 text-sm font-semibold">Intégrations</h2>
         <p className="mb-3 text-sm text-muted">Reliez vos outils pour retrouver les documents et les discussions du projet au même endroit.</p>
         <GoogleConnectionCard
@@ -51,8 +68,13 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
           notice={oauthNotice(google, reason)}
         />
         <div className="mt-3">
-          <DiscordChannelCard projectId={project.id} configured={isDiscordConfigured()} channel={discordChannel} />
+          <DiscordChannelCard projectId={project.id} configured={isDiscordConfigured()} channel={discordChannel} canManage={manager} />
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold">{role === "owner" ? "Zone de danger" : "Quitter le projet"}</h2>
+        <ProjectDangerZone projectId={project.id} projectName={project.name} myRole={role} />
       </section>
     </div>
   );
