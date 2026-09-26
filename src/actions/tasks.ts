@@ -1,12 +1,13 @@
 "use server";
 
-import { and, asc, eq, inArray, max, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, max, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { scheduleCalendarSync, taskWithSubtasks } from "@/lib/integrations/calendar-sync";
 import { db } from "@/db";
 import { taskAssignees, taskDependencies, tasks, type TaskStatus } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { createsCycle } from "@/lib/task-links";
+import { getSubtaskIds } from "@/lib/queries";
+import { createsCycle, nestingError } from "@/lib/task-links";
 import { firstError, isUuid, taskDatesInput, taskInput, type TaskDatesInput, type TaskInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -29,7 +30,8 @@ async function setDependencies(taskId: string, dependsOnIds: string[]) {
 
 /**
  * Vérifie la tâche parente et les dépendances d'une tâche (`id` nul à la création).
- * Règles : même projet, un seul niveau de sous-tâches, pas de cycle de dépendances.
+ * Règles : même projet, au plus MAX_TASK_DEPTH niveaux, pas de boucle entre parentes ni entre
+ * dépendances. `fromProjectId` : projet actuel de la tâche, si elle en change.
  * Renvoie un message d'erreur, ou null si tout est valable.
  */
 async function checkLinks(
@@ -37,20 +39,16 @@ async function checkLinks(
   projectId: string,
   parentId: string | null,
   dependsOnIds: string[],
+  fromProjectId: string = projectId,
 ): Promise<string | null> {
   if (parentId) {
-    if (parentId === id) return "Une tâche ne peut pas être sa propre sous-tâche.";
-    const [parent] = await db
-      .select({ projectId: tasks.projectId, parentId: tasks.parentId })
+    // L'arbre du projet visé, plus celui d'origine : les sous-tâches de la tâche déplacée comptent.
+    const tree = await db
+      .select({ id: tasks.id, parentId: tasks.parentId, projectId: tasks.projectId })
       .from(tasks)
-      .where(eq(tasks.id, parentId));
-    if (!parent) return "Tâche parente introuvable.";
-    if (parent.projectId !== projectId) return "La tâche parente doit appartenir au même projet.";
-    if (parent.parentId) return "Une sous-tâche ne peut pas avoir elle-même de sous-tâches.";
-    if (id) {
-      const [child] = await db.select({ id: tasks.id }).from(tasks).where(eq(tasks.parentId, id)).limit(1);
-      if (child) return "Cette tâche a des sous-tâches : elle ne peut pas devenir une sous-tâche.";
-    }
+      .where(inArray(tasks.projectId, [...new Set([projectId, fromProjectId])]));
+    const error = nestingError(tree, { id, projectId }, parentId);
+    if (error) return error;
   }
 
   const deps = [...new Set(dependsOnIds)];
@@ -82,6 +80,15 @@ async function nextPosition(projectId: string, status: TaskStatus) {
   return (row?.max ?? 0) + 1024;
 }
 
+/** Position après la dernière tâche sœur (même parente, ou tâches racines du projet). */
+async function nextSiblingPosition(projectId: string, parentId: string | null) {
+  const [row] = await db
+    .select({ max: max(tasks.siblingPosition) })
+    .from(tasks)
+    .where(and(eq(tasks.projectId, projectId), parentId ? eq(tasks.parentId, parentId) : isNull(tasks.parentId)));
+  return (row?.max ?? 0) + 1024;
+}
+
 export async function createTask(input: TaskInput): Promise<ActionResult<{ id: string }>> {
   const me = await requireUser();
   const parsed = taskInput.safeParse(input);
@@ -95,6 +102,7 @@ export async function createTask(input: TaskInput): Promise<ActionResult<{ id: s
     .values({
       ...data,
       position: await nextPosition(data.projectId, data.status),
+      siblingPosition: await nextSiblingPosition(data.projectId, data.parentId),
       completedAt: data.status === "done" ? new Date() : null,
       createdBy: me.id,
     })
@@ -114,33 +122,37 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
   const { assigneeIds, dependsOnIds, ...data } = parsed.data;
 
   const [current] = await db
-    .select({ status: tasks.status, projectId: tasks.projectId })
+    .select({ status: tasks.status, projectId: tasks.projectId, parentId: tasks.parentId })
     .from(tasks)
     .where(eq(tasks.id, id));
   if (!current) return fail("Tâche introuvable.");
-  const invalid = await checkLinks(id, data.projectId, data.parentId, dependsOnIds);
+  const invalid = await checkLinks(id, data.projectId, data.parentId, dependsOnIds, current.projectId);
   if (invalid) return fail(invalid);
 
+  const moved = current.parentId !== data.parentId || current.projectId !== data.projectId;
   await db
     .update(tasks)
     .set({
       ...data,
       // On ne touche à completedAt que si le statut change.
       ...(current.status !== data.status && { completedAt: data.status === "done" ? new Date() : null }),
+      // Nouvelle parente : la tâche passe après ses nouvelles sœurs.
+      ...(moved && { siblingPosition: await nextSiblingPosition(data.projectId, data.parentId) }),
     })
     .where(eq(tasks.id, id));
   await setAssignees(id, assigneeIds);
   await setDependencies(id, dependsOnIds);
 
   if (current.projectId !== data.projectId) {
-    // Les sous-tâches suivent leur parente dans le nouveau projet…
-    await db.update(tasks).set({ projectId: data.projectId }).where(eq(tasks.parentId, id));
+    // Les sous-tâches (à tous les niveaux) suivent leur parente dans le nouveau projet…
+    const subtree = [id, ...(await getSubtaskIds(id))];
+    await db.update(tasks).set({ projectId: data.projectId }).where(inArray(tasks.id, subtree));
     // …et les dépendances devenues inter-projets n'ont plus de sens.
     await db.execute(sql`
       delete from ${taskDependencies} d
       using ${tasks} a, ${tasks} b
       where a.id = d.task_id and b.id = d.depends_on_id and a.project_id <> b.project_id
-        and (a.id = ${id} or b.id = ${id} or a.parent_id = ${id} or b.parent_id = ${id})
+        and (a.id in ${subtree} or b.id in ${subtree})
     `);
   }
   // Les sous-tâches aussi : elles ont pu changer de projet avec leur parente.
@@ -152,6 +164,7 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
 /**
  * Changement de statut (Kanban, case à cocher, liste).
  * `position` est fourni par le Kanban ; sinon la tâche va en bas de la colonne.
+ * Terminer une tâche ne termine pas ses sous-tâches (et inversement).
  */
 export async function moveTask(id: string, status: TaskStatus, position?: number): Promise<ActionResult> {
   await requireUser();
@@ -197,13 +210,18 @@ export async function setTaskParent(id: string, parentId: string | null): Promis
   const invalid = await checkLinks(id, current.projectId, parentId, []);
   if (invalid) return fail(invalid);
 
-  await db.update(tasks).set({ parentId }).where(eq(tasks.id, id));
+  await db
+    .update(tasks)
+    .set({ parentId, siblingPosition: await nextSiblingPosition(current.projectId, parentId) })
+    .where(eq(tasks.id, id));
   refresh();
   return ok(undefined);
 }
 
+/** Supprime une tâche et, en cascade, toutes ses sous-tâches (à tous les niveaux). */
 export async function deleteTask(id: string): Promise<ActionResult> {
   await requireUser();
+  if (!isUuid(id)) return fail("Tâche introuvable.");
   // Avant la suppression : ses sous-tâches disparaissent avec elle (cascade).
   await scheduleCalendarSync(() => taskWithSubtasks(id));
   await db.delete(tasks).where(eq(tasks.id, id));
@@ -212,14 +230,14 @@ export async function deleteTask(id: string): Promise<ActionResult> {
 }
 
 /** Tâche proposée comme parente ou comme prérequis dans la fenêtre d'édition. */
-export type TaskOption = { id: string; title: string; status: TaskStatus; parentId: string | null };
+export type TaskOption = { id: string; title: string; status: TaskStatus; parentId: string | null; projectId: string };
 
 /** Tâches d'un projet, pour choisir une tâche parente ou des dépendances. */
 export async function getTaskOptions(projectId: string): Promise<TaskOption[]> {
   await requireUser();
   if (!isUuid(projectId)) return [];
   return db
-    .select({ id: tasks.id, title: tasks.title, status: tasks.status, parentId: tasks.parentId })
+    .select({ id: tasks.id, title: tasks.title, status: tasks.status, parentId: tasks.parentId, projectId: tasks.projectId })
     .from(tasks)
     .where(eq(tasks.projectId, projectId))
     .orderBy(asc(tasks.title));

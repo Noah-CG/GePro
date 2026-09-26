@@ -199,9 +199,10 @@ Fonctionnement :
 
 ```
 users ──< sessions
-users ──< task_assignees >── tasks >── projects
+users ──< task_assignees >── tasks >── projects       tasks ──< tasks (sous-tâches, 4 niveaux)
 users ──< external_connections ──< external_resources >── projects
 projects ──< project_events
+projects ──< important_days
 projects ──< project_files ──< project_file_chunks
 projects ──o project_discord            users ──< discord_read_state
 users ──o google_calendar_syncs ──< google_calendar_sync_projects >── projects
@@ -212,9 +213,10 @@ users ──o google_calendar_syncs ──< google_calendar_sync_projects >─�
 | **users** | `id`, `name`, `email` (unique, minuscules), `password_hash` (bcrypt), `role` (`admin`/`member`), `color` | Comptes créés par un admin, pas d'inscription publique |
 | **sessions** | `id` = SHA-256 du jeton, `user_id`, `expires_at` | Le cookie contient le jeton, la base ne stocke que son hash (30 jours) |
 | **projects** | `id`, `name`, `description`, `color`, `start_date`, `end_date`, `archived_at`, `created_by` | Archivé si `archived_at` est renseigné |
-| **tasks** | `id`, `project_id`, `title`, `description`, `status` (`todo`/`in_progress`/`done`), `priority` (`low`/`medium`/`high`), `start_date`, `due_date`, `position`, `completed_at`, `created_by` | `position` est un flottant : insérer une carte revient à prendre la moyenne de ses voisines. `start_date` (facultatif, jamais après `due_date`) sert au diagramme de Gantt |
+| **tasks** | `id`, `project_id`, `parent_id`, `title`, `description`, `status` (`todo`/`in_progress`/`done`), `priority` (`low`/`medium`/`high`), `start_date`, `due_date`, `position`, `sibling_position`, `completed_at`, `created_by` | `parent_id` : tâche parente du même projet, sur `MAX_TASK_DEPTH` = 4 niveaux au plus (`lib/task-links.ts`). `position` (ordre dans une colonne Kanban) et `sibling_position` (ordre entre tâches sœurs dans la vue liste) sont des flottants : insérer revient à prendre la moyenne des voisines. `start_date` (facultatif, jamais après `due_date`) sert au diagramme de Gantt |
 | **task_assignees** | `task_id`, `user_id` (clé composite) | Plusieurs responsables par tâche |
 | **project_events** | `id`, `project_id` (facultatif), `title`, `description`, `event_date`, `color`, `created_by` | Événements du calendrier. Sans projet : événement d'équipe, visible dans tous les projets. Modifiables par leur créateur ou un admin |
+| **important_days** | `id`, `project_id`, `date`, `title` (60 caractères au plus), `description`, `color` (rouge par défaut), `created_by`, `created_at` | Journées importantes : une au plus par date et par projet. Modifiables par tout membre |
 | **project_files** | `id`, `project_id`, `name`, `mime_type`, `size`, `chunk_count`, `status` (`uploading`/`ready`), `uploaded_by` | PDF importés. Invisibles tant que l'import n'est pas terminé. Supprimables par la personne qui les a importés ou un admin |
 | **project_file_chunks** | `file_id`, `position` (clé composite), `data` (`bytea`) | Contenu des fichiers, en morceaux de 960 Ko |
 | **external_connections** | `user_id`, `provider` (`google`/`github`), `account_email`, `access_token_enc`, `refresh_token_enc`, `access_token_expires_at`, `status` (`active`/`needs_reauth`) | Un compte externe par utilisateur et par fournisseur ; jetons chiffrés |
@@ -225,7 +227,8 @@ users ──o google_calendar_syncs ──< google_calendar_sync_projects >─�
 | **external_resources** | `project_id`, `provider`, `kind` (`google_doc`…), `external_id`, `title`, `url`, `external_updated_at`, `metadata` (JSON), `connection_id`, `attached_by`, `synced_at`, `sync_error` | Ressources externes rattachées à un projet (copie en cache), uniques par (`project_id`, `provider`, `external_id`) |
 
 Règles :
-- La suppression d'un projet ou d'une tâche se propage en cascade. Un membre supprimé est retiré des tâches, qui restent.
+- La suppression d'un projet ou d'une tâche se propage en cascade (une tâche emporte toutes ses sous-tâches, à tous les niveaux). Un membre supprimé est retiré des tâches, qui restent.
+- Une sous-tâche appartient au même projet que sa parente ; une tâche ne peut pas devenir la sous-tâche de l'une de ses propres sous-tâches.
 - Les tables d'intégration sont génériques : pour ajouter GitHub (dépôts, issues, PR), il suffira de nouvelles valeurs de `kind` et de `metadata`, sans nouvelle migration. La valeur `github` de `provider` existe déjà.
 - Les dates métier sont des `DATE` sans heure, manipulées comme chaînes `YYYY-MM-DD`, donc sans décalage de fuseau.
 - **Progression d'un projet** = tâches terminées ÷ total.
@@ -253,6 +256,18 @@ De haut en bas :
 
 Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bulles, au survol comme au clavier). Les sections se replient d'un clic sur leur titre. Ces choix sont mémorisés dans les cookies `gepro_sidebar_reduite` et `gepro_sections_repliees`. Sur mobile, la barre s'ouvre en tiroir depuis le bouton ☰ de l'en-tête.
 
+### Liste des tâches (arbre)
+
+La vue **Liste** d'un projet range les tâches en arbre : chaque tâche racine forme un bloc (une « catégorie ») avec ses sous-tâches, sur 4 niveaux au plus.
+
+- **Repérage** : la tâche racine est plus grosse et porte une bordure gauche à sa couleur (tirée de la palette des projets d'après son id, toujours la même). Chaque niveau est en retrait de 22 px, relié à sa parente par une ligne guide à la couleur atténuée de la racine, et son fond est un peu plus foncé en clair, un peu plus clair en sombre (`--task-level-0` à `--task-level-3` dans `globals.css`, contrastes WCAG AA vérifiés par `lib/theme-contrast.test.ts`).
+- **+ Sous-tâche** (au survol sur ordinateur, toujours visible au doigt) : saisie directe sous la parente, `Entrée` pour ajouter, `Échap` pour fermer. Masqué au 4e niveau, et refusé par le serveur.
+- **Chevron** pour replier ou déplier ; mémorisé par utilisateur dans ce navigateur (`localStorage`).
+- Sur une tâche qui a des sous-tâches : compteur `3/5` (sous-tâches directes terminées) et fine barre de progression. Terminer la dernière sous-tâche propose, dans un toast, de terminer la parente (jamais automatiquement).
+- **Filtres et recherche** : une sous-tâche trouvée reste affichée sous ses parentes, grisées.
+- **Tri** : un clic sur une colonne trie les tâches sœurs (croissant, décroissant, puis retour à l'ordre du projet).
+- Glisser une ligne sur une autre en fait une sous-tâche, sur le bandeau du haut la détache.
+
 ### Diagramme de Gantt
 
 Sur la page d'un projet, la bascule **Kanban / Liste / Gantt** propose une troisième vue (`?vue=gantt`) : une ligne par tâche, une barre de sa **date de début** à son **échéance** (champ *Début* de la fenêtre de tâche). Une tâche qui n'a qu'une des deux dates occupe un seul jour ; celles qui n'en ont aucune sont listées sous le diagramme, « Sans dates ».
@@ -269,7 +284,8 @@ Sur la page d'un projet, la bascule **Kanban / Liste / Gantt** propose une trois
 
 - Vues **Mois** (au plus 3 éléments par jour, puis « +N autres » qui ouvre la semaine) et **Semaine** (tout le contenu), flèches précédent / suivant et « Aujourd'hui ». La vue et la date sont dans l'adresse (`?vue=mois&date=2026-09-24`) : la page est partageable et rechargeable.
 - Une tâche s'ouvre dans la fenêtre de tâche habituelle ; terminée, elle est barrée et atténuée ; en retard, elle porte une icône d'alerte.
-- Un clic sur une zone vide d'un jour (ou Entrée) crée un événement à cette date. Un événement n'est modifiable ou supprimable que par son créateur ou un admin.
+- Un clic, un clic droit ou `Entrée` sur une zone vide d'un jour ouvre son menu : **Nouvel événement** ou **Marquer comme journée importante**. Un événement n'est modifiable ou supprimable que par son créateur ou un admin.
+- **Journées importantes** : la case du jour est entièrement remplie de sa couleur (rouge par défaut, 6 couleurs lisibles avec du texte blanc), avec le titre en gros, une étoile, et la description au survol ou au tap. En vue Semaine et sur mobile, c'est un bandeau coloré. Tout membre peut en créer, les modifier ou les retirer. Le tableau de bord affiche les 5 prochaines (avec compte à rebours), et `/calendrier/journees` les liste toutes.
 - Au clavier, la grille n'a qu'un arrêt de tabulation : flèches pour changer de jour, `Début` / `Fin` pour le lundi / dimanche, `Page préc.` / `Page suiv.` pour la période voisine, `Tab` pour atteindre les éléments du jour.
 - Sous 768 px, le calendrier devient la liste des jours qui ont du contenu.
 - Chaque vue ne fait qu'une requête, bornée sur les jours affichés (`getCalendarItems`).

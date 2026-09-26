@@ -6,13 +6,14 @@
 import { AlertCircle, CalendarClock, ListTodo, TrendingUp, UserX } from "lucide-react";
 import Link from "next/link";
 import { DashboardTaskList } from "@/components/dashboard/dashboard-task-list";
+import { ImportantDaysWidget } from "@/components/dashboard/important-days-widget";
 import { TaskRates } from "@/components/tasks/task-rates";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState, ProgressBar, Section, Stat } from "@/components/ui/misc";
 import type { SessionUser } from "@/lib/auth";
 import { compareByDueThenPriority } from "@/lib/constants";
 import { formatShort } from "@/lib/dates";
-import type { Member, ProjectWithStats, TaskView } from "@/lib/queries";
+import type { ImportantDayView, Member, ProjectWithStats, TaskView } from "@/lib/queries";
 import { percent } from "@/lib/utils";
 
 type Common = {
@@ -20,13 +21,15 @@ type Common = {
   project: ProjectWithStats;
   today: string;
   weekEnd: string;
+  /** Prochaines journées importantes du projet (5 au plus). */
+  importantDays: ImportantDayView[];
 };
 
 const isOverdue = (t: TaskView, today: string) => !!t.dueDate && t.dueDate < today;
 const isThisWeek = (t: TaskView, today: string, weekEnd: string) => !!t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd;
 
 /** Vue personnelle : toute ma file de travail, échéance ou pas. */
-export function MyDashboard({ project, today, weekEnd, tasks }: Common & { tasks: TaskView[] }) {
+export function MyDashboard({ project, today, weekEnd, tasks, importantDays }: Common & { tasks: TaskView[] }) {
   const listUrl = (echeance: string) => `/projets/${project.id}?vue=liste&echeance=${echeance}&responsable=moi`;
   const open = tasks.filter((t) => t.status !== "done").sort(compareByDueThenPriority);
   const todo = open.filter((t) => t.status === "todo");
@@ -66,6 +69,7 @@ export function MyDashboard({ project, today, weekEnd, tasks }: Common & { tasks
         </div>
 
         <div className="space-y-6">
+          <ImportantDaysWidget projectId={project.id} days={importantDays} today={today} />
           <Section title="Ma répartition">
             <div className="p-4">
               {tasks.length === 0 ? <p className="text-sm text-muted">Aucune tâche assignée.</p> : <TaskRates tasks={tasks} />}
@@ -79,7 +83,7 @@ export function MyDashboard({ project, today, weekEnd, tasks }: Common & { tasks
 }
 
 /** Vue d'équipe : ce qui glisse, ce qui n'est pris par personne, et la charge de chacun. */
-export function TeamDashboard({ me, project, today, weekEnd, tasks, team }: Common & { tasks: TaskView[]; team: Member[] }) {
+export function TeamDashboard({ me, project, today, weekEnd, tasks, team, importantDays }: Common & { tasks: TaskView[]; team: Member[] }) {
   const listUrl = (query: string) => `/projets/${project.id}?vue=liste&${query}`;
   const open = tasks.filter((t) => t.status !== "done").sort(compareByDueThenPriority);
   const overdue = open.filter((t) => isOverdue(t, today));
@@ -121,6 +125,7 @@ export function TeamDashboard({ me, project, today, weekEnd, tasks, team }: Comm
         </div>
 
         <div className="space-y-6">
+          <ImportantDaysWidget projectId={project.id} days={importantDays} today={today} />
           <ProjectProgress project={project} />
 
           <Section title="Charge de l'équipe" action={<Link href="/temps" className="text-xs text-muted hover:text-text">Temps de travail</Link>}>

@@ -29,6 +29,7 @@ const task = (id: string, dueDate: string, status: TaskView["status"] = "todo"):
   dependsOnIds: [],
   blockers: [],
   position: 0,
+  siblingPosition: 0,
   assigneeIds: [],
 });
 
@@ -169,5 +170,12 @@ describe("contenu des jours", () => {
     const items = { tasks: [task("a", "2026-09-22"), task("b", "2026-09-22", "done")], events: [event("e", "2026-09-22")] };
     expect(dayAriaLabel("2026-09-22", "2026-09-24", items)).toBe("mardi 22 septembre 2026, 2 tâches dont 1 en retard, 1 événement");
     expect(dayAriaLabel("2026-09-24", "2026-09-24", undefined)).toBe("jeudi 24 septembre 2026, aujourd'hui, aucun élément");
+  });
+
+  it("range les journées importantes par jour et les annonce", () => {
+    const importantDay = { id: "j", projectId: "p", date: "2026-09-24", title: "Lancement", description: "", color: "#dc2626" };
+    const byDay = groupByDay({ tasks: [], events: [], importantDays: [importantDay] });
+    expect(byDay.get("2026-09-24")?.importantDay).toEqual(importantDay);
+    expect(dayAriaLabel("2026-09-24", "2026-09-20", byDay.get("2026-09-24"))).toBe("jeudi 24 septembre 2026, journée importante : Lancement, aucun élément");
   });
 });

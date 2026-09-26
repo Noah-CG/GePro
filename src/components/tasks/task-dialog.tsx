@@ -15,6 +15,7 @@ import { SimpleSelect } from "@/components/ui/select";
 import { PRIORITIES, STATUSES } from "@/lib/constants";
 import { googleCalendarUrl } from "@/lib/google-calendar";
 import type { TaskView } from "@/lib/queries";
+import { canHaveSubtasks, nestingError, nestSubtasks, taskTree } from "@/lib/task-links";
 import { cn } from "@/lib/utils";
 import { AssigneePicker } from "./assignee-picker";
 import { DependencyPicker } from "./task-links";
@@ -90,11 +91,16 @@ export function TaskDialog({
 
 
   const others = projectTasks.filter((t) => t.id !== task?.id);
-  const subtasks = task ? projectTasks.filter((t) => t.parentId === task.id) : [];
-  // Un seul niveau : seules les tâches de premier niveau peuvent être parentes, et une tâche
-  // qui a des sous-tâches ne peut pas en devenir une.
-  const parentOptions = others.filter((t) => !t.parentId);
-  const canHaveParent = subtasks.length === 0 && (task?.subtasks.total ?? 0) === 0;
+  const tree = taskTree(projectTasks);
+  const subtasks = task ? tree.children(task.id) : [];
+  // Toutes ses sous-tâches, à tous les niveaux : supprimées avec elle.
+  const descendantCount = task ? tree.descendants(task.id).length : 0;
+  // Parentes possibles (mêmes règles que le serveur), rangées en arbre et en retrait par niveau.
+  const parentOptions = nestSubtasks(others).filter(
+    (row) => !nestingError(projectTasks, { id: task?.id ?? null, projectId: draft.projectId }, row.task.id),
+  );
+  // Profondeur de la tâche avec la parente choisie : au niveau maximal, pas de sous-tâches.
+  const depth = draft.parentId ? tree.depth(draft.parentId) + 1 : 0;
   const blockers = others.filter((t) => draft.dependsOnIds.includes(t.id) && t.status !== "done");
 
   function toggleSubtask(sub: TaskOption) {
@@ -154,8 +160,8 @@ export function TaskDialog({
                 <Trash2 size={14} />
                 {!confirmDelete
                   ? "Supprimer"
-                  : subtasks.length
-                    ? `Supprimer avec ${subtasks.length > 1 ? `ses ${subtasks.length} sous-tâches` : "sa sous-tâche"}`
+                  : descendantCount
+                    ? `Supprimer avec ${descendantCount > 1 ? `ses ${descendantCount} sous-tâches` : "sa sous-tâche"}`
                     : "Confirmer la suppression"}
               </Button>
             ) : (
@@ -256,23 +262,19 @@ export function TaskDialog({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Sous-tâche de" htmlFor="task-parent">
-              {canHaveParent ? (
-                <SimpleSelect
-                  id="task-parent"
-                  value={draft.parentId || NO_PARENT}
-                  onValueChange={(v) => set("parentId", v === NO_PARENT ? "" : v)}
-                  options={[
-                    { value: NO_PARENT, label: "Aucune (tâche principale)" },
-                    // La parente actuelle reste affichée pendant le chargement de la liste.
-                    ...(draft.parentId && !parentOptions.some((t) => t.id === draft.parentId)
-                      ? [{ value: draft.parentId, label: task?.parentTitle ?? "…" }]
-                      : []),
-                    ...parentOptions.map((t) => ({ value: t.id, label: t.title })),
-                  ]}
-                />
-              ) : (
-                <p className="text-xs text-muted">Cette tâche a des sous-tâches : elle ne peut pas devenir une sous-tâche.</p>
-              )}
+              <SimpleSelect
+                id="task-parent"
+                value={draft.parentId || NO_PARENT}
+                onValueChange={(v) => set("parentId", v === NO_PARENT ? "" : v)}
+                options={[
+                  { value: NO_PARENT, label: "Aucune (tâche principale)" },
+                  // La parente actuelle reste affichée pendant le chargement de la liste.
+                  ...(draft.parentId && !parentOptions.some((r) => r.task.id === draft.parentId)
+                    ? [{ value: draft.parentId, label: task?.parentTitle ?? "…" }]
+                    : []),
+                  ...parentOptions.map((r) => ({ value: r.task.id, label: `${"   ".repeat(r.depth)}${r.depth ? "↳ " : ""}${r.task.title}` })),
+                ]}
+              />
             </Field>
             <Field label="Dépend de">
               <DependencyPicker value={draft.dependsOnIds} onChange={(ids) => set("dependsOnIds", ids)} options={others} />
@@ -287,7 +289,7 @@ export function TaskDialog({
             </p>
           )}
 
-          {!draft.parentId && (
+          {canHaveSubtasks(depth) && (
             <Field label={`Sous-tâches${subtasks.length ? ` (${subtasks.filter((t) => t.status === "done").length}/${subtasks.length})` : ""}`}>
               <ul className="space-y-0.5">
                 {subtasks.map((sub) => (

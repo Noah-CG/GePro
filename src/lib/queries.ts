@@ -3,12 +3,13 @@
  * Les objets renvoyés sont sérialisables (passables tels quels aux composants client).
  */
 import "server-only";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alias } from "drizzle-orm/pg-core";
 import {
   externalConnections,
   externalResources,
+  importantDays,
   projectEvents,
   projectFiles,
   projects,
@@ -55,11 +56,13 @@ export type TaskView = {
   startDate: string | null;
   dueDate: string | null;
   position: number;
+  /** Ordre parmi les tâches sœurs (arbre de la vue liste). */
+  siblingPosition: number;
   assigneeIds: string[];
   /** Tâche parente, si c'est une sous-tâche. */
   parentId: string | null;
   parentTitle: string | null;
-  /** Avancement des sous-tâches (total 0 = aucune). */
+  /** Avancement des sous-tâches directes (total 0 = aucune). */
   subtasks: { total: number; done: number };
   /** Tâches à terminer avant celle-ci. */
   dependsOnIds: string[];
@@ -82,7 +85,18 @@ export type CalendarEvent = {
 };
 
 /** Contenu d'une vue du calendrier : tâches (par échéance) et événements, triés par jour. */
-export type CalendarItems = { tasks: TaskView[]; events: CalendarEvent[] };
+/** Journée importante d'un projet, telle qu'affichée (calendrier, tableau de bord). */
+export type ImportantDayView = {
+  id: string;
+  projectId: string;
+  /** "YYYY-MM-DD" */
+  date: string;
+  title: string;
+  description: string;
+  color: string;
+};
+
+export type CalendarItems = { tasks: TaskView[]; events: CalendarEvent[]; importantDays: ImportantDayView[] };
 
 /** Connexion d'un utilisateur à un fournisseur, sans aucun jeton. */
 export type ConnectionView = { status: "active" | "needs_reauth"; email: string };
@@ -235,6 +249,7 @@ export async function getTasks(opts: { projectId?: string; assigneeId?: string }
       startDate: tasks.startDate,
       dueDate: tasks.dueDate,
       position: tasks.position,
+      siblingPosition: tasks.siblingPosition,
       parentId: tasks.parentId,
       parentTitle: parent.title,
     })
@@ -268,6 +283,19 @@ export async function getTasks(opts: { projectId?: string; assigneeId?: string }
   for (const l of links) byTask.set(l.taskId, [...(byTask.get(l.taskId) ?? []), l.userId]);
 
   return rows.map((r) => ({ ...r, assigneeIds: byTask.get(r.id) ?? [], ...linksOf(r.id) }));
+}
+
+/** Ids de toutes les sous-tâches d'une tâche, à tous les niveaux (sans la tâche elle-même). */
+export async function getSubtaskIds(taskId: string): Promise<string[]> {
+  const { rows } = await db.execute<{ id: string }>(sql`
+    with recursive sub as (
+      select id from ${tasks} where parent_id = ${taskId}::uuid
+      union
+      select t.id from ${tasks} t join sub on t.parent_id = sub.id
+    )
+    select id from sub
+  `);
+  return rows.map((r) => r.id);
 }
 
 type TaskLinks = Pick<TaskView, "subtasks" | "dependsOnIds" | "blockers">;
@@ -558,6 +586,7 @@ type CalendarRow = {
   status: TaskStatus | null;
   priority: TaskPriority | null;
   position: number | null;
+  sibling_position: number | null;
   project_id: string | null;
   project_name: string | null;
   project_color: string | null;
@@ -580,6 +609,37 @@ const jsonArray = (value: unknown): string[] =>
  * agrégés en JSON. Dates et énumérations sont converties en texte côté SQL pour que Neon et
  * PGlite renvoient exactement les mêmes valeurs (dates "YYYY-MM-DD", convention du projet).
  */
+const importantDayColumns = {
+  id: importantDays.id,
+  projectId: importantDays.projectId,
+  date: importantDays.date,
+  title: importantDays.title,
+  description: importantDays.description,
+  color: importantDays.color,
+};
+
+/**
+ * Journées importantes d'un projet, par date croissante : entre `from` et `to` inclus
+ * ("YYYY-MM-DD", bornes facultatives), au plus `limit`.
+ */
+export async function getImportantDays(
+  projectId: string,
+  { from, to, limit }: { from?: string; to?: string; limit?: number } = {},
+): Promise<ImportantDayView[]> {
+  const query = db
+    .select(importantDayColumns)
+    .from(importantDays)
+    .where(
+      and(
+        eq(importantDays.projectId, projectId),
+        from ? gte(importantDays.date, from) : undefined,
+        to ? lte(importantDays.date, to) : undefined,
+      ),
+    )
+    .orderBy(asc(importantDays.date));
+  return limit ? query.limit(limit) : query;
+}
+
 export async function getCalendarItems({
   from,
   to,
@@ -591,7 +651,7 @@ export async function getCalendarItems({
 }): Promise<CalendarItems> {
   const { rows } = await db.execute<CalendarRow>(sql`
     select 'task' as kind, t.id, t.title, t.description, t.due_date::text as date, t.start_date::text as start_date,
-           t.status::text as status, t.priority::text as priority, t.position,
+           t.status::text as status, t.priority::text as priority, t.position, t.sibling_position,
            t.project_id, p.name as project_name, p.color as project_color,
            t.parent_id, (select pt.title from ${tasks} pt where pt.id = t.parent_id) as parent_title,
            coalesce((select json_agg(a.user_id) from ${taskAssignees} a where a.task_id = t.id), '[]'::json) as assignee_ids,
@@ -602,7 +662,7 @@ export async function getCalendarItems({
        and t.due_date between ${from}::date and ${to}::date
     union all
     select 'event', e.id, e.title, e.description, e.event_date::text, null,
-           null, null, null,
+           null, null, null, null,
            e.project_id, p.name, p.color,
            null, null,
            null, e.color, e.created_by
@@ -613,8 +673,11 @@ export async function getCalendarItems({
     order by date, kind, title
   `);
 
-  const linksOf = await getTaskLinks(rows.filter((r) => r.kind === "task").map((r) => r.id));
-  const result: CalendarItems = { tasks: [], events: [] };
+  const [linksOf, days] = await Promise.all([
+    getTaskLinks(rows.filter((r) => r.kind === "task").map((r) => r.id)),
+    projectId ? getImportantDays(projectId, { from, to }) : [],
+  ]);
+  const result: CalendarItems = { tasks: [], events: [], importantDays: days };
   for (const r of rows) {
     if (r.kind === "task") {
       result.tasks.push({
@@ -629,6 +692,7 @@ export async function getCalendarItems({
         startDate: r.start_date,
         dueDate: r.date,
         position: Number(r.position),
+        siblingPosition: Number(r.sibling_position),
         assigneeIds: jsonArray(r.assignee_ids),
         parentId: r.parent_id,
         parentTitle: r.parent_title,

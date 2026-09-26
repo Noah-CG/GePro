@@ -29,6 +29,7 @@ import {
   type GoogleCalendarSync,
 } from "@/db/schema";
 import { APP_TIMEZONE } from "@/lib/dates";
+import { getSubtaskIds } from "@/lib/queries";
 import { isUuid } from "@/lib/validation";
 import { withGoogleAccess } from "./connections";
 import { diffCalendar, googleEventId, toCalendarEvent, type CalendarItem, type CalendarSource } from "./calendar-events";
@@ -332,14 +333,10 @@ export async function reconcileIfStale(userId: string): Promise<void> {
   runAfter(() => reconcileCalendar(userId));
 }
 
-/** Une tâche et ses sous-tâches (un seul niveau) : elles changent de projet ou disparaissent avec elle. */
+/** Une tâche et ses sous-tâches (à tous les niveaux) : elles changent de projet ou disparaissent avec elle. */
 export async function taskWithSubtasks(taskId: string): Promise<CalendarSource[]> {
   if (!isUuid(taskId)) return [];
-  const rows = await db
-    .select({ id: tasks.id })
-    .from(tasks)
-    .where(or(eq(tasks.id, taskId), eq(tasks.parentId, taskId)));
-  return rows.map((r) => ({ kind: "task", id: r.id }));
+  return [taskId, ...(await getSubtaskIds(taskId))].map((id) => ({ kind: "task", id }));
 }
 
 // Réglages
