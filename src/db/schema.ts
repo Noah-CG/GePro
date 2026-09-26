@@ -1,8 +1,10 @@
 /**
  * Modèle de données GePro.
  *
- *   users ──< sessions
- *   users ──< project_members >── projects ──< project_invitations
+ *   users ──< sessions, email_verification_tokens, password_reset_tokens
+ *   users ──< project_members >── projects ──< project_invitations (email ou compte invité)
+ *   projects ──< project_invite_links ──< project_invite_link_uses >── users
+ *   auth_throttle : limitation des tentatives de connexion (sans lien vers users)
  *   users ──< task_assignees >── tasks >── projects
  *   tasks ──< tasks (sous-tâches, via parent_id)
  *   tasks ──< task_dependencies >── tasks
@@ -82,17 +84,75 @@ const timestamps = {
     .$onUpdate(() => new Date()),
 };
 
-/** Membres de l'équipe. Les comptes sont créés par un administrateur. */
-export const users = pgTable("users", {
+/**
+ * Comptes : créés par inscription (/inscription) ou par un administrateur. Email et nom
+ * d'utilisateur sont uniques sans tenir compte de la casse (index sur lower()).
+ */
+export const users = pgTable(
+  "users",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    /** Toujours stocké en minuscules. */
+    email: text("email").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    role: userRole("role").notNull().default("member"),
+    /** Couleur de l'avatar (pastille avec initiales). */
+    color: text("color").notNull().default("#6366f1"),
+    /**
+     * Nom d'utilisateur (3 à 30 caractères : lettres, chiffres, _ et -), pour se connecter et être
+     * invité. Nullable pour la migration : les comptes existants en reçoivent un proposé.
+     */
+    username: text("username"),
+    /** Nul tant que le compte n'a pas choisi (ou confirmé) son nom d'utilisateur. */
+    usernameConfirmedAt: timestamp("username_confirmed_at", { withTimezone: true }),
+    /** Nul tant que l'adresse n'est pas vérifiée : les invitations par email restent alors inaccessibles. */
+    emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("users_email_lower_uq").on(sql`lower(${t.email})`),
+    uniqueIndex("users_username_lower_uq").on(sql`lower(${t.username})`),
+    check("users_username_format", sql`${t.username} ~ '^[A-Za-z0-9_-]{3,30}$'`),
+  ],
+);
+
+/**
+ * Jetons à usage unique envoyés par email (vérification d'adresse, réinitialisation du mot de
+ * passe). Seul leur hash SHA-256 est stocké, comme pour les sessions.
+ */
+const emailTokenColumns = () => ({
   id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  /** Toujours stocké en minuscules. */
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
-  role: userRole("role").notNull().default("member"),
-  /** Couleur de l'avatar (pastille avec initiales). */
-  color: text("color").notNull().default("#6366f1"),
-  ...timestamps,
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Vérification de l'adresse email (valable 24 h). */
+export const emailVerificationTokens = pgTable("email_verification_tokens", emailTokenColumns(), (t) => [
+  index("email_verification_tokens_user_idx").on(t.userId),
+]);
+
+/** Réinitialisation du mot de passe (valable 1 h). */
+export const passwordResetTokens = pgTable("password_reset_tokens", emailTokenColumns(), (t) => [
+  index("password_reset_tokens_user_idx").on(t.userId),
+]);
+
+/**
+ * Limitation des tentatives (connexion, inscription, mot de passe oublié…). `key` désigne ce qui
+ * est limité : "login-ip:<ip>", "login-account:<identifiant>"… Après `failures` échecs, verrouillé
+ * jusqu'à `locked_until` (durée croissante, voir lib/throttle.ts). Aucun lien vers users : une
+ * clé existe aussi pour un identifiant inconnu, sans révéler quels comptes existent.
+ */
+export const authThrottle = pgTable("auth_throttle", {
+  key: text("key").primaryKey(),
+  failures: integer("failures").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 /** Sessions de connexion. L'id est le hash SHA-256 du jeton stocké dans le cookie. */
@@ -150,9 +210,10 @@ export const projectMembers = pgTable(
 );
 
 /**
- * Invitation à rejoindre un projet, pour un email exact. Le jeton n'est montré qu'une fois (lien
- * à transmettre) ; la base n'en garde que le hash SHA-256, comme pour les sessions. Accepter
- * n'ajoute qu'à ce projet, et seulement le compte qui a cet email.
+ * Invitation à rejoindre un projet, pour un email exact ou un compte précis (nom d'utilisateur
+ * exact) : l'un ou l'autre, jamais les deux. Le jeton n'est montré qu'une fois (lien à
+ * transmettre) ; la base n'en garde que le hash SHA-256, comme pour les sessions. Accepter
+ * n'ajoute qu'à ce projet, et seulement le compte visé (email vérifié pour une invitation par email).
  */
 export const projectInvitations = pgTable(
   "project_invitations",
@@ -161,8 +222,10 @@ export const projectInvitations = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    /** Toujours en minuscules. */
-    email: text("email").notNull(),
+    /** Toujours en minuscules. Nul pour une invitation par nom d'utilisateur. */
+    email: text("email"),
+    /** Compte invité par son nom d'utilisateur. Nul pour une invitation par email. */
+    invitedUserId: uuid("invited_user_id").references(() => users.id, { onDelete: "cascade" }),
     role: projectRole("role").notNull().default("member"),
     tokenHash: text("token_hash").notNull().unique(),
     status: invitationStatus("status").notNull().default("pending"),
@@ -175,8 +238,55 @@ export const projectInvitations = pgTable(
     index("project_invitations_project_idx").on(t.projectId),
     index("project_invitations_email_idx").on(t.email),
     uniqueIndex("project_invitations_pending_uq").on(t.projectId, t.email).where(sql`${t.status} = 'pending'`),
+    index("project_invitations_invited_user_idx").on(t.invitedUserId),
+    uniqueIndex("project_invitations_pending_user_uq").on(t.projectId, t.invitedUserId).where(sql`${t.status} = 'pending'`),
     check("project_invitations_not_owner", sql`${t.role} <> 'owner'`),
+    check("project_invitations_one_target", sql`(${t.email} is null) <> (${t.invitedUserId} is null)`),
   ],
+);
+
+/**
+ * Lien d'invitation ouvert : lié à aucun email ni compte, il fait entrer quiconque le possède (et
+ * a un compte à l'email vérifié), toujours comme simple membre. Limité dans le temps et en nombre
+ * d'utilisations (`max_uses` nul = illimité jusqu'à expiration), révocable. Seul le hash du jeton
+ * est stocké.
+ */
+export const projectInviteLinks = pgTable(
+  "project_invite_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    role: projectRole("role").notNull().default("member"),
+    maxUses: integer("max_uses"),
+    useCount: integer("use_count").notNull().default(0),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("project_invite_links_project_idx").on(t.projectId),
+    check("project_invite_links_member_only", sql`${t.role} = 'member'`),
+    check("project_invite_links_uses", sql`${t.maxUses} is null or (${t.maxUses} >= 1 and ${t.useCount} <= ${t.maxUses})`),
+  ],
+);
+
+/** Journal des utilisations d'un lien d'invitation : qui est entré dans le projet, et quand. */
+export const projectInviteLinkUses = pgTable(
+  "project_invite_link_uses",
+  {
+    linkId: uuid("link_id")
+      .notNull()
+      .references(() => projectInviteLinks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    usedAt: timestamp("used_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.linkId, t.userId] }), index("project_invite_link_uses_user_idx").on(t.userId)],
 );
 
 export const tasks = pgTable(
@@ -619,6 +729,7 @@ export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type ProjectRole = (typeof projectRole.enumValues)[number];
 export type ProjectInvitation = typeof projectInvitations.$inferSelect;
+export type ProjectInviteLink = typeof projectInviteLinks.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type ProjectEvent = typeof projectEvents.$inferSelect;
 export type ImportantDay = typeof importantDays.$inferSelect;

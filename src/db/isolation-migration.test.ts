@@ -37,7 +37,8 @@ beforeAll(async () => {
   cpSync("drizzle", folder, { recursive: true });
   const journalPath = join(folder, "meta", "_journal.json");
   const journal = JSON.parse(readFileSync(journalPath, "utf8")) as { entries: { tag: string }[] };
-  journal.entries = journal.entries.filter((e) => e.tag !== "0012_isolation_projets");
+  // …et aucune des suivantes (0013 exige l'isolation).
+  journal.entries = journal.entries.filter((e) => e.tag < "0012_isolation_projets");
   writeFileSync(journalPath, JSON.stringify(journal));
 
   client = new PGlite();
@@ -63,7 +64,7 @@ beforeAll(async () => {
       ('${ids.nadia}', null, now() - interval '4 hours', now() - interval '3 hours');
   `);
   // Toutes les migrations à appliquer : plus long qu'un test ordinaire quand la suite tourne en parallèle.
-}, 30_000);
+}, 120_000);
 
 afterAll(async () => {
   await client.close();
