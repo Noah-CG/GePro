@@ -4,7 +4,14 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { IMPORTANT_DAY_COLORS } from "./constants";
 import { contrastRatio } from "./utils";
+
+describe("couleurs des journées importantes", () => {
+  it.each(IMPORTANT_DAY_COLORS.map((c) => [c.label, c.value]))("%s reste lisible avec du texte blanc", (_, color) => {
+    expect(contrastRatio("#ffffff", color)).toBeGreaterThanOrEqual(4.5);
+  });
+});
 
 const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
 

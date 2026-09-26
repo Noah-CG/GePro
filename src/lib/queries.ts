@@ -3,12 +3,13 @@
  * Les objets renvoyés sont sérialisables (passables tels quels aux composants client).
  */
 import "server-only";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alias } from "drizzle-orm/pg-core";
 import {
   externalConnections,
   externalResources,
+  importantDays,
   projectEvents,
   projectFiles,
   projects,
@@ -84,7 +85,18 @@ export type CalendarEvent = {
 };
 
 /** Contenu d'une vue du calendrier : tâches (par échéance) et événements, triés par jour. */
-export type CalendarItems = { tasks: TaskView[]; events: CalendarEvent[] };
+/** Journée importante d'un projet, telle qu'affichée (calendrier, tableau de bord). */
+export type ImportantDayView = {
+  id: string;
+  projectId: string;
+  /** "YYYY-MM-DD" */
+  date: string;
+  title: string;
+  description: string;
+  color: string;
+};
+
+export type CalendarItems = { tasks: TaskView[]; events: CalendarEvent[]; importantDays: ImportantDayView[] };
 
 /** Connexion d'un utilisateur à un fournisseur, sans aucun jeton. */
 export type ConnectionView = { status: "active" | "needs_reauth"; email: string };
@@ -597,6 +609,37 @@ const jsonArray = (value: unknown): string[] =>
  * agrégés en JSON. Dates et énumérations sont converties en texte côté SQL pour que Neon et
  * PGlite renvoient exactement les mêmes valeurs (dates "YYYY-MM-DD", convention du projet).
  */
+const importantDayColumns = {
+  id: importantDays.id,
+  projectId: importantDays.projectId,
+  date: importantDays.date,
+  title: importantDays.title,
+  description: importantDays.description,
+  color: importantDays.color,
+};
+
+/**
+ * Journées importantes d'un projet, par date croissante : entre `from` et `to` inclus
+ * ("YYYY-MM-DD", bornes facultatives), au plus `limit`.
+ */
+export async function getImportantDays(
+  projectId: string,
+  { from, to, limit }: { from?: string; to?: string; limit?: number } = {},
+): Promise<ImportantDayView[]> {
+  const query = db
+    .select(importantDayColumns)
+    .from(importantDays)
+    .where(
+      and(
+        eq(importantDays.projectId, projectId),
+        from ? gte(importantDays.date, from) : undefined,
+        to ? lte(importantDays.date, to) : undefined,
+      ),
+    )
+    .orderBy(asc(importantDays.date));
+  return limit ? query.limit(limit) : query;
+}
+
 export async function getCalendarItems({
   from,
   to,
@@ -630,8 +673,11 @@ export async function getCalendarItems({
     order by date, kind, title
   `);
 
-  const linksOf = await getTaskLinks(rows.filter((r) => r.kind === "task").map((r) => r.id));
-  const result: CalendarItems = { tasks: [], events: [] };
+  const [linksOf, days] = await Promise.all([
+    getTaskLinks(rows.filter((r) => r.kind === "task").map((r) => r.id)),
+    projectId ? getImportantDays(projectId, { from, to }) : [],
+  ]);
+  const result: CalendarItems = { tasks: [], events: [], importantDays: days };
   for (const r of rows) {
     if (r.kind === "task") {
       result.tasks.push({

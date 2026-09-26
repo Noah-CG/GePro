@@ -7,6 +7,7 @@
  *   tasks ──< task_dependencies >── tasks
  *   users ──< external_connections ──< external_resources >── projects
  *   projects ──< project_events (projet facultatif : sans projet, événement d'équipe)
+ *   projects ──< important_days (une journée importante au plus par date et par projet)
  *   projects ──< project_files ──< project_file_chunks (PDF importés, découpés en morceaux)
  *   users ──< work_sessions >── projects
  *   projects ──< project_discord (salon Discord relié) ; users ──< discord_read_state
@@ -201,6 +202,34 @@ export const projectEvents = pgTable(
     ...timestamps,
   },
   (t) => [index("project_events_project_date_idx").on(t.projectId, t.eventDate)],
+);
+
+/**
+ * Journée importante d'un projet (lancement, salon, date limite…) : sa case du calendrier est
+ * entièrement colorée, et elle apparaît sur le tableau de bord. Une seule par date et par projet.
+ * Modifiable par tout membre, comme les tâches.
+ */
+export const importantDays = pgTable(
+  "important_days",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    /** Date métier "YYYY-MM-DD", sans heure : le 12 reste le 12 quel que soit le fuseau. */
+    date: date("date", { mode: "string" }).notNull(),
+    /** Court : affiché en gros dans la case du calendrier. */
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    /** Une des couleurs de IMPORTANT_DAY_COLORS (lisibles avec du texte blanc). */
+    color: text("color").notNull().default("#dc2626"),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("important_days_project_date_uq").on(t.projectId, t.date),
+    check("important_days_title_length", sql`char_length(${t.title}) between 1 and 60`),
+  ],
 );
 
 /**
@@ -418,6 +447,7 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   tasks: many(tasks),
   resources: many(externalResources),
   events: many(projectEvents),
+  importantDays: many(importantDays),
   files: many(projectFiles),
   discord: one(projectDiscord),
 }));
@@ -435,6 +465,11 @@ export const projectFileChunksRelations = relations(projectFileChunks, ({ one })
 export const projectEventsRelations = relations(projectEvents, ({ one }) => ({
   project: one(projects, { fields: [projectEvents.projectId], references: [projects.id] }),
   creator: one(users, { fields: [projectEvents.createdBy], references: [users.id] }),
+}));
+
+export const importantDaysRelations = relations(importantDays, ({ one }) => ({
+  project: one(projects, { fields: [importantDays.projectId], references: [projects.id] }),
+  creator: one(users, { fields: [importantDays.createdBy], references: [users.id] }),
 }));
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
@@ -475,6 +510,7 @@ export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;
 export type Task = typeof tasks.$inferSelect;
 export type ProjectEvent = typeof projectEvents.$inferSelect;
+export type ImportantDay = typeof importantDays.$inferSelect;
 export type ProjectFile = typeof projectFiles.$inferSelect;
 export type TaskStatus = (typeof taskStatus.enumValues)[number];
 export type TaskPriority = (typeof taskPriority.enumValues)[number];

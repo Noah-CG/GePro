@@ -1,5 +1,6 @@
 /** Schémas de validation partagés par les Server Actions. */
 import { z } from "zod";
+import { DEFAULT_IMPORTANT_DAY_COLOR, IMPORTANT_DAY_COLORS, IMPORTANT_DAY_TITLE_MAX } from "./constants";
 
 const isoDate = z
   .string()
@@ -70,6 +71,18 @@ export const eventInput = z.object({
   projectId: z.uuid("Projet invalide").nullable().or(z.literal("").transform(() => null)).default(null),
 });
 export type EventInput = z.input<typeof eventInput>;
+
+export const importantDayInput = z.object({
+  projectId: z.uuid("Projet invalide"),
+  date: requiredDate,
+  title: z.string().trim().min(1, "Le titre est obligatoire").max(IMPORTANT_DAY_TITLE_MAX, `${IMPORTANT_DAY_TITLE_MAX} caractères au maximum`),
+  description: z.string().trim().max(2000).default(""),
+  color: z
+    .string()
+    .refine((c) => IMPORTANT_DAY_COLORS.some((o) => o.value === c), "Couleur invalide")
+    .default(DEFAULT_IMPORTANT_DAY_COLOR),
+});
+export type ImportantDayInput = z.input<typeof importantDayInput>;
 
 export const memberInput = z.object({
   name: z.string().trim().min(1, "Le nom est obligatoire").max(80),

@@ -71,6 +71,13 @@
       "when": 1790428380845,
       "tag": "0009_task_tree",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790429579847,
+      "tag": "0010_important_days",
+      "breakpoints": true
     }
   ]
 }

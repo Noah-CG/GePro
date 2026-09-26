@@ -94,6 +94,22 @@ export function formatShort(iso: string): string {
   return shortFmt.format(parse(iso));
 }
 
+const weekdayDayMonthFmt = new Intl.DateTimeFormat("fr-FR", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+
+/** "jeu. 12 mars" */
+export function formatWeekdayDayMonth(iso: string): string {
+  return weekdayDayMonthFmt.format(parse(iso));
+}
+
+/** Compte à rebours jusqu'à `iso` : "aujourd'hui", "demain", "dans 5 jours", "hier", "il y a 3 jours". */
+export function formatCountdown(iso: string, today: string): string {
+  const days = diffDays(iso, today);
+  if (days === 0) return "aujourd'hui";
+  if (days === 1) return "demain";
+  if (days === -1) return "hier";
+  return days > 0 ? `dans ${days} jours` : `il y a ${-days} jours`;
+}
+
 /** "12 oct. 2026" */
 export function formatLong(iso: string): string {
   return longFmt.format(parse(iso));
