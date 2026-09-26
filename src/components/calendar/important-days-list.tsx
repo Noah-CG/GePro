@@ -57,6 +57,7 @@ export function ImportantDaysList({ projectId, projectName, days, today }: { pro
         onOpenChange={(open) => !open && setTarget(null)}
         projectId={projectId}
         date={today}
+        pickDate
         day={target?.day}
       />
     </div>
