@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Timer, Users, X } from "lucide-react";
+import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Timer, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Kbd, SideTooltip } from "@/components/ui/misc";
 import type { SidebarSectionId } from "@/lib/navigation-prefs";
@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { useApp } from "./app-provider";
 import { ProjectSwitcher } from "./project-switcher";
 import { SidebarDocuments, type GoogleSidebarState } from "./sidebar-documents";
-import { itemClass, SidebarContext, SidebarNavItem, SidebarSection } from "./sidebar-parts";
+import { itemClass, SidebarContext, SidebarNavItem } from "./sidebar-parts";
 import { UserMenu } from "./user-menu";
 
 /** Données de la barre latérale, chargées par le layout. */
@@ -27,7 +27,7 @@ export type SidebarData = {
 
 /**
  * Barre latérale unique, entièrement consacrée au projet sélectionné : sélecteur de projet tout
- * en haut, actions, tableau de bord et tâches du projet, ses documents, l'administration, puis
+ * en haut, actions, tableau de bord et tâches du projet, ses documents, puis
  * en bas ses paramètres et le compte.
  *
  * - `collapsed` : réduite aux icônes, avec info-bulles (ordinateur).
@@ -52,7 +52,7 @@ export function Sidebar({
   idPrefix: string;
 }) {
   const pathname = usePathname();
-  const { me, newTask, newProject, openSearch, currentProjectId } = useApp();
+  const { newTask, newProject, openSearch, currentProjectId } = useApp();
 
   const project = data.projects.find((p) => p.id === currentProjectId) ?? null;
   const base = project ? `/projets/${project.id}` : "";
@@ -173,12 +173,6 @@ export function Sidebar({
               files={data.files.filter((f) => f.projectId === project.id)}
               google={data.google}
             />
-          )}
-
-          {me.role === "admin" && (
-            <SidebarSection id="administration" title="Administration">
-              <SidebarNavItem href="/membres" icon={Users} label="Membres" active={pathname.startsWith("/membres")} />
-            </SidebarSection>
           )}
         </div>
 

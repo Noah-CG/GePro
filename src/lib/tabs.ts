@@ -27,7 +27,6 @@ export type TabKind =
   | "pdf"
   | "settings"
   | "discord"
-  | "members"
   | "calendar"
   | "time"
   | "screens"
@@ -44,7 +43,6 @@ const KINDS: [RegExp, TabKind][] = [
   [new RegExp(`^/projets/${UUID}/documents/pdf/${UUID}$`, "i"), "pdf"],
   [new RegExp(`^/projets/${UUID}/parametres$`, "i"), "settings"],
   [new RegExp(`^/projets/${UUID}/discord$`, "i"), "discord"],
-  [/^\/membres$/, "members"],
   [/^\/calendrier$/, "calendar"],
   [/^\/temps$/, "time"],
   [/^\/ecrans$/, "screens"],
@@ -65,7 +63,6 @@ const DEFAULT_TITLES: Record<TabKind, string> = {
   pdf: "PDF",
   settings: "Paramètres",
   discord: "Discord",
-  members: "Membres",
   calendar: "Calendrier",
   time: "Temps de travail",
   screens: "Multi-écran",

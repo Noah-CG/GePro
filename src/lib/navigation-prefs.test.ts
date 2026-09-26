@@ -3,24 +3,22 @@ import { parseCollapsedSections, serializeCollapsedSections } from "./navigation
 
 describe("sections repliées de la barre latérale", () => {
   it("lit la liste mémorisée", () => {
-    expect(parseCollapsedSections("documents.administration")).toEqual(["documents", "administration"]);
+    expect(parseCollapsedSections("documents")).toEqual(["documents"]);
   });
 
   it("ignore l'absence de cookie, les doublons et les valeurs inconnues", () => {
     expect(parseCollapsedSections(undefined)).toEqual([]);
     expect(parseCollapsedSections("")).toEqual([]);
-    expect(parseCollapsedSections("documents.documents.<script>.projet.administration")).toEqual(["documents", "administration"]);
+    // « administration » : ancienne section (gestion des membres, déplacée dans les paramètres).
+    expect(parseCollapsedSections("documents.documents.<script>.projet.administration")).toEqual(["documents"]);
   });
 
   it("sérialise sans doublon, et supprime le cookie quand plus rien n'est replié", () => {
-    expect(serializeCollapsedSections(["administration", "documents", "administration"])).toBe("administration.documents");
+    expect(serializeCollapsedSections(["documents", "documents"])).toBe("documents");
     expect(serializeCollapsedSections([])).toBeNull();
   });
 
   it("aller-retour", () => {
-    expect(parseCollapsedSections(serializeCollapsedSections(["administration", "documents"]) ?? undefined)).toEqual([
-      "administration",
-      "documents",
-    ]);
+    expect(parseCollapsedSections(serializeCollapsedSections(["documents"]) ?? undefined)).toEqual(["documents"]);
   });
 });

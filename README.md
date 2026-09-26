@@ -35,7 +35,7 @@ Connexion : **camille@exemple.fr / demo1234** (administratrice). Les 5 autres me
    npm run db:seed                  # option A : données de démo
    npm run user:create -- --name "Votre Nom" --email vous@societe.fr --password "motdepasse" --admin   # option B : base vide
    ```
-5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**).
+5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**, qui mène à la section **Membres de l'équipe** des paramètres du projet).
 
 ### Déploiement sur Vercel
 
@@ -241,7 +241,7 @@ Règles :
 
 GePro affiche **un projet à la fois** : la barre latérale, le tableau de bord, les tâches et la recherche (`Ctrl/⌘ + K`) ne montrent que le projet sélectionné. On en change avec le **sélecteur tout en haut de la barre latérale** (liste filtrable au clavier, « Nouveau projet », « Tous les projets »). Ouvrir la page d'un projet le sélectionne aussi. Le choix est mémorisé dans le cookie `gepro_projet` (préférence d'affichage, sans lien avec la session).
 
-Seules restent communes à tous les projets : la liste **Tous les projets** (pour les gérer, archiver…) et la gestion des **membres**. L'ancienne adresse `/taches` renvoie vers les tâches du projet sélectionné, filtres compris.
+Seules restent communes à tous les projets : la liste **Tous les projets** (pour les gérer, archiver…) et la gestion des **membres** (comptes de l'équipe), rangée dans les paramètres de chaque projet par commodité. L'ancienne adresse `/taches` renvoie vers les tâches du projet sélectionné, filtres compris.
 
 ### Barre latérale
 
@@ -251,8 +251,7 @@ De haut en bas :
 - **Nouvelle tâche** et **Rechercher** ;
 - **Tableau de bord**, **Tâches** (avec le nombre de tâches ouvertes) et **Calendrier** du projet, **Temps de travail** (pastille verte quand votre chrono tourne), puis **Multi-écran** (jusqu'à 4 vidéos YouTube côte à côte) ;
 - **Documents** : les Google Docs et les PDF du projet, le **+** pour importer un PDF ou lier un Google Doc, et un lien vers la page de gestion ;
-- **Administration** (admin) : membres ;
-- tout en bas, **Paramètres du projet** et le menu du compte (thème, mot de passe, déconnexion).
+- tout en bas, **Paramètres du projet** (intégrations et, pour un administrateur, membres de l'équipe) et le menu du compte (thème, mot de passe, déconnexion).
 
 Le bouton à côté du sélecteur **réduit la barre** aux icônes (avec info-bulles, au survol comme au clavier). Les sections se replient d'un clic sur leur titre. Ces choix sont mémorisés dans les cookies `gepro_sidebar_reduite` et `gepro_sections_repliees`. Sur mobile, la barre s'ouvre en tiroir depuis le bouton ☰ de l'en-tête.
 
@@ -331,7 +330,7 @@ src/
 │       ├── calendrier/       Calendrier du projet sélectionné (vues Mois / Semaine)
 │       ├── temps/            Temps de travail : chrono, journal de bord corrigeable, temps de l'équipe
 │       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres, [id]/discord = salon Discord en onglet
-│       └── membres/          Gestion des comptes (admin)
+│       └── membres/          Fiche d'un membre ([id]) ; /membres redirige vers les paramètres du projet (#membres)
 │   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur), projects/[id]/discord/ (salon Discord : status, messages, read)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/
