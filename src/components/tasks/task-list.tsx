@@ -155,6 +155,9 @@ type ListSort = Sort | null;
  *
  * `tasks` : tâches retenues par les filtres ; `allTasks` : toutes les tâches, pour afficher
  * (grisés) les ancêtres d'une sous-tâche trouvée et vérifier les règles de l'arbre.
+ *
+ * TODO(arbre des tâches) : réordonner les tâches sœurs et déplacer une branche par
+ * glisser-déposer (le déposer-sur-une-ligne actuel ne fait que changer de parente, en fin de liste).
  */
 export function TaskList({ tasks, allTasks = tasks, showProject = true }: { tasks: TaskView[]; allTasks?: TaskView[]; showProject?: boolean }) {
   const { me, toast } = useApp();
