@@ -86,8 +86,8 @@ const timestamps = {
 
 /**
  * Comptes : créés par inscription (/inscription) ou par un administrateur, utilisables tout de
- * suite (pas de vérification d'email). Email et nom d'utilisateur sont uniques sans tenir compte
- * de la casse (index sur lower()).
+ * suite (pas de vérification d'email). L'email, qui sert à se connecter, est unique sans tenir
+ * compte de la casse (index sur lower()).
  */
 export const users = pgTable(
   "users",
@@ -109,19 +109,10 @@ export const users = pgTable(
     role: userRole("role").notNull().default("member"),
     /** Couleur de l'avatar (pastille avec initiales). */
     color: text("color").notNull().default("#6366f1"),
-    /**
-     * Nom d'utilisateur (3 à 30 caractères : lettres, chiffres, _ et -), pour se connecter et être
-     * invité. Nullable pour la migration : les comptes existants en reçoivent un proposé.
-     */
-    username: text("username"),
-    /** Nul tant que le compte n'a pas choisi (ou confirmé) son nom d'utilisateur. */
-    usernameConfirmedAt: timestamp("username_confirmed_at", { withTimezone: true }),
     ...timestamps,
   },
   (t) => [
     uniqueIndex("users_email_lower_uq").on(sql`lower(${t.email})`),
-    uniqueIndex("users_username_lower_uq").on(sql`lower(${t.username})`),
-    check("users_username_format", sql`${t.username} ~ '^[A-Za-z0-9_-]{3,30}$'`),
   ],
 );
 
@@ -193,8 +184,7 @@ export const projectMembers = pgTable(
 );
 
 /**
- * Invitation à rejoindre un projet, pour un email exact ou un compte précis (nom d'utilisateur
- * exact) : l'un ou l'autre, jamais les deux. Le jeton n'est montré qu'une fois (lien à
+ * Invitation à rejoindre un projet, pour un email exact. Le jeton n'est montré qu'une fois (lien à
  * transmettre) ; la base n'en garde que le hash SHA-256, comme pour les sessions. Accepter
  * n'ajoute qu'à ce projet, et seulement le compte visé.
  */
@@ -205,10 +195,8 @@ export const projectInvitations = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    /** Toujours en minuscules. Nul pour une invitation par nom d'utilisateur. */
-    email: text("email"),
-    /** Compte invité par son nom d'utilisateur. Nul pour une invitation par email. */
-    invitedUserId: uuid("invited_user_id").references(() => users.id, { onDelete: "cascade" }),
+    /** Toujours en minuscules. */
+    email: text("email").notNull(),
     role: projectRole("role").notNull().default("member"),
     tokenHash: text("token_hash").notNull().unique(),
     status: invitationStatus("status").notNull().default("pending"),
@@ -221,10 +209,7 @@ export const projectInvitations = pgTable(
     index("project_invitations_project_idx").on(t.projectId),
     index("project_invitations_email_idx").on(t.email),
     uniqueIndex("project_invitations_pending_uq").on(t.projectId, t.email).where(sql`${t.status} = 'pending'`),
-    index("project_invitations_invited_user_idx").on(t.invitedUserId),
-    uniqueIndex("project_invitations_pending_user_uq").on(t.projectId, t.invitedUserId).where(sql`${t.status} = 'pending'`),
     check("project_invitations_not_owner", sql`${t.role} <> 'owner'`),
-    check("project_invitations_one_target", sql`(${t.email} is null) <> (${t.invitedUserId} is null)`),
   ],
 );
 

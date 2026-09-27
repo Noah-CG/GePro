@@ -16,7 +16,7 @@ npm run db:setup      # crée les tables + charge les données de démo
 npm run dev           # http://localhost:3000
 ```
 
-Connexion : **camille@exemple.fr / demo1234** (administratrice, propriétaire des projets de démo ; ou son nom d'utilisateur **camille-martin**). Les 5 autres membres de démo ont le même mot de passe et ne voient que les projets dont ils sont membres.
+Connexion : **camille@exemple.fr / demo1234** (administratrice, propriétaire des projets de démo). Les 5 autres membres de démo ont le même mot de passe et ne voient que les projets dont ils sont membres.
 
 > La base locale n'accepte qu'un seul processus à la fois : arrêtez `npm run dev` avant de lancer un script `db:*`.
 
@@ -64,29 +64,26 @@ Retour arrière, après avoir redéployé le code d'avant l'isolation : `npm run
 
 ### Mettre à jour une base existante : comptes utilisateurs (migration 0013)
 
-La migration `0013_comptes_utilisateurs` ajoute l'inscription, le prénom et le nom séparés, les noms d'utilisateur, les invitations par nom d'utilisateur et par lien, et la limitation des tentatives de connexion. **Ajouts uniquement** : aucun compte n'est supprimé ni recréé (mêmes id, emails et mots de passe ; toutes les données restent rattachées) et les sessions ouvertes restent valables. Chaque compte existant reçoit :
-
-- un **nom d'utilisateur proposé** (tiré du nom, sinon de l'email, avec un suffixe -2, -3… en cas de collision), qu'il confirme ou modifie à sa prochaine connexion (bandeau en haut de page) ;
-- un **prénom** et un **nom** (`first_name`, `last_name`), découpés sur le premier espace de son nom actuel (un seul mot : prénom seul, nom vide). `users.name` devient une colonne calculée par Postgres (« Prénom Nom ») : le nom affiché ne change pas. La migration s'arrête si un nom ne se découpe pas proprement (espace en tête, en fin ou doublé) et les liste ; l'aperçu les montre avant.
+La migration `0013_comptes_utilisateurs` ajoute l'inscription, le prénom et le nom séparés, les invitations par lien et la limitation des tentatives de connexion. **Ajouts uniquement** : aucun compte n'est supprimé ni recréé (mêmes id, emails et mots de passe ; toutes les données restent rattachées) et les sessions ouvertes restent valables. Chaque compte existant reçoit un **prénom** et un **nom** (`first_name`, `last_name`), découpés sur le premier espace de son nom actuel (un seul mot : prénom seul, nom vide). `users.name` devient une colonne calculée par Postgres (« Prénom Nom ») : le nom affiché ne change pas. La migration s'arrête si un nom ne se découpe pas proprement (espace en tête, en fin ou doublé) et les liste ; l'aperçu les montre avant.
 
 Un seul bloc SQL (tout ou rien, y compris sur Neon), rejouable sans effet. Elle **refuse de s'appliquer** si la migration 0012 manque, ou si deux comptes ont le même email à la casse près (ils sont listés). Avant de déployer :
 
 ```bash
 # 1. Sauvegarde : branche Neon + pg_dump (voir la procédure de sauvegarde)
-# 2. Aperçu, en lecture seule : doublons d'email, nom d'utilisateur proposé à chacun
+# 2. Aperçu, en lecture seule : doublons d'email, prénom et nom proposés à chacun
 npm run db:comptes-preview
 # 3. Migration (ou simplement déployer : Vercel la lance au build)
 npm run db:migrate
 ```
 
-Les nouvelles colonnes sont nullables : l'ancienne version (serveur Linux pas encore mis à jour, par exemple) continue de fonctionner sur la base migrée. Déployez ensuite **Vercel et le serveur Linux** dans la foulée ; aucune nouvelle variable d'environnement. Entre la migration et le déploiement, l'ancienne version fonctionne, sauf la création d'un compte par un administrateur (`users.name` n'est plus modifiable directement).
+Déployez ensuite **Vercel et le serveur Linux** dans la foulée ; aucune nouvelle variable d'environnement. Entre la migration et le déploiement, l'ancienne version (serveur Linux pas encore mis à jour, par exemple) fonctionne sur la base migrée, sauf la création d'un compte par un administrateur (`users.name` n'est plus modifiable directement).
 
-Retour arrière, après avoir redéployé le code d'avant les comptes (Vercel et serveur Linux) : `npm run db:comptes-rollback -- --confirm`. Aucun compte n'est supprimé et `users.name` garde sa valeur ; prénom et nom séparés, noms d'utilisateur, liens d'invitation et invitations par nom d'utilisateur sont perdus (les membres déjà entrés restent membres).
+Retour arrière, après avoir redéployé le code d'avant les comptes (Vercel et serveur Linux) : `npm run db:comptes-rollback -- --confirm`. Aucun compte n'est supprimé et `users.name` garde sa valeur ; prénom et nom séparés et liens d'invitation sont perdus (les membres déjà entrés restent membres).
 
 ## Comptes
 
-- **Inscription** (`/inscription`) : prénom et nom (obligatoires, stockés séparément ; le nom affiché partout est « Prénom Nom »), nom d'utilisateur (3 à 30 caractères : lettres, chiffres, `_`, `-` ; unique sans tenir compte de la casse ; noms réservés refusés ; disponibilité vérifiée pendant la saisie), email, mot de passe (10 caractères minimum, bcrypt coût 10 comme les comptes existants). **Aucune vérification d'email** : le compte est utilisable tout de suite, mais ne voit **aucun projet** tant qu'il n'est pas invité. Inscriptions limitées à 10 par heure et par adresse IP.
-- **Connexion** (`/connexion`, l'ancienne adresse `/login` y renvoie) : email **ou** nom d'utilisateur. Message unique « Identifiants incorrects », que le compte existe ou non. Tentatives limitées **par compte** (5 échecs, puis verrouillage de 30 s, 1 min, 2 min… jusqu'à 1 h) et **par adresse IP** (20 échecs) ; un identifiant inconnu est verrouillé de la même façon.
+- **Inscription** (`/inscription`) : prénom et nom (obligatoires, stockés séparément ; le nom affiché partout est « Prénom Nom », l'interface s'adresse à la personne par son prénom), email (unique sans tenir compte de la casse), mot de passe (10 caractères minimum, bcrypt coût 10 comme les comptes existants). **Aucune vérification d'email** : le compte est utilisable tout de suite, mais ne voit **aucun projet** tant qu'il n'est pas invité. Inscriptions limitées à 10 par heure et par adresse IP.
+- **Connexion** (`/connexion`, l'ancienne adresse `/login` y renvoie) : par **email** et mot de passe. Message unique « Identifiants incorrects », que le compte existe ou non. Tentatives limitées **par compte** (5 échecs, puis verrouillage de 30 s, 1 min, 2 min… jusqu'à 1 h) et **par adresse IP** (20 échecs) ; un email inconnu est verrouillé de la même façon.
 - **Mot de passe oublié** : pas de réinitialisation par email. Un administrateur de GePro réinitialise le mot de passe depuis `/membres` (ce qui ferme toutes les sessions du compte).
 - **Aucun email** n'est envoyé par GePro.
 - **Jetons** (invitations, liens) : aléatoires (32 octets), stockés **hachés** (SHA-256), avec expiration et usage limité.
@@ -230,7 +227,7 @@ Fonctionnement :
 | `npm run db:generate` | Génère une migration SQL après modification de `src/db/schema.ts` |
 | `npm run db:migrate` | Applique les migrations (Neon ou base locale) |
 | `npm run db:seed [-- --reset]` | Charge la démo (`--reset` efface d'abord **toutes** les données) |
-| `npm run user:create -- …` | Crée un compte en ligne de commande (nom d'utilisateur proposé) |
+| `npm run user:create -- …` | Crée un compte en ligne de commande |
 | `npm run db:comptes-preview` | Aperçu de la migration 0013 (lecture seule) |
 | `npm run db:comptes-rollback -- --confirm` | Retour arrière de la migration 0013 |
 
@@ -301,8 +298,7 @@ Chaque projet est **étanche** : on ne voit, ne lit et ne modifie que les projet
 - **Créer un projet** : il est vierge (aucune tâche, aucun événement, aucun document, aucune intégration) et son créateur en est le **propriétaire** et le seul membre.
 - **Rôles** : le **propriétaire** a tous les droits, dont transmettre la propriété et supprimer le projet ; un **administrateur** invite et retire des membres, change les rôles et règle le projet (nom, archivage, salon Discord) ; un **membre** travaille sur le contenu (tâches, calendrier, documents, fichiers, temps).
 - **Inviter** (paramètres du projet → **Membres**), sans aucune recherche ni liste parmi les comptes de l'application :
-  - par **email exact** : GePro affiche une seule fois un lien à transmettre (7 jours) ; l'invitation apparaît aussi dans la page **Projets** de la personne. Seul le compte qui a cet email peut l'accepter ;
-  - par **nom d'utilisateur exact** (casse indifférente) : la personne voit l'invitation dans GePro (entrée **Invitations** avec badge dans la barre latérale, page **Projets**) ;
+  - par **email exact** : GePro affiche une seule fois un lien à transmettre (7 jours) ; l'invitation apparaît aussi dans GePro (entrée **Invitations** avec badge dans la barre latérale, page **Projets**). Seul le compte qui a cet email peut l'accepter ;
   - par **lien ouvert** : lié à aucun email, il fait entrer quiconque le possède, **toujours comme simple membre** (jamais administrateur). Durée au choix (7 jours par défaut, 30 au plus), usage unique, limité ou illimité, **révocable** à tout moment. Sans compte, on passe par l'inscription (le lien est repris) ; connecté, on rejoint après confirmation. Les paramètres du projet journalisent la création de chaque lien et chaque personne entrée.
   Accepter n'ajoute qu'à ce projet.
 - **Quitter / retirer** : tout membre peut quitter un projet, sauf le propriétaire (qui doit d'abord transmettre la propriété). Un membre retiré perd l'accès ; ce qu'il a créé reste dans le projet.

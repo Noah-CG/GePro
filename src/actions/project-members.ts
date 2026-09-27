@@ -2,7 +2,7 @@
 
 /**
  * Membres d'un projet et invitations. On n'entre dans un projet que sur invitation : pour un email
- * exact, pour un nom d'utilisateur exact, ou par un lien ouvert (rôle membre seulement).
+ * exact, ou par un lien ouvert (rôle membre seulement).
  * Aucune recherche ni liste parmi les comptes de l'application ; accepter n'ajoute qu'à ce projet.
  *
  * - inviter, créer ou révoquer un lien, retirer un membre, changer un rôle : propriétaire et
@@ -10,7 +10,7 @@
  * - transférer la propriété : propriétaire ;
  * - quitter le projet : tout membre sauf le propriétaire.
  */
-import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { db } from "@/db";
 import {
@@ -27,17 +27,15 @@ import { atLeast, authorizeProject, getProjectRole } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { scheduleReconcile } from "@/lib/integrations/calendar-sync";
 import { hashInvitationToken, INVITATION_DAYS, newInvitationToken } from "@/lib/invitations";
-import { isInvitationFor, type Invitee } from "@/lib/queries";
+import { invitationForUser, isInvitationFor, type Invitee } from "@/lib/queries";
 import {
   firstError,
   invitationInput,
   inviteLinkInput,
   isUuid,
   memberRoleInput,
-  usernameInvitationInput,
   type InvitationInput,
   type InviteLinkInput,
-  type UsernameInvitationInput,
 } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -83,49 +81,6 @@ export async function inviteMember(projectId: string, input: InvitationInput): P
   });
   refresh();
   return ok({ path: `/invitations/${token}` });
-}
-
-/**
- * Invite un compte désigné par son nom d'utilisateur exact (casse indifférente) : aucune recherche
- * ni liste des comptes. La personne voit l'invitation dans GePro (page Projets, entrée
- * « Invitations » de la barre latérale) ; aucun email n'est envoyé.
- */
-export async function inviteByUsername(
-  projectId: string,
-  input: UsernameInvitationInput,
-): Promise<ActionResult<{ name: string }>> {
-  const auth = await authorizeProject(projectId, "admin");
-  if (!auth.ok) return fail(auth.error);
-  const parsed = usernameInvitationInput.safeParse(input);
-  if (!parsed.success) return fail(firstError(parsed.error));
-  const { username, role } = parsed.data;
-
-  const [invitee] = await db
-    .select({ id: users.id, name: users.name, email: users.email })
-    .from(users)
-    .where(sql`lower(${users.username}) = ${username.toLowerCase()}`)
-    .limit(1);
-  if (!invitee) return fail("Aucun compte avec ce nom d'utilisateur.");
-  if (await getProjectRole(invitee.id, projectId)) return fail("Cette personne est déjà membre du projet.");
-
-  await db
-    .update(projectInvitations)
-    .set({ status: "revoked" })
-    .where(
-      and(eq(projectInvitations.projectId, projectId), eq(projectInvitations.invitedUserId, invitee.id), eq(projectInvitations.status, "pending")),
-    );
-  const token = newInvitationToken();
-  await db.insert(projectInvitations).values({
-    projectId,
-    invitedUserId: invitee.id,
-    role,
-    tokenHash: hashInvitationToken(token),
-    invitedBy: auth.access.user.id,
-    expiresAt: new Date(Date.now() + INVITATION_DAYS * 86_400_000),
-  });
-  refresh();
-
-  return ok({ name: invitee.name });
 }
 
 /**
@@ -232,8 +187,8 @@ export async function revokeInvitation(invitationId: string): Promise<ActionResu
 }
 
 /**
- * Invitation en attente et valable, désignée par son lien ou son id, adressée au compte connecté :
- * par son nom d'utilisateur, ou par son email exact.
+ * Invitation en attente et valable, désignée par son lien ou son id, adressée à l'email exact du
+ * compte connecté.
  */
 async function findMyInvitation(ref: { token: string } | { id: string }, me: Invitee) {
   if ("id" in ref && !isUuid(ref.id)) return null;
@@ -243,7 +198,6 @@ async function findMyInvitation(ref: { token: string } | { id: string }, me: Inv
       projectId: projectInvitations.projectId,
       role: projectInvitations.role,
       email: projectInvitations.email,
-      invitedUserId: projectInvitations.invitedUserId,
     })
     .from(projectInvitations)
     .where(
@@ -252,7 +206,7 @@ async function findMyInvitation(ref: { token: string } | { id: string }, me: Inv
         eq(projectInvitations.status, "pending"),
         gt(projectInvitations.expiresAt, new Date()),
         // Seul le compte visé peut l'accepter, même avec le lien.
-        or(eq(projectInvitations.invitedUserId, me.id), eq(projectInvitations.email, me.email.toLowerCase())),
+        invitationForUser(me),
       ),
     );
   return invitation && isInvitationFor(invitation, me) ? invitation : null;

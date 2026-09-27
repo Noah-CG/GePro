@@ -14,17 +14,8 @@ export function LoginForm({ next }: { next: string }) {
     <form action={action}>
       <AuthCard>
         <input type="hidden" name="suite" value={next} />
-        <Field label="Email ou nom d'utilisateur" htmlFor="identifier">
-          <Input
-            id="identifier"
-            name="identifier"
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            autoFocus
-            required
-            defaultValue={state.identifier}
-          />
+        <Field label="Email" htmlFor="email">
+          <Input id="email" name="email" type="email" autoComplete="email" autoFocus required defaultValue={state.email} />
         </Field>
         <Field
           label="Mot de passe"

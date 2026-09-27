@@ -26,14 +26,11 @@ export async function resetDb(db: Db) {
 
 let counter = 0;
 
-/**
- * Compte de test, comme un compte existant (créé par un administrateur) : nom d'utilisateur
- * confirmé.
- */
+/** Compte de test, comme un compte existant (créé par un administrateur). */
 export async function insertUser(
   db: Db,
   name = "Camille Martin",
-  options: { passwordHash?: string; username?: string } = {},
+  options: { passwordHash?: string } = {},
 ) {
   const n = ++counter;
   const [user] = await db
@@ -42,8 +39,6 @@ export async function insertUser(
       ...splitName(name),
       email: `user${n}@exemple.fr`,
       passwordHash: options.passwordHash ?? "x",
-      username: options.username ?? `user${n}`,
-      usernameConfirmedAt: new Date(),
     })
     .returning();
   return user;

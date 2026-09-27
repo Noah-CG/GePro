@@ -1,5 +1,5 @@
 {
-  "id": "01bfcd18-6e78-4bbc-a122-708e33e0b0de",
+  "id": "9e99ad02-6379-4462-a088-a38f1adb66d0",
   "prevId": "0c40516d-c616-4f82-8b6c-7eb54a0febd0",
   "version": "7",
   "dialect": "postgresql",
@@ -1047,13 +1047,7 @@
           "name": "email",
           "type": "text",
           "primaryKey": false,
-          "notNull": false
-        },
-        "invited_user_id": {
-          "name": "invited_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "role": {
           "name": "role",
@@ -1155,43 +1149,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "project_invitations_invited_user_idx": {
-          "name": "project_invitations_invited_user_idx",
-          "columns": [
-            {
-              "expression": "invited_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "project_invitations_pending_user_uq": {
-          "name": "project_invitations_pending_user_uq",
-          "columns": [
-            {
-              "expression": "project_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "invited_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"project_invitations\".\"status\" = 'pending'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -1201,19 +1158,6 @@
           "tableTo": "projects",
           "columnsFrom": [
             "project_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "project_invitations_invited_user_id_users_id_fk": {
-          "name": "project_invitations_invited_user_id_users_id_fk",
-          "tableFrom": "project_invitations",
-          "tableTo": "users",
-          "columnsFrom": [
-            "invited_user_id"
           ],
           "columnsTo": [
             "id"
@@ -1250,10 +1194,6 @@
         "project_invitations_not_owner": {
           "name": "project_invitations_not_owner",
           "value": "\"project_invitations\".\"role\" <> 'owner'"
-        },
-        "project_invitations_one_target": {
-          "name": "project_invitations_one_target",
-          "value": "(\"project_invitations\".\"email\" is null) <> (\"project_invitations\".\"invited_user_id\" is null)"
         }
       },
       "isRLSEnabled": false
@@ -2333,18 +2273,6 @@
           "notNull": true,
           "default": "'#6366f1'"
         },
-        "username": {
-          "name": "username",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "username_confirmed_at": {
-          "name": "username_confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2375,21 +2303,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "users_username_lower_uq": {
-          "name": "users_username_lower_uq",
-          "columns": [
-            {
-              "expression": "lower(\"username\")",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {},
@@ -2404,12 +2317,7 @@
         }
       },
       "policies": {},
-      "checkConstraints": {
-        "users_username_format": {
-          "name": "users_username_format",
-          "value": "\"users\".\"username\" ~ '^[A-Za-z0-9_-]{3,30}$'"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.work_sessions": {

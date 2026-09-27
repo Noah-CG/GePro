@@ -22,8 +22,6 @@ export const LOGIN_ACCOUNT: ThrottlePolicy = { free: 5, baseSeconds: 30, maxSeco
 export const LOGIN_IP: ThrottlePolicy = { free: 20, baseSeconds: 60, maxSeconds: 3600, resetSeconds: 86_400 };
 /** Inscriptions, par IP : 10 par heure. */
 export const SIGNUP_IP: ThrottlePolicy = { free: 10, baseSeconds: 600, maxSeconds: 3600, resetSeconds: 3600 };
-/** Vérification de disponibilité d'un nom d'utilisateur, par IP. */
-export const USERNAME_CHECK_IP: ThrottlePolicy = { free: 120, baseSeconds: 60, maxSeconds: 900, resetSeconds: 3600 };
 
 /** Adresse IP du client (première de X-Forwarded-For, posé par Vercel ou le proxy du serveur). */
 export async function clientIp(): Promise<string> {

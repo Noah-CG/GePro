@@ -8,7 +8,6 @@ import { isDiscordConfigured } from "@/lib/discord/client";
 import { getDiscordChannelViews } from "@/lib/discord/service";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { COLLAPSED_SECTIONS_COOKIE, parseCollapsedSections, SIDEBAR_COLLAPSED_COOKIE } from "@/lib/navigation-prefs";
-import { AccountBanners } from "@/components/account/account-banners";
 import {
   getConnectionView,
   getFileLinks,
@@ -63,7 +62,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AppProvider me={me} team={team} projects={projects} today={today} selectedProjectId={selectedProjectId}>
       <AppShell sidebar={sidebar} prefs={prefs} discord={{ configured: discordConfigured, channels: discordChannels }}>
-        <AccountBanners />
         {children}
       </AppShell>
     </AppProvider>

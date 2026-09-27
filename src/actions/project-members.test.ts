@@ -10,7 +10,6 @@ import {
   acceptInvitation,
   createInviteLink,
   declineInvitation,
-  inviteByUsername,
   inviteMember,
   joinWithInviteLink,
   revokeInviteLink,
@@ -215,50 +214,6 @@ describe("invitation par email, sans vérification d'adresse", () => {
     actAs(other);
     expect(await acceptInvitation({ id: pending.id })).toEqual({ ok: true, data: { projectId } });
     expect((await roles())[other.id]).toBe("member");
-  });
-});
-
-describe("invitation par nom d'utilisateur", () => {
-  const byUsername = async (username: string, role: "admin" | "member" = "member", as = owner) => {
-    actAs(as);
-    return inviteByUsername(projectId, { username, role });
-  };
-
-  it("vise un compte existant par son nom exact (casse indifférente), visible dans l'application", async () => {
-    expect(await byUsername(outsider.username!.toUpperCase(), "admin")).toEqual({ ok: true, data: { name: outsider.name } });
-
-    const [invitation] = await db.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId));
-    expect(invitation).toMatchObject({ email: null, invitedUserId: outsider.id, role: "admin", status: "pending" });
-    expect(await getReceivedInvitations(outsider)).toMatchObject([{ id: invitation.id, projectId, role: "admin" }]);
-
-    // Personne d'autre ne peut l'accepter.
-    actAs(member);
-    expect(await acceptInvitation({ id: invitation.id })).toMatchObject({ ok: false });
-
-    actAs(outsider);
-    expect(await acceptInvitation({ id: invitation.id })).toEqual({ ok: true, data: { projectId } });
-    expect((await roles())[outsider.id]).toBe("admin");
-  });
-
-  it("peut être refusée", async () => {
-    await byUsername(outsider.username!);
-    const [invitation] = await db.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId));
-    actAs(outsider);
-    expect(await declineInvitation({ id: invitation.id })).toEqual({ ok: true, data: undefined });
-    expect(await getReceivedInvitations(outsider)).toEqual([]);
-    expect((await roles())[outsider.id]).toBeUndefined();
-  });
-
-  it("refuse un nom inconnu (pas de recherche approchée), un membre ou un non-gestionnaire", async () => {
-    expect(await byUsername(outsider.username!.slice(0, -1))).toEqual({ ok: false, error: "Aucun compte avec ce nom d'utilisateur." });
-    expect(await byUsername(member.username!)).toEqual({ ok: false, error: "Cette personne est déjà membre du projet." });
-    expect(await byUsername(outsider.username!, "member", member)).toMatchObject({ ok: false });
-    expect(await db.select().from(projectInvitations)).toEqual([]);
-  });
-
-  it("apparaît dans les invitations en attente du projet, avec le nom d'utilisateur", async () => {
-    await byUsername(outsider.username!);
-    expect(await getPendingInvitations(projectId)).toMatchObject([{ email: null, username: outsider.username }]);
   });
 });
 

@@ -9,7 +9,6 @@ import { db } from "../src/db";
 import { users } from "../src/db/schema";
 import { COLORS } from "../src/lib/constants";
 import { hashPassword } from "../src/lib/password";
-import { suggestUsername } from "../src/lib/usernames";
 import { memberInput } from "../src/lib/validation";
 
 function arg(name: string) {
@@ -38,17 +37,13 @@ async function main() {
     process.exit(1);
   }
 
-  const all = await db.select({ username: users.username }).from(users);
-  const taken = new Set(all.map((u) => u.username?.toLowerCase()));
-  // Nom d'utilisateur proposé, à confirmer à la première connexion.
-  const username = await suggestUsername(`${data.firstName} ${data.lastName}`, data.email, (c) => taken.has(c.toLowerCase()));
+  const all = await db.select({ id: users.id }).from(users);
   await db.insert(users).values({
     ...data,
     passwordHash: await hashPassword(password),
     color: COLORS[all.length % COLORS.length],
-    username,
   });
-  console.log(`✔ Compte ${data.role === "admin" ? "administrateur " : ""}créé : ${data.email} (nom d'utilisateur : ${username})`);
+  console.log(`✔ Compte ${data.role === "admin" ? "administrateur " : ""}créé : ${data.email}`);
 }
 
 main()

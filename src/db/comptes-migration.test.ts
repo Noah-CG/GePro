@@ -1,7 +1,7 @@
 /**
  * Migration 0013_comptes_utilisateurs sur des données d'avant les comptes : aucun compte ni donnée
- * perdus ou recréés (mêmes id, emails, mots de passe), noms d'utilisateur proposés sans collision ;
- * rejouable, refusée en cas de doublons d'email ou d'ancienne version, réversible.
+ * perdus ou recréés (mêmes id, emails, mots de passe), prénom et nom découpés sans perte ; rejouable,
+ * refusée en cas de doublons d'email ou d'ancienne version, réversible.
  */
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -11,11 +11,10 @@ import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { splitName } from "@/lib/names";
-import { RESERVED_USERNAMES, suggestUsername } from "@/lib/usernames";
 
 const MIGRATION = readFileSync("drizzle/0013_comptes_utilisateurs.sql", "utf8");
 const ROLLBACK = readFileSync("scripts/rollback/0013_comptes_utilisateurs.sql", "utf8");
-const JOURNAL_WHEN = 1790501594117;
+const JOURNAL_WHEN = 1790509505463;
 
 const folders: string[] = [];
 
@@ -159,32 +158,6 @@ describe("migration 0013_comptes_utilisateurs", () => {
     expect(n).toBe(0);
   });
 
-  it("propose un nom d'utilisateur à chacun : sans collision, sans nom réservé, comme suggestUsername", async () => {
-    const users = await rows<{ id: string; username: string; username_confirmed_at: Date | null }>(
-      client,
-      "select id, username, username_confirmed_at from users order by created_at, id",
-    );
-    expect(Object.fromEntries(users.map((u) => [u.id, u.username]))).toEqual({
-      [ids.camille]: "camille-martin",
-      [ids.camille2]: "camille-martin-2",
-      [ids.emilie]: "emilie-loeuvre-ca",
-      [ids.jo]: "jo-smith",
-      [ids.admin]: "admin-2",
-      [ids.symbols]: "membre",
-      [ids.long]: "marie-charlotte-de-la-rochefou",
-    });
-    // À confirmer (ou modifier) à la première connexion.
-    expect(users.every((u) => u.username_confirmed_at === null)).toBe(true);
-
-    // Mêmes règles que l'application (comptes créés par un administrateur).
-    const taken = new Set<string>();
-    for (const u of EXISTING) {
-      const s = await suggestUsername(u.name, u.email, (c) => taken.has(c.toLowerCase()));
-      taken.add(s);
-      expect(s).toBe(users.find((x) => x.id === u.id)!.username);
-    }
-  });
-
   it("sépare prénom et nom sur le premier espace ; le nom affiché (users.name) reste identique", async () => {
     const users = await rows<{ id: string; first_name: string; last_name: string; name: string }>(
       client,
@@ -211,31 +184,25 @@ describe("migration 0013_comptes_utilisateurs", () => {
     await expect(client.exec(`update users set name = 'X' where id = '${ids.jo}'`)).rejects.toThrow(/name/);
   });
 
-  it("impose l'unicité sans tenir compte de la casse, et le format du nom d'utilisateur", async () => {
+  it("impose l'unicité de l'email sans tenir compte de la casse", async () => {
     await expect(client.exec(`update users set email = 'CAMILLE@exemple.fr' where id = '${ids.camille2}'`)).rejects.toThrow(/users_email_lower_uq/);
-    await expect(client.exec(`update users set username = 'CAMILLE-MARTIN' where id = '${ids.camille2}'`)).rejects.toThrow(/users_username_lower_uq/);
-    await expect(client.exec(`update users set username = 'a b' where id = '${ids.camille2}'`)).rejects.toThrow(/users_username_format/);
   });
 
-  it("invitation : email ou compte, jamais les deux, jamais aucun", async () => {
-    const insert = (email: string, user: string) =>
-      client.exec(`insert into project_invitations (project_id, email, invited_user_id, token_hash, expires_at)
-                   values ('${ids.site}', ${email}, ${user}, md5(random()::text), now() + interval '1 day')`);
-    await expect(insert("'a@exemple.fr'", `'${ids.jo}'`)).rejects.toThrow(/project_invitations_one_target/);
-    await expect(insert("null", "null")).rejects.toThrow(/project_invitations_one_target/);
-    await insert("null", `'${ids.jo}'`);
-    await client.exec("delete from project_invitations where invited_user_id is not null");
+  it("n'ajoute pas de nom d'utilisateur ; les invitations restent par email (obligatoire)", async () => {
+    const [{ n }] = await rows<{ n: number }>(
+      client,
+      "select count(*)::int as n from information_schema.columns where (table_name = 'users' and column_name like 'username%') or (table_name = 'project_invitations' and column_name = 'invited_user_id')",
+    );
+    expect(n).toBe(0);
+    await expect(
+      client.exec(`insert into project_invitations (project_id, email, token_hash, expires_at) values ('${ids.site}', null, 'sans-email', now() + interval '1 day')`),
+    ).rejects.toThrow(/email/);
   });
 
   it("est rejouable sans effet", async () => {
-    const snapshot = await rows(client, "select id, username, username_confirmed_at from users order by id");
+    const snapshot = await rows(client, "select id, first_name, last_name, name from users order by id");
     await client.exec(MIGRATION);
-    expect(await rows(client, "select id, username, username_confirmed_at from users order by id")).toEqual(snapshot);
-  });
-
-  it("utilise la même liste de noms réservés que l'application", () => {
-    const sqlList = /reserved text\[\] := ARRAY\[([\s\S]*?)\];/.exec(MIGRATION)![1].match(/'([^']+)'/g)!.map((s) => s.slice(1, -1));
-    expect(sqlList).toEqual([...RESERVED_USERNAMES]);
+    expect(await rows(client, "select id, first_name, last_name, name from users order by id")).toEqual(snapshot);
   });
 });
 
@@ -244,7 +211,7 @@ describe("migration 0013 : garde-fous", () => {
     const db = await databaseBeforeAccounts();
     await db.exec(`insert into users (name, email, password_hash) values ('Jean ', 'jean@exemple.fr', 'x'), ('Léa  Dubois', 'lea@exemple.fr', 'x')`);
     await expect(db.exec(MIGRATION)).rejects.toThrow(/noms impossibles à découper.*jean@exemple.fr.*lea@exemple.fr/);
-    const [{ n }] = await rows<{ n: number }>(db, "select count(*)::int as n from information_schema.columns where table_name = 'users' and column_name in ('username', 'first_name')");
+    const [{ n }] = await rows<{ n: number }>(db, "select count(*)::int as n from information_schema.columns where table_name = 'users' and column_name = 'first_name'");
     expect(n).toBe(0);
     expect(await rows(db, "select name from users order by email")).toEqual([{ name: "Jean " }, { name: "Léa  Dubois" }]);
     await db.close();
@@ -254,7 +221,7 @@ describe("migration 0013 : garde-fous", () => {
     const db = await databaseBeforeAccounts();
     await db.exec(`insert into users (name, email, password_hash) values ('A', 'Double@exemple.fr', 'x'), ('B', 'double@exemple.fr', 'x')`);
     await expect(db.exec(MIGRATION)).rejects.toThrow(/emails en double.*Double@exemple\.fr, double@exemple\.fr/);
-    const [{ n }] = await rows<{ n: number }>(db, "select count(*)::int as n from information_schema.columns where table_name = 'users' and column_name = 'username'");
+    const [{ n }] = await rows<{ n: number }>(db, "select count(*)::int as n from information_schema.columns where table_name = 'users' and column_name = 'first_name'");
     expect(n).toBe(0);
     expect(await rows(db, "select to_regclass('public.auth_throttle') as t")).toEqual([{ t: null }]);
     await db.close();
@@ -268,16 +235,15 @@ describe("retour arrière de la migration 0013", () => {
     const initial = await fingerprint(db);
     await db.exec(MIGRATION);
     await db.exec(`insert into drizzle.__drizzle_migrations (hash, created_at) values ('0013', ${JOURNAL_WHEN})`);
-    // Données créées après la mise en production : un compte inscrit, une invitation par nom d'utilisateur.
+    // Données créées après la mise en production : un compte inscrit, un lien d'invitation.
     await db.exec(`
-      insert into users (first_name, last_name, email, password_hash, username) values ('Nadia', 'Rahmani', 'nadia@exemple.fr', 'x', 'nadia');
-      insert into project_invitations (project_id, invited_user_id, token_hash, expires_at)
-        select '${ids.site}', id, 'by-username', now() + interval '1 day' from users where username = 'nadia';
+      insert into users (first_name, last_name, email, password_hash) values ('Nadia', 'Rahmani', 'nadia@exemple.fr', 'x');
+      insert into project_invite_links (project_id, token_hash, expires_at) values ('${ids.site}', 'lien', now() + interval '1 day');
     `);
 
     await db.exec(ROLLBACK);
     const columns = await rows<{ c: string }>(db, "select column_name as c from information_schema.columns where table_name = 'users' order by 1");
-    expect(columns.map((c) => c.c)).not.toContain("username");
+    expect(columns.map((c) => c.c)).not.toContain("first_name");
     expect(await rows(db, "select to_regclass('public.project_invite_links') as t")).toEqual([{ t: null }]);
     expect(await rows(db, `select count(*)::int as n from drizzle.__drizzle_migrations where created_at = ${JOURNAL_WHEN}`)).toEqual([{ n: 0 }]);
 
@@ -294,7 +260,7 @@ describe("retour arrière de la migration 0013", () => {
     // Sans effet une deuxième fois, et la migration se réapplique.
     await db.exec(ROLLBACK);
     await db.exec(MIGRATION);
-    expect(await rows(db, "select count(*)::int as n from users where username is null")).toEqual([{ n: 0 }]);
+    expect(await rows(db, "select first_name, last_name from users where email = 'nadia@exemple.fr'")).toEqual([{ first_name: "Nadia", last_name: "Rahmani" }]);
     await db.close();
   }, 120_000);
 });
@@ -329,7 +295,49 @@ describe("migration 0013 : ancienne version de développement (avec vérificatio
 
     // La nouvelle version s'applique ensuite normalement.
     await db.exec(MIGRATION);
-    expect(await rows(db, "select count(*)::int as n from users where username is null")).toEqual([{ n: 0 }]);
+    expect(await rows(db, "select count(*)::int as n from users where first_name is null")).toEqual([{ n: 0 }]);
+    await db.close();
+  }, 120_000);
+});
+
+describe("migration 0013 : ancienne version de développement (avec noms d'utilisateur)", () => {
+  it("refuse de s'appliquer par-dessus, et le retour arrière la défait entièrement", async () => {
+    const db = await databaseBeforeAccounts();
+    await insertExistingData(db);
+    const initial = await fingerprint(db);
+    // Ce que l'ancienne version ajoutait en plus : noms d'utilisateur et invitations par compte.
+    await db.exec(MIGRATION);
+    await db.exec(`
+      alter table users add column username text, add column username_confirmed_at timestamp with time zone;
+      update users set username = 'u' || left(id::text, 8) || right(id::text, 4);
+      alter table users add constraint users_username_format check (username ~ '^[A-Za-z0-9_-]{3,30}$');
+      create unique index users_username_lower_uq on users (lower(username));
+      alter table project_invitations add column invited_user_id uuid references users(id) on delete cascade;
+      alter table project_invitations alter column email drop not null;
+      alter table project_invitations add constraint project_invitations_one_target check ((email is null) <> (invited_user_id is null));
+      create index project_invitations_invited_user_idx on project_invitations (invited_user_id);
+      create unique index project_invitations_pending_user_uq on project_invitations (project_id, invited_user_id) where status = 'pending';
+      insert into project_invitations (project_id, invited_user_id, token_hash, expires_at)
+        values ('${ids.site}', '${ids.jo}', 'par-nom', now() + interval '1 day');
+      insert into drizzle.__drizzle_migrations (hash, created_at) values ('ancienne', 1790501594117);
+    `);
+
+    await expect(db.exec(MIGRATION)).rejects.toThrow(/ancienne version.*db:comptes-rollback/);
+
+    await db.exec(ROLLBACK);
+    expect(
+      await rows(
+        db,
+        "select count(*)::int as n from information_schema.columns where (table_name = 'users' and column_name in ('username', 'username_confirmed_at', 'first_name')) or (table_name = 'project_invitations' and column_name = 'invited_user_id')",
+      ),
+    ).toEqual([{ n: 0 }]);
+    expect(await rows(db, "select count(*)::int as n from drizzle.__drizzle_migrations where created_at = 1790501594117")).toEqual([{ n: 0 }]);
+    // L'invitation par nom d'utilisateur est retirée ; tout le reste est intact.
+    expect(await fingerprint(db)).toEqual(initial);
+    expect(await orphans(db)).toEqual([]);
+
+    await db.exec(MIGRATION);
+    expect(await rows(db, "select count(*)::int as n from users where first_name is null")).toEqual([{ n: 0 }]);
     await db.close();
   }, 120_000);
 });

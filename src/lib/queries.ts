@@ -7,7 +7,7 @@
  * (`projectId`) supposent que l'appelant a vérifié l'accès (lib/access.ts).
  */
 import "server-only";
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { alias } from "drizzle-orm/pg-core";
 import {
@@ -243,14 +243,10 @@ export async function getProjectMembers(projectId: string): Promise<ProjectMembe
   return rows.map((r) => ({ ...r, joinedAt: r.joinedAt.toISOString() }));
 }
 
-/**
- * Invitation en attente, telle qu'affichée dans les paramètres du projet : par email, ou par nom
- * d'utilisateur (`username` renseigné, `email` nul).
- */
+/** Invitation en attente, telle qu'affichée dans les paramètres du projet. */
 export type PendingInvitation = {
   id: string;
-  email: string | null;
-  username: string | null;
+  email: string;
   role: ProjectRole;
   expiresAt: string;
   invitedByName: string | null;
@@ -269,19 +265,16 @@ export type ReceivedInvitation = {
 
 /** Invitations en attente (non expirées) d'un projet. */
 export async function getPendingInvitations(projectId: string): Promise<PendingInvitation[]> {
-  const invited = alias(users, "invited");
   const rows = await db
     .select({
       id: projectInvitations.id,
       email: projectInvitations.email,
-      username: invited.username,
       role: projectInvitations.role,
       expiresAt: projectInvitations.expiresAt,
       invitedByName: users.name,
     })
     .from(projectInvitations)
     .leftJoin(users, eq(users.id, projectInvitations.invitedBy))
-    .leftJoin(invited, eq(invited.id, projectInvitations.invitedUserId))
     .where(
       and(
         eq(projectInvitations.projectId, projectId),
@@ -294,18 +287,14 @@ export async function getPendingInvitations(projectId: string): Promise<PendingI
 }
 
 /**
- * Invitation valable (en attente, non expirée) désignée par le hash de son jeton, avec son
- * destinataire (email ou compte) : à comparer au compte connecté (`isInvitationFor`) avant d'en
- * montrer quoi que ce soit.
+ * Invitation valable (en attente, non expirée) désignée par le hash de son jeton, avec son email
+ * destinataire : à comparer au compte connecté (`isInvitationFor`) avant d'en montrer quoi que ce soit.
  */
-export async function getInvitationByTokenHash(
-  tokenHash: string,
-): Promise<(ReceivedInvitation & { email: string | null; invitedUserId: string | null }) | null> {
+export async function getInvitationByTokenHash(tokenHash: string): Promise<(ReceivedInvitation & { email: string }) | null> {
   const [row] = await db
     .select({
       id: projectInvitations.id,
       email: projectInvitations.email,
-      invitedUserId: projectInvitations.invitedUserId,
       projectId: projects.id,
       projectName: projects.name,
       projectColor: projects.color,
@@ -330,15 +319,14 @@ export async function getInvitationByTokenHash(
 /** Compte tel que vu par les invitations : son id et son email. */
 export type Invitee = { id: string; email: string };
 
-/** Invitation adressée à ce compte : par son nom d'utilisateur (id), ou par son email exact. */
-export function isInvitationFor(invitation: { email: string | null; invitedUserId: string | null }, user: Invitee): boolean {
-  if (invitation.invitedUserId) return invitation.invitedUserId === user.id;
-  return invitation.email !== null && invitation.email === user.email.toLowerCase();
+/** Invitation adressée à ce compte : par son email exact. */
+export function isInvitationFor(invitation: { email: string }, user: Invitee): boolean {
+  return invitation.email === user.email.toLowerCase();
 }
 
 /** Condition SQL équivalente à `isInvitationFor`. */
 export function invitationForUser(user: Invitee) {
-  return or(eq(projectInvitations.invitedUserId, user.id), eq(projectInvitations.email, user.email.toLowerCase()))!;
+  return eq(projectInvitations.email, user.email.toLowerCase());
 }
 
 /**

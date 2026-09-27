@@ -1,9 +1,7 @@
 "use client";
 
-import { Check } from "lucide-react";
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { signup, type SignupState } from "@/actions/auth";
-import { useUsernameCheck } from "@/components/account/use-username-check";
 import { AuthCard, FormError } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -11,8 +9,6 @@ import { NAME_PART_MAX, PASSWORD_MIN } from "@/lib/validation";
 
 export function SignupForm({ next }: { next: string }) {
   const [state, action, pending] = useActionState<SignupState, FormData>(signup, {});
-  const [username, setUsername] = useState(state.values?.username ?? "");
-  const check = useUsernameCheck(username);
   const errors = state.fieldErrors ?? {};
 
   return (
@@ -44,35 +40,6 @@ export function SignupForm({ next }: { next: string }) {
             />
           </Field>
         </div>
-        <Field
-          label="Nom d'utilisateur"
-          htmlFor="username"
-          error={check.error ?? errors.username}
-          hint={
-            check.available ? (
-              <span className="inline-flex items-center gap-1 text-success">
-                <Check size={12} /> Disponible
-              </span>
-            ) : check.checking ? (
-              "Vérification…"
-            ) : (
-              "3 à 30 caractères : lettres, chiffres, _ et -. Sert à vous inviter et à vous connecter."
-            )
-          }
-        >
-          <Input
-            id="username"
-            name="username"
-            autoComplete="username"
-            autoCapitalize="none"
-            spellCheck={false}
-            maxLength={30}
-            required
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            aria-invalid={Boolean(check.error ?? errors.username)}
-          />
-        </Field>
         <Field label="Email" htmlFor="email" error={errors.email}>
           <Input id="email" name="email" type="email" autoComplete="email" required defaultValue={state.values?.email} aria-invalid={Boolean(errors.email)} />
         </Field>

@@ -26,7 +26,6 @@ import {
 } from "../src/db/schema";
 import { hashPassword } from "../src/lib/password";
 import { splitName } from "../src/lib/names";
-import { suggestUsername } from "../src/lib/usernames";
 import { addDays, todayISO } from "../src/lib/dates";
 
 const DEMO_PASSWORD = "demo1234";
@@ -157,14 +156,7 @@ async function main() {
 
   const today = todayISO();
   const passwordHash = await hashPassword(DEMO_PASSWORD);
-  // Comptes de démo : nom d'utilisateur tiré du nom.
-  const usernames = new Set<string>();
-  const demoUsers = [];
-  for (const { key: _, name, ...m } of MEMBERS) {
-    const username = await suggestUsername(name, m.email, (c) => usernames.has(c));
-    usernames.add(username);
-    demoUsers.push({ ...m, ...splitName(name), passwordHash, username, usernameConfirmedAt: new Date() });
-  }
+  const demoUsers = MEMBERS.map(({ key: _, name, ...m }) => ({ ...m, ...splitName(name), passwordHash }));
 
   const insertedUsers = await db
     .insert(users)

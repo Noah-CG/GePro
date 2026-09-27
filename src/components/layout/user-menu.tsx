@@ -1,7 +1,7 @@
 "use client";
 
 import * as Popover from "@radix-ui/react-popover";
-import { AtSign, KeyRound, LogOut, Monitor, Moon, Sun, Users } from "lucide-react";
+import { KeyRound, LogOut, Monitor, Moon, Sun, Users } from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { useState, useTransition, type FormEvent } from "react";
@@ -12,12 +12,11 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { membersSettingsHref } from "@/lib/members";
 import { cn } from "@/lib/utils";
-import { UsernameDialog } from "@/components/account/username-dialog";
 import { PASSWORD_MIN } from "@/lib/validation";
 import { useApp } from "./app-provider";
 
 /**
- * Menu du compte : thème, nom d'utilisateur, mot de passe, membres (admin), déconnexion.
+ * Menu du compte : thème, mot de passe, membres (admin), déconnexion.
  * `side` : côté d'ouverture du menu (à droite quand la barre latérale est réduite).
  */
 export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side?: "bottom" | "right" }) {
@@ -25,7 +24,6 @@ export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side
   const { theme, setTheme } = useTheme();
   const [open, setOpen] = useState(false);
   const [pwdOpen, setPwdOpen] = useState(false);
-  const [usernameOpen, setUsernameOpen] = useState(false);
 
   const themes = [
     { value: "light", label: "Clair", icon: Sun },
@@ -44,8 +42,8 @@ export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side
           <Avatar user={me} size={compact ? 28 : 26} />
           {!compact && (
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">{me.name}</span>
-              <span className="block truncate text-xs text-muted">{me.username ? `@${me.username}` : me.email}</span>
+              <span className="block truncate text-sm font-medium">{me.firstName}</span>
+              <span className="block truncate text-xs text-muted">{me.email}</span>
             </span>
           )}
         </Popover.Trigger>
@@ -76,15 +74,6 @@ export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side
               className={row}
               onClick={() => {
                 setOpen(false);
-                setUsernameOpen(true);
-              }}
-            >
-              <AtSign size={15} className="text-muted" /> Nom d&apos;utilisateur
-            </button>
-            <button
-              className={row}
-              onClick={() => {
-                setOpen(false);
                 setPwdOpen(true);
               }}
             >
@@ -99,7 +88,6 @@ export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side
         </Popover.Portal>
       </Popover.Root>
       <PasswordDialog key={String(pwdOpen)} open={pwdOpen} onOpenChange={setPwdOpen} />
-      <UsernameDialog key={`u${usernameOpen}`} open={usernameOpen} onOpenChange={setUsernameOpen} />
     </>
   );
 }

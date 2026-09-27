@@ -15,9 +15,8 @@ type Props = { params: Promise<{ token: string }> };
 const ROLE_LABELS = { owner: "propriétaire", admin: "administrateur", member: "membre" } as const;
 
 /**
- * Lien d'invitation à un projet. Seul le compte visé (par son nom d'utilisateur, ou par son email
- * exact) voit le projet et peut accepter : pour tout autre compte (ou un lien invalide), rien
- * n'est révélé.
+ * Lien d'invitation à un projet. Seul le compte visé (par son email exact) voit le projet et peut
+ * accepter : pour tout autre compte (ou un lien invalide), rien n'est révélé.
  */
 export default async function InvitationPage({ params }: Props) {
   const me = await requireUser();

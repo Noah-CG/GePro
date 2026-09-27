@@ -2,7 +2,6 @@
 import { z } from "zod";
 import { DEFAULT_IMPORTANT_DAY_COLOR, IMPORTANT_DAY_COLORS, IMPORTANT_DAY_TITLE_MAX } from "./constants";
 import { defaultLinkTitle, detectLink } from "./links/detect";
-import { usernameFormatError } from "./usernames";
 
 const isoDate = z
   .string()
@@ -105,15 +104,6 @@ export const emailInput = z
   .pipe(z.email("Email invalide"))
   .transform((e) => e.toLowerCase());
 
-/** Nom d'utilisateur : format et noms réservés (la disponibilité se vérifie en base). */
-export const usernameInput = z
-  .string()
-  .trim()
-  .superRefine((value, ctx) => {
-    const error = usernameFormatError(value);
-    if (error) ctx.addIssue({ code: "custom", message: error });
-  });
-
 export const NAME_PART_MAX = 50;
 
 /** Prénom ou nom : obligatoire, espaces superflus retirés (users.name = « Prénom Nom »). */
@@ -136,7 +126,7 @@ const passwordsMatch = (v: { password: string; confirm: string }) => v.password 
 const MISMATCH = { message: "Les deux mots de passe ne correspondent pas", path: ["confirm"] };
 
 export const signupInput = z
-  .object({ firstName: namePart("Le prénom"), lastName: namePart("Le nom"), username: usernameInput, email: emailInput, password, confirm: z.string() })
+  .object({ firstName: namePart("Le prénom"), lastName: namePart("Le nom"), email: emailInput, password, confirm: z.string() })
   .refine(passwordsMatch, MISMATCH);
 
 /** Invitation à un projet : email exact (pas de recherche parmi les comptes), rôle donné à l'arrivée. */
@@ -145,13 +135,6 @@ export const invitationInput = z.object({
   role: z.enum(["admin", "member"]).default("member"),
 });
 export type InvitationInput = z.input<typeof invitationInput>;
-
-/** Invitation par nom d'utilisateur exact (casse indifférente), sans recherche parmi les comptes. */
-export const usernameInvitationInput = z.object({
-  username: z.string().trim().min(1, "Saisissez un nom d'utilisateur").max(30, "Aucun compte avec ce nom d'utilisateur"),
-  role: z.enum(["admin", "member"]).default("member"),
-});
-export type UsernameInvitationInput = z.input<typeof usernameInvitationInput>;
 
 /** Durée de validité d'un lien d'invitation ouvert : 7 jours par défaut, 30 au plus. */
 export const INVITE_LINK_DEFAULT_DAYS = 7;

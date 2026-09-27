@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { deleteProject } from "@/actions/projects";
 import {
-  inviteByUsername,
   inviteMember,
   leaveProject,
   removeMember,
@@ -35,7 +34,7 @@ const canManage = (role: ProjectRole) => role === "owner" || role === "admin";
 
 /**
  * Membres du projet et invitations. Tout membre voit la liste ; le propriétaire et les
- * administrateurs invitent (email exact, nom d'utilisateur exact ou lien ouvert), changent les
+ * administrateurs invitent (email exact ou lien ouvert), changent les
  * rôles et retirent des membres.
  */
 export function ProjectMembers({
@@ -144,14 +143,13 @@ function MemberRow({ projectId, member: m, myRole }: { projectId: string; member
   );
 }
 
-type InviteMode = "email" | "username" | "link";
+type InviteMode = "email" | "link";
 const MODE_OPTIONS: { value: InviteMode; label: string }[] = [
   { value: "email", label: "Par email" },
-  { value: "username", label: "Par nom d'utilisateur" },
   { value: "link", label: "Par lien" },
 ];
 
-/** Inviter : par email exact, par nom d'utilisateur exact, ou en créant un lien ouvert. */
+/** Inviter : par email exact, ou en créant un lien ouvert. */
 function InviteForm({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<InviteMode>("email");
   return (
@@ -159,34 +157,26 @@ function InviteForm({ projectId }: { projectId: string }) {
       <div className="max-w-md">
         <Segmented label="Mode d'invitation" value={mode} onChange={setMode} options={MODE_OPTIONS} />
       </div>
-      {mode === "link" ? <InviteLinkForm projectId={projectId} /> : <PersonInviteForm key={mode} projectId={projectId} mode={mode} />}
+      {mode === "link" ? <InviteLinkForm projectId={projectId} /> : <EmailInviteForm projectId={projectId} />}
     </Card>
   );
 }
 
-function PersonInviteForm({ projectId, mode }: { projectId: string; mode: "email" | "username" }) {
+function EmailInviteForm({ projectId }: { projectId: string }) {
   const { toast } = useApp();
   const [target, setTarget] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const byEmail = mode === "email";
 
   function submit(e: FormEvent) {
     e.preventDefault();
     startTransition(async () => {
-      if (byEmail) {
-        const res = await inviteMember(projectId, { email: target, role });
-        if (!res.ok) return setError(res.error);
-        setLink(`${window.location.origin}${res.data.path}`);
-        toast(`Invitation créée pour ${target.trim().toLowerCase()}`);
-      } else {
-        const res = await inviteByUsername(projectId, { username: target, role });
-        if (!res.ok) return setError(res.error);
-        setLink(null);
-        toast(`Invitation créée pour ${res.data.name} : elle apparaît dans sa page Projets`);
-      }
+      const res = await inviteMember(projectId, { email: target, role });
+      if (!res.ok) return setError(res.error);
+      setLink(`${window.location.origin}${res.data.path}`);
+      toast(`Invitation créée pour ${target.trim().toLowerCase()}`);
       setError(null);
       setTarget("");
     });
@@ -196,32 +186,18 @@ function PersonInviteForm({ projectId, mode }: { projectId: string; mode: "email
     <form onSubmit={submit} className="space-y-3">
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1">
-          {byEmail ? (
-            <Field label="Email" htmlFor="invite-target" hint="L'adresse exacte du compte GePro de la personne.">
-              <Input
-                id="invite-target"
-                type="email"
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                placeholder="prenom.nom@exemple.fr"
-                autoComplete="off"
-                aria-invalid={error ? true : undefined}
-              />
-            </Field>
-          ) : (
-            <Field label="Nom d'utilisateur" htmlFor="invite-target" hint="Le nom exact, visible dans le menu de compte de la personne. Elle voit l'invitation dans GePro.">
-              <Input
-                id="invite-target"
-                value={target}
-                onChange={(e) => setTarget(e.target.value.replace(/^@/, ""))}
-                placeholder="camille-martin"
-                autoComplete="off"
-                autoCapitalize="none"
-                spellCheck={false}
-                aria-invalid={error ? true : undefined}
-              />
-            </Field>
-          )}
+          <Field label="Email" htmlFor="invite-target">
+            <Input
+              id="invite-target"
+              type="email"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="prenom.nom@exemple.fr"
+              autoComplete="off"
+              aria-describedby="invite-target-aide"
+              aria-invalid={error ? true : undefined}
+            />
+          </Field>
         </div>
         <div className="w-44">
           <Field label="Rôle" htmlFor="invite-role">
@@ -232,6 +208,10 @@ function PersonInviteForm({ projectId, mode }: { projectId: string; mode: "email
           <UserPlus size={15} /> Inviter
         </Button>
       </div>
+      {/* Hors de la rangée : sous le champ, l'aide décalerait l'email par rapport au rôle et au bouton. */}
+      <p id="invite-target-aide" className="text-xs text-muted">
+        L&apos;adresse exacte du compte GePro de la personne.
+      </p>
       {error && (
         <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
@@ -251,7 +231,7 @@ function PersonInviteForm({ projectId, mode }: { projectId: string; mode: "email
 function InvitationRow({ invitation: i }: { invitation: PendingInvitation }) {
   const { toast } = useApp();
   const [pending, startTransition] = useTransition();
-  const target = i.username ? `@${i.username}` : (i.email ?? "");
+  const target = i.email;
   const revoke = () =>
     startTransition(async () => {
       const res = await revokeInvitation(i.id);
