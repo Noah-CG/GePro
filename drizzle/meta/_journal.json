@@ -92,6 +92,13 @@
       "when": 1790442381794,
       "tag": "0012_isolation_projets",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790509505463,
+      "tag": "0013_comptes_utilisateurs",
+      "breakpoints": true
     }
   ]
 }

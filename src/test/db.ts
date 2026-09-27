@@ -11,6 +11,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import type { Db } from "@/db";
 import { createProjectWithOwner } from "@/db/create-project";
 import * as schema from "@/db/schema";
+import { splitName } from "@/lib/names";
 
 export async function createTestDb(): Promise<Db> {
   const db = drizzle({ client: new PGlite(), schema });
@@ -25,10 +26,20 @@ export async function resetDb(db: Db) {
 
 let counter = 0;
 
-export async function insertUser(db: Db, name = "Camille Martin") {
+/** Compte de test, comme un compte existant (créé par un administrateur). */
+export async function insertUser(
+  db: Db,
+  name = "Camille Martin",
+  options: { passwordHash?: string } = {},
+) {
+  const n = ++counter;
   const [user] = await db
     .insert(schema.users)
-    .values({ name, email: `user${++counter}@exemple.fr`, passwordHash: "x" })
+    .values({
+      ...splitName(name),
+      email: `user${n}@exemple.fr`,
+      passwordHash: options.passwordHash ?? "x",
+    })
     .returning();
   return user;
 }

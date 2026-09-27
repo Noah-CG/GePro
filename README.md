@@ -33,7 +33,7 @@ Connexion : **camille@exemple.fr / demo1234** (administratrice, propriétaire de
    ```bash
    npm run db:migrate
    npm run db:seed                  # option A : données de démo
-   npm run user:create -- --name "Votre Nom" --email vous@societe.fr --password "motdepasse" --admin   # option B : base vide
+   npm run user:create -- --prenom "Prénom" --nom "Nom" --email vous@societe.fr --password "motdepasse" --admin   # option B : base vide
    ```
 5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**, qui mène à la section **Comptes de l'équipe** des paramètres du projet). Un compte ne voit aucun projet tant qu'il n'y est pas invité (voir [Projets étanches, membres et invitations](#projets-étanches-membres-et-invitations)).
 
@@ -61,6 +61,33 @@ npm run db:migrate
 ```
 
 Retour arrière, après avoir redéployé le code d'avant l'isolation : `npm run db:isolation-rollback -- --confirm` (membres et invitations perdus, événements d'équipe restaurés sans projet, copies retirées), ou restauration de la sauvegarde avec `pg_restore --clean --no-owner --dbname="$DATABASE_URL" gepro-avant-isolation.dump`.
+
+### Mettre à jour une base existante : comptes utilisateurs (migration 0013)
+
+La migration `0013_comptes_utilisateurs` ajoute l'inscription, le prénom et le nom séparés, les invitations par lien et la limitation des tentatives de connexion. **Ajouts uniquement** : aucun compte n'est supprimé ni recréé (mêmes id, emails et mots de passe ; toutes les données restent rattachées) et les sessions ouvertes restent valables. Chaque compte existant reçoit un **prénom** et un **nom** (`first_name`, `last_name`), découpés sur le premier espace de son nom actuel (un seul mot : prénom seul, nom vide). `users.name` devient une colonne calculée par Postgres (« Prénom Nom ») : le nom affiché ne change pas. La migration s'arrête si un nom ne se découpe pas proprement (espace en tête, en fin ou doublé) et les liste ; l'aperçu les montre avant.
+
+Un seul bloc SQL (tout ou rien, y compris sur Neon), rejouable sans effet. Elle **refuse de s'appliquer** si la migration 0012 manque, ou si deux comptes ont le même email à la casse près (ils sont listés). Avant de déployer :
+
+```bash
+# 1. Sauvegarde : branche Neon + pg_dump (voir la procédure de sauvegarde)
+# 2. Aperçu, en lecture seule : doublons d'email, prénom et nom proposés à chacun
+npm run db:comptes-preview
+# 3. Migration (ou simplement déployer : Vercel la lance au build)
+npm run db:migrate
+```
+
+Déployez ensuite **Vercel et le serveur Linux** dans la foulée ; aucune nouvelle variable d'environnement. Entre la migration et le déploiement, l'ancienne version (serveur Linux pas encore mis à jour, par exemple) fonctionne sur la base migrée, sauf la création d'un compte par un administrateur (`users.name` n'est plus modifiable directement).
+
+Retour arrière, après avoir redéployé le code d'avant les comptes (Vercel et serveur Linux) : `npm run db:comptes-rollback -- --confirm`. Aucun compte n'est supprimé et `users.name` garde sa valeur ; prénom et nom séparés et liens d'invitation sont perdus (les membres déjà entrés restent membres).
+
+## Comptes
+
+- **Inscription** (`/inscription`) : prénom et nom (obligatoires, stockés séparément ; le nom affiché partout est « Prénom Nom », l'interface s'adresse à la personne par son prénom), email (unique sans tenir compte de la casse), mot de passe (10 caractères minimum, bcrypt coût 10 comme les comptes existants). **Aucune vérification d'email** : le compte est utilisable tout de suite, mais ne voit **aucun projet** tant qu'il n'est pas invité. Inscriptions limitées à 10 par heure et par adresse IP.
+- **Connexion** (`/connexion`, l'ancienne adresse `/login` y renvoie) : par **email** et mot de passe. Message unique « Identifiants incorrects », que le compte existe ou non. Tentatives limitées **par compte** (5 échecs, puis verrouillage de 30 s, 1 min, 2 min… jusqu'à 1 h) et **par adresse IP** (20 échecs) ; un email inconnu est verrouillé de la même façon.
+- **Mot de passe oublié** : pas de réinitialisation par email. Un administrateur de GePro réinitialise le mot de passe depuis `/membres` (ce qui ferme toutes les sessions du compte).
+- **Aucun email** n'est envoyé par GePro.
+- **Jetons** (invitations, liens) : aléatoires (32 octets), stockés **hachés** (SHA-256), avec expiration et usage limité.
+- **CSRF** : cookie de session `SameSite=Lax`, `httpOnly`, `Secure` en production ; Next.js vérifie l'origine des Server Actions, et `src/proxy.ts` refuse en plus toute requête POST sans en-tête `Origin` ou venant d'un autre site.
 
 ## Intégration Google Docs
 
@@ -201,6 +228,8 @@ Fonctionnement :
 | `npm run db:migrate` | Applique les migrations (Neon ou base locale) |
 | `npm run db:seed [-- --reset]` | Charge la démo (`--reset` efface d'abord **toutes** les données) |
 | `npm run user:create -- …` | Crée un compte en ligne de commande |
+| `npm run db:comptes-preview` | Aperçu de la migration 0013 (lecture seule) |
+| `npm run db:comptes-rollback -- --confirm` | Retour arrière de la migration 0013 |
 
 ## Raccourcis clavier
 
@@ -268,7 +297,10 @@ Chaque projet est **étanche** : on ne voit, ne lit et ne modifie que les projet
 
 - **Créer un projet** : il est vierge (aucune tâche, aucun événement, aucun document, aucune intégration) et son créateur en est le **propriétaire** et le seul membre.
 - **Rôles** : le **propriétaire** a tous les droits, dont transmettre la propriété et supprimer le projet ; un **administrateur** invite et retire des membres, change les rôles et règle le projet (nom, archivage, salon Discord) ; un **membre** travaille sur le contenu (tâches, calendrier, documents, fichiers, temps).
-- **Inviter** (paramètres du projet → **Membres**) : par l'**email exact** du compte, sans aucune recherche parmi les comptes de l'application. GePro affiche une seule fois un **lien d'invitation** à transmettre (7 jours) ; l'invitation apparaît aussi dans la page **Projets** de la personne invitée. Seul le compte qui a cet email peut l'accepter, et il n'est ajouté qu'à ce projet.
+- **Inviter** (paramètres du projet → **Membres**), sans aucune recherche ni liste parmi les comptes de l'application :
+  - par **email exact** : GePro affiche une seule fois un lien à transmettre (7 jours) ; l'invitation apparaît aussi dans GePro (entrée **Invitations** avec badge dans la barre latérale, page **Projets**). Seul le compte qui a cet email peut l'accepter ;
+  - par **lien ouvert** : lié à aucun email, il fait entrer quiconque le possède, **toujours comme simple membre** (jamais administrateur). Durée au choix (7 jours par défaut, 30 au plus), usage unique, limité ou illimité, **révocable** à tout moment. Sans compte, on passe par l'inscription (le lien est repris) ; connecté, on rejoint après confirmation. Les paramètres du projet journalisent la création de chaque lien et chaque personne entrée.
+  Accepter n'ajoute qu'à ce projet.
 - **Quitter / retirer** : tout membre peut quitter un projet, sauf le propriétaire (qui doit d'abord transmettre la propriété). Un membre retiré perd l'accès ; ce qu'il a créé reste dans le projet.
 - **Supprimer** un projet (propriétaire) efface toutes ses données ; le temps de travail pointé est gardé, sans projet.
 - Le rôle **administrateur de l'application** (création des comptes) ne donne accès à aucun projet.

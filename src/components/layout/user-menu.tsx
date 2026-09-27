@@ -12,6 +12,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Field, Input } from "@/components/ui/input";
 import { membersSettingsHref } from "@/lib/members";
 import { cn } from "@/lib/utils";
+import { PASSWORD_MIN } from "@/lib/validation";
 import { useApp } from "./app-provider";
 
 /**
@@ -41,7 +42,7 @@ export function UserMenu({ compact, side = "bottom" }: { compact?: boolean; side
           <Avatar user={me} size={compact ? 28 : 26} />
           {!compact && (
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">{me.name}</span>
+              <span className="block truncate text-sm font-medium">{me.firstName}</span>
               <span className="block truncate text-xs text-muted">{me.email}</span>
             </span>
           )}
@@ -114,7 +115,7 @@ function PasswordDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         <Field label="Mot de passe actuel" htmlFor="pwd-current">
           <Input id="pwd-current" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
         </Field>
-        <Field label="Nouveau mot de passe" htmlFor="pwd-next" hint="8 caractères minimum">
+        <Field label="Nouveau mot de passe" htmlFor="pwd-next" hint={`${PASSWORD_MIN} caractères minimum`}>
           <Input id="pwd-next" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
         </Field>
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}

@@ -1,10 +1,10 @@
 /**
  * Création d'un compte en ligne de commande (utile pour le tout premier administrateur).
  *
- *   npm run user:create -- --name "Alice Durand" --email alice@societe.fr --password "motdepasse" [--admin]
+ *   npm run user:create -- --prenom "Alice" --nom "Durand" --email alice@societe.fr --password "motdepasse" [--admin]
  */
 import "./env";
-import { eq } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { db } from "../src/db";
 import { users } from "../src/db/schema";
 import { COLORS } from "../src/lib/constants";
@@ -18,26 +18,31 @@ function arg(name: string) {
 
 async function main() {
   const parsed = memberInput.safeParse({
-    name: arg("name"),
+    firstName: arg("prenom"),
+    lastName: arg("nom"),
     email: arg("email"),
     password: arg("password"),
     role: process.argv.includes("--admin") ? "admin" : "member",
   });
   if (!parsed.success) {
     console.error("Paramètres invalides :", parsed.error.issues.map((i) => `${i.path.join(".")} → ${i.message}`).join(", "));
-    console.error('Usage : npm run user:create -- --name "Nom Prénom" --email x@y.fr --password "8+ caractères" [--admin]');
+    console.error('Usage : npm run user:create -- --prenom "Prénom" --nom "Nom" --email x@y.fr --password "10+ caractères" [--admin]');
     process.exit(1);
   }
   const { password, ...data } = parsed.data;
 
-  const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, data.email));
+  const [existing] = await db.select({ id: users.id }).from(users).where(sql`lower(${users.email}) = ${data.email}`);
   if (existing) {
     console.error(`Un compte existe déjà pour ${data.email}.`);
     process.exit(1);
   }
 
-  const count = (await db.select({ id: users.id }).from(users)).length;
-  await db.insert(users).values({ ...data, passwordHash: await hashPassword(password), color: COLORS[count % COLORS.length] });
+  const all = await db.select({ id: users.id }).from(users);
+  await db.insert(users).values({
+    ...data,
+    passwordHash: await hashPassword(password),
+    color: COLORS[all.length % COLORS.length],
+  });
   console.log(`✔ Compte ${data.role === "admin" ? "administrateur " : ""}créé : ${data.email}`);
 }
 

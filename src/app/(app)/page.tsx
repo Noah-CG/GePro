@@ -22,7 +22,7 @@ export default async function HomePage({ searchParams }: Props) {
   const invitations = await getReceivedInvitations(me);
   return (
     <div className="mx-auto max-w-6xl">
-      <PageHeader title={`Bonjour ${me.name.split(" ")[0]} 👋`} subtitle={formatLong(todayISO())} />
+      <PageHeader title={`Bonjour ${me.firstName} 👋`} subtitle={formatLong(todayISO())} />
       <ReceivedInvitations invitations={invitations} />
       <EmptyState icon={<FolderKanban size={28} />} title="Aucun projet pour l'instant">
         Créez votre premier projet avec le bouton en haut de la barre latérale ou la touche P, ou acceptez une invitation.

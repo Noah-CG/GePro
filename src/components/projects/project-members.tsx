@@ -15,12 +15,14 @@ import {
 import { useApp } from "@/components/layout/app-provider";
 import { Avatar } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, Segmented } from "@/components/ui/input";
 import { Card } from "@/components/ui/misc";
 import { SimpleSelect } from "@/components/ui/select";
 import type { ProjectRole } from "@/db/schema";
 import { formatDateTime } from "@/lib/dates";
-import type { PendingInvitation, ProjectMember } from "@/lib/queries";
+import type { InviteLinkView, PendingInvitation, ProjectMember } from "@/lib/queries";
+import { CopyableLink } from "./copyable-link";
+import { InviteLinkForm, InviteLinks } from "./invite-links";
 
 const ROLE_LABELS: Record<ProjectRole, string> = { owner: "Propriétaire", admin: "Administrateur", member: "Membre" };
 const ROLE_OPTIONS: { value: "admin" | "member"; label: string }[] = [
@@ -32,18 +34,21 @@ const canManage = (role: ProjectRole) => role === "owner" || role === "admin";
 
 /**
  * Membres du projet et invitations. Tout membre voit la liste ; le propriétaire et les
- * administrateurs invitent (par email exact), changent les rôles et retirent des membres.
+ * administrateurs invitent (email exact ou lien ouvert), changent les
+ * rôles et retirent des membres.
  */
 export function ProjectMembers({
   projectId,
   myRole,
   members,
   invitations,
+  links,
 }: {
   projectId: string;
   myRole: ProjectRole;
   members: ProjectMember[];
   invitations: PendingInvitation[];
+  links: InviteLinkView[];
 }) {
   const manager = canManage(myRole);
   return (
@@ -66,6 +71,7 @@ export function ProjectMembers({
           </ul>
         </Card>
       )}
+      {manager && links.length > 0 && <InviteLinks links={links} />}
     </div>
   );
 }
@@ -137,97 +143,105 @@ function MemberRow({ projectId, member: m, myRole }: { projectId: string; member
   );
 }
 
+type InviteMode = "email" | "link";
+const MODE_OPTIONS: { value: InviteMode; label: string }[] = [
+  { value: "email", label: "Par email" },
+  { value: "link", label: "Par lien" },
+];
+
+/** Inviter : par email exact, ou en créant un lien ouvert. */
 function InviteForm({ projectId }: { projectId: string }) {
+  const [mode, setMode] = useState<InviteMode>("email");
+  return (
+    <Card className="space-y-3 p-4">
+      <div className="max-w-md">
+        <Segmented label="Mode d'invitation" value={mode} onChange={setMode} options={MODE_OPTIONS} />
+      </div>
+      {mode === "link" ? <InviteLinkForm projectId={projectId} /> : <EmailInviteForm projectId={projectId} />}
+    </Card>
+  );
+}
+
+function EmailInviteForm({ projectId }: { projectId: string }) {
   const { toast } = useApp();
-  const [email, setEmail] = useState("");
+  const [target, setTarget] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
   const [error, setError] = useState<string | null>(null);
   const [link, setLink] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function submit(e: FormEvent) {
     e.preventDefault();
     startTransition(async () => {
-      const res = await inviteMember(projectId, { email, role });
+      const res = await inviteMember(projectId, { email: target, role });
       if (!res.ok) return setError(res.error);
-      setError(null);
       setLink(`${window.location.origin}${res.data.path}`);
-      setCopied(false);
-      toast(`Invitation créée pour ${email.trim().toLowerCase()}`);
-      setEmail("");
+      toast(`Invitation créée pour ${target.trim().toLowerCase()}`);
+      setError(null);
+      setTarget("");
     });
   }
 
-  async function copy() {
-    if (!link) return;
-    await navigator.clipboard.writeText(link);
-    setCopied(true);
-  }
-
   return (
-    <Card className="p-4">
-      <form onSubmit={submit} className="space-y-3">
-        <div className="flex flex-wrap items-end gap-2">
-          <div className="min-w-0 flex-1">
-            <Field label="Inviter par email" htmlFor="invite-email" hint="L'adresse exacte du compte GePro de la personne.">
-              <Input
-                id="invite-email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="prenom.nom@exemple.fr"
-                autoComplete="off"
-                aria-invalid={error ? true : undefined}
-              />
-            </Field>
-          </div>
-          <div className="w-44">
-            <Field label="Rôle" htmlFor="invite-role">
-              <SimpleSelect id="invite-role" value={role} onValueChange={setRole} options={ROLE_OPTIONS} />
-            </Field>
-          </div>
-          <Button type="submit" variant="primary" loading={pending} disabled={!email.trim()}>
-            <UserPlus size={15} /> Inviter
-          </Button>
+    <form onSubmit={submit} className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-1">
+          <Field label="Email" htmlFor="invite-target">
+            <Input
+              id="invite-target"
+              type="email"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="prenom.nom@exemple.fr"
+              autoComplete="off"
+              aria-describedby="invite-target-aide"
+              aria-invalid={error ? true : undefined}
+            />
+          </Field>
         </div>
-        {error && (
-          <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
-            {error}
-          </p>
-        )}
-        {link && (
-          <div className="rounded-lg border border-border bg-surface-2 p-3 text-sm">
-            <p className="mb-2 text-muted">
-              Transmettez ce lien à la personne invitée (il n&apos;est affiché qu&apos;une fois et expire dans 7 jours). L&apos;invitation apparaît
-              aussi dans sa page Projets.
-            </p>
-            <div className="flex gap-2">
-              <Input readOnly value={link} onFocus={(e) => e.currentTarget.select()} className="min-w-0 flex-1 font-mono text-xs" aria-label="Lien d'invitation" />
-              <Button onClick={copy}>
-                {copied ? <Check size={15} /> : <Copy size={15} />} {copied ? "Copié" : "Copier"}
-              </Button>
-            </div>
-          </div>
-        )}
-      </form>
-    </Card>
+        <div className="w-44">
+          <Field label="Rôle" htmlFor="invite-role">
+            <SimpleSelect id="invite-role" value={role} onValueChange={setRole} options={ROLE_OPTIONS} />
+          </Field>
+        </div>
+        <Button type="submit" variant="primary" loading={pending} disabled={!target.trim()}>
+          <UserPlus size={15} /> Inviter
+        </Button>
+      </div>
+      {/* Hors de la rangée : sous le champ, l'aide décalerait l'email par rapport au rôle et au bouton. */}
+      <p id="invite-target-aide" className="text-xs text-muted">
+        L&apos;adresse exacte du compte GePro de la personne.
+      </p>
+      {error && (
+        <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
+          {error}
+        </p>
+      )}
+      {link && (
+        <CopyableLink
+          link={link}
+          label="Lien d'invitation"
+          note="Transmettez ce lien à la personne invitée (il n'est affiché qu'une fois et expire dans 7 jours). L'invitation apparaît aussi dans sa page Projets."
+        />
+      )}
+    </form>
   );
 }
 
 function InvitationRow({ invitation: i }: { invitation: PendingInvitation }) {
   const { toast } = useApp();
   const [pending, startTransition] = useTransition();
+  const target = i.email;
   const revoke = () =>
     startTransition(async () => {
       const res = await revokeInvitation(i.id);
-      toast(res.ok ? `Invitation de ${i.email} annulée` : res.error, res.ok ? "success" : "error");
+      toast(res.ok ? `Invitation de ${target} annulée` : res.error, res.ok ? "success" : "error");
     });
 
   return (
     <li className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium">{i.email}</p>
+        <p className="truncate font-medium">{target}</p>
         <p className="truncate text-xs text-muted">
           {ROLE_LABELS[i.role]} · expire le {formatDateTime(i.expiresAt)}
           {i.invitedByName && ` · invité·e par ${i.invitedByName}`}

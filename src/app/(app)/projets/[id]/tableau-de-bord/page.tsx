@@ -40,7 +40,7 @@ export default async function DashboardPage({ params, searchParams }: Props) {
   return (
     <div className="mx-auto max-w-6xl">
       <PageHeader
-        title={`Bonjour ${me.name.split(" ")[0]} 👋`}
+        title={`Bonjour ${me.firstName} 👋`}
         subtitle={`${project.name} · ${formatLong(today)}`}
         actions={
           <nav aria-label="Vue du tableau de bord" className="flex rounded-lg border border-border bg-surface p-1 text-sm">

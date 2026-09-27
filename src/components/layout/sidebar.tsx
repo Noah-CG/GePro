@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, FolderPlus, LayoutDashboard, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Timer, X } from "lucide-react";
+import { CalendarDays, FolderPlus, LayoutDashboard, Mail, MonitorPlay, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, SquareKanban, Timer, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { Kbd, SideTooltip } from "@/components/ui/misc";
 import type { SidebarSectionId } from "@/lib/navigation-prefs";
@@ -26,6 +26,8 @@ export type SidebarData = {
   google: GoogleSidebarState;
   /** Le chrono de l'utilisateur connecté tourne (pastille sur « Temps de travail »). */
   timerRunning: boolean;
+  /** Invitations reçues en attente (entrée « Invitations » avec badge, masquée à zéro). */
+  invitations: number;
 };
 
 /**
@@ -174,6 +176,16 @@ export function Sidebar({
               tooltip={data.timerRunning ? "Temps de travail (chrono en cours)" : undefined}
             />
             <SidebarNavItem href="/ecrans" icon={MonitorPlay} label="Multi-écran" active={pathname.startsWith("/ecrans")} />
+            {data.invitations > 0 && (
+              <SidebarNavItem
+                href="/projets"
+                icon={Mail}
+                label="Invitations"
+                tooltip={`${data.invitations} invitation${data.invitations > 1 ? "s" : ""} en attente`}
+                active={false}
+                badge={data.invitations}
+              />
+            )}
           </div>
 
           {project && (

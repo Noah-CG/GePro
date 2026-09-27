@@ -6,7 +6,7 @@ import { Card, EmptyState } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/dates";
 import { hashInvitationToken } from "@/lib/invitations";
-import { getInvitationByTokenHash } from "@/lib/queries";
+import { getInvitationByTokenHash, isInvitationFor } from "@/lib/queries";
 
 export const metadata: Metadata = { title: "Invitation" };
 
@@ -15,15 +15,15 @@ type Props = { params: Promise<{ token: string }> };
 const ROLE_LABELS = { owner: "propriétaire", admin: "administrateur", member: "membre" } as const;
 
 /**
- * Lien d'invitation à un projet. Seul le compte dont l'email est celui de l'invitation voit le
- * projet et peut accepter : pour tout autre compte (ou un lien invalide), rien n'est révélé.
+ * Lien d'invitation à un projet. Seul le compte visé (par son email exact) voit le projet et peut
+ * accepter : pour tout autre compte (ou un lien invalide), rien n'est révélé.
  */
 export default async function InvitationPage({ params }: Props) {
   const me = await requireUser();
   const { token } = await params;
   const invitation = await getInvitationByTokenHash(hashInvitationToken(token));
 
-  if (!invitation || invitation.email !== me.email.toLowerCase()) {
+  if (!invitation || !isInvitationFor(invitation, me)) {
     return (
       <div className="mx-auto max-w-lg pt-10">
         <EmptyState icon={<MailX size={28} />} title="Invitation introuvable">

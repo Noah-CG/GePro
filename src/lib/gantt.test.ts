@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { barBox, ganttMonths, ganttRange, planTasks, shiftSpan, spanDays, taskSpan } from "./gantt";
+import { barBox, GANTT_DAY_WIDTH, GANTT_ZOOMS, ganttMonths, ganttRange, planTasks, shiftSpan, spanDays, taskSpan, zoomForDayWidth } from "./gantt";
 
 const task = (id: string, startDate: string | null, dueDate: string | null, position = 0) => ({ id, startDate, dueDate, position });
 
@@ -89,5 +89,16 @@ describe("planTasks", () => {
     ]);
     expect(planned.map((p) => p.task.id)).toEqual(["court-1", "court-2", "long", "tard"]);
     expect(unplanned.map((t) => t.id)).toEqual(["sans"]);
+  });
+});
+
+describe("zoomForDayWidth", () => {
+  it("retrouve chaque échelle prédéfinie à partir de sa largeur", () => {
+    for (const [zoom, { dayWidth }] of Object.entries(GANTT_ZOOMS)) expect(zoomForDayWidth(dayWidth)).toBe(zoom);
+  });
+
+  it("couvre toute la course du curseur", () => {
+    expect(zoomForDayWidth(GANTT_DAY_WIDTH.min)).toBe("mois");
+    expect(zoomForDayWidth(GANTT_DAY_WIDTH.max)).toBe("jour");
   });
 });

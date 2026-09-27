@@ -1,15 +1,18 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { projectInvitations, projectMembers, projects, taskAssignees, tasks } from "@/db/schema";
+import { projectInvitations, projectInviteLinks, projectInviteLinkUses, projectMembers, projects, taskAssignees, tasks, users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { afterLoginPath } from "@/lib/invitations";
-import { getPendingInvitations, getReceivedInvitations } from "@/lib/queries";
+import { getInviteLinks, getPendingInvitations, getReceivedInvitations } from "@/lib/queries";
 import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import {
   acceptInvitation,
+  createInviteLink,
   declineInvitation,
   inviteMember,
+  joinWithInviteLink,
+  revokeInviteLink,
   leaveProject,
   removeMember,
   revokeInvitation,
@@ -134,6 +137,7 @@ describe("invitations", () => {
 
   it("après la connexion, ne reprend qu'un lien d'invitation", () => {
     expect(afterLoginPath("/invitations/abc_DEF-123")).toBe("/invitations/abc_DEF-123");
+    expect(afterLoginPath("/rejoindre/abc_DEF-123")).toBe("/rejoindre/abc_DEF-123");
     expect(afterLoginPath("//evil.example/invitations/x")).toBe("/");
     expect(afterLoginPath("https://evil.example")).toBe("/");
     expect(afterLoginPath("/projets")).toBe("/");
@@ -193,5 +197,135 @@ describe("membres et rôles", () => {
     expect(await roles()).toEqual({ [owner.id]: "admin", [admin.id]: "admin", [member.id]: "owner" });
     const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
     expect(project.ownerId).toBe(member.id);
+  });
+});
+
+describe("invitation par email, sans vérification d'adresse", () => {
+  it("s'accepte simplement connecté avec le compte qui a cet email (lien ou liste des invitations)", async () => {
+    const newcomer = await insertUser(db, "Nouveau");
+    const token = await invite(newcomer.email);
+    actAs(newcomer);
+    expect(await getReceivedInvitations(newcomer)).toMatchObject([{ projectId }]);
+    expect(await acceptInvitation({ token })).toEqual({ ok: true, data: { projectId } });
+
+    const other = await insertUser(db, "Autre");
+    await invite(other.email);
+    const [pending] = await getReceivedInvitations(other);
+    actAs(other);
+    expect(await acceptInvitation({ id: pending.id })).toEqual({ ok: true, data: { projectId } });
+    expect((await roles())[other.id]).toBe("member");
+  });
+});
+
+describe("lien d'invitation ouvert", () => {
+  const createLink = async (input: { days?: number; maxUses?: number | null } = {}, as = owner) => {
+    actAs(as);
+    const res = await createInviteLink(projectId, input);
+    if (!res.ok) throw new Error(res.error);
+    return res.data.path.split("/").pop()!;
+  };
+  const join = (user: User, token: string) => {
+    actAs(user);
+    return joinWithInviteLink(token);
+  };
+  const INVALID = { ok: false, error: expect.stringMatching(/^Ce lien d'invitation est invalide/) };
+
+  it("un compte existant, déjà connecté, rejoint le projet comme membre ; l'utilisation est journalisée", async () => {
+    const token = await createLink();
+    expect(await join(outsider, token)).toEqual({ ok: true, data: { projectId } });
+    expect((await roles())[outsider.id]).toBe("member");
+
+    const [link] = await db.select().from(projectInviteLinks);
+    expect(link).toMatchObject({ role: "member", useCount: 1, maxUses: 1, createdBy: owner.id });
+    expect(await db.select().from(projectInviteLinkUses)).toMatchObject([{ linkId: link.id, userId: outsider.id }]);
+  });
+
+  it("le lien n'est jamais stocké en clair", async () => {
+    const token = await createLink();
+    const [link] = await db.select().from(projectInviteLinks);
+    expect(link.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(link.tokenHash).not.toContain(token);
+  });
+
+  it("à usage unique : une deuxième personne est refusée", async () => {
+    const token = await createLink({ maxUses: 1 });
+    expect(await join(outsider, token)).toMatchObject({ ok: true });
+    const other = await insertUser(db, "Nadia");
+    expect(await join(other, token)).toEqual(INVALID);
+    expect((await roles())[other.id]).toBeUndefined();
+  });
+
+  it("à usages multiples : jamais au-delà du maximum (compté en base, dans la même instruction que l'ajout)", async () => {
+    const token = await createLink({ maxUses: 2 });
+    const people = await Promise.all(["P1", "P2", "P3", "P4"].map((n) => insertUser(db, n)));
+    const results = [];
+    for (const p of people) results.push(await join(p, token));
+    expect(results.filter((r) => r.ok)).toHaveLength(2);
+    const [link] = await db.select().from(projectInviteLinks);
+    expect(link.useCount).toBe(2);
+    expect(await db.select().from(projectInviteLinkUses)).toHaveLength(2);
+  });
+
+  it("illimité jusqu'à expiration", async () => {
+    const token = await createLink({ maxUses: null });
+    for (const n of ["P1", "P2", "P3"]) expect(await join(await insertUser(db, n), token)).toMatchObject({ ok: true });
+  });
+
+  it("un lien expiré ne sert plus", async () => {
+    const token = await createLink({ days: 1 });
+    await db.update(projectInviteLinks).set({ expiresAt: new Date(Date.now() - 1000) });
+    expect(await join(outsider, token)).toEqual(INVALID);
+  });
+
+  it("un lien révoqué ne sert plus ; seuls les gestionnaires du projet révoquent", async () => {
+    const token = await createLink({ maxUses: null });
+    const [link] = await db.select().from(projectInviteLinks);
+
+    actAs(outsider);
+    expect(await revokeInviteLink(link.id)).toMatchObject({ ok: false, error: expect.stringMatching(/invalide/) });
+    actAs(member);
+    expect(await revokeInviteLink(link.id)).toMatchObject({ ok: false, error: expect.stringMatching(/Seuls le propriétaire/) });
+    actAs(admin);
+    expect(await revokeInviteLink(link.id)).toEqual({ ok: true, data: undefined });
+
+    expect(await join(outsider, token)).toEqual(INVALID);
+  });
+
+  it("déjà membre : le lien mène au projet sans consommer d'utilisation", async () => {
+    const token = await createLink({ maxUses: 1 });
+    expect(await join(member, token)).toEqual({ ok: true, data: { projectId } });
+    const [link] = await db.select().from(projectInviteLinks);
+    expect(link.useCount).toBe(0);
+    expect(await join(outsider, token)).toMatchObject({ ok: true });
+  });
+
+  it("seuls le propriétaire et les administrateurs en créent, toujours pour le rôle membre", async () => {
+    actAs(member);
+    expect(await createInviteLink(projectId, {})).toMatchObject({ ok: false });
+    actAs(outsider);
+    expect(await createInviteLink(projectId, {})).toMatchObject({ ok: false });
+    await createLink({}, admin);
+    // La base refuse tout autre rôle.
+    await expect(
+      db.insert(projectInviteLinks).values({ projectId, tokenHash: "x", role: "admin", expiresAt: new Date(Date.now() + 1000) }),
+    ).rejects.toThrow();
+  });
+
+  it("valide la durée et le nombre d'utilisations", async () => {
+    actAs(owner);
+    expect(await createInviteLink(projectId, { days: 0 })).toEqual({ ok: false, error: "1 jour minimum" });
+    expect(await createInviteLink(projectId, { days: 31 })).toEqual({ ok: false, error: "30 jours maximum" });
+    expect(await createInviteLink(projectId, { maxUses: 0 })).toEqual({ ok: false, error: "1 utilisation minimum" });
+    const [link] = (await createLink(), await db.select().from(projectInviteLinks));
+    // 7 jours par défaut.
+    expect(Math.round((link.expiresAt.getTime() - Date.now()) / 86_400_000)).toBe(7);
+  });
+
+  it("apparaît dans les paramètres avec son état et son journal", async () => {
+    const token = await createLink({ maxUses: 2 });
+    await join(outsider, token);
+    expect(await getInviteLinks(projectId)).toMatchObject([
+      { state: "active", useCount: 1, maxUses: 2, createdByName: "Alice Propriétaire", uses: [{ name: "Bob Extérieur" }] },
+    ]);
   });
 });

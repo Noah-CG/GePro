@@ -18,6 +18,19 @@ export const GANTT_ZOOMS = {
 } as const;
 export type GanttZoom = keyof typeof GANTT_ZOOMS;
 
+/** Bornes du curseur de zoom : largeur d'un jour, en pixels. */
+export const GANTT_DAY_WIDTH = { min: 4, max: 60 } as const;
+
+/**
+ * Échelle correspondant à une largeur de jour choisie au curseur : elle décide de l'en-tête
+ * (chaque jour, ou chaque lundi) et du grisage des week-ends. Seuils à mi-chemin des échelles.
+ */
+export function zoomForDayWidth(dayWidth: number): GanttZoom {
+  if (dayWidth >= 26) return "jour";
+  if (dayWidth >= 10) return "semaine";
+  return "mois";
+}
+
 /** Jours occupés par une tâche, ou null si elle n'a ni début ni échéance. */
 export function taskSpan(task: { startDate: string | null; dueDate: string | null }): Span | null {
   const start = task.startDate ?? task.dueDate;

@@ -1,5 +1,6 @@
 /**
  * Authentification par email + mot de passe, avec sessions stockées en base.
+ * Connexion et inscription : actions/auth.ts.
  *
  * Le cookie contient un jeton aléatoire ; la base ne stocke que son hash SHA-256.
  * Une fuite de la table `sessions` ne permet donc pas d'usurper une session.
@@ -18,7 +19,11 @@ const SESSION_DAYS = 30;
 
 export type SessionUser = {
   id: string;
+  /** « Prénom Nom », calculé par Postgres. */
   name: string;
+  firstName: string;
+  /** Vide possible pour un compte d'avant la séparation dont le nom tenait en un mot. */
+  lastName: string;
   email: string;
   role: "admin" | "member";
   color: string;
@@ -28,7 +33,10 @@ const hashToken = (token: string) => createHash("sha256").update(token).digest("
 
 export { hashPassword, verifyPassword } from "./password";
 
-/** Crée une session et pose le cookie. */
+/**
+ * Crée une session et pose le cookie. Format inchangé depuis l'origine (jeton aléatoire dans
+ * `gepro_session`, SHA-256 en base) : les sessions ouvertes avant les comptes restent valables.
+ */
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
@@ -59,6 +67,8 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     .select({
       id: users.id,
       name: users.name,
+      firstName: users.firstName,
+      lastName: users.lastName,
       email: users.email,
       role: users.role,
       color: users.color,
@@ -77,7 +87,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 /** À appeler en tête de chaque page protégée et de chaque Server Action. */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/connexion");
   return user;
 }
 

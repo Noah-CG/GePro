@@ -1,34 +1,84 @@
 "use server";
 
-import { eq } from "drizzle-orm";
+/**
+ * Comptes : connexion par email, inscription.
+ *
+ * - Pas de vérification d'email ni de mot de passe oublié par email : un compte est utilisable dès
+ *   l'inscription, et un administrateur réinitialise un mot de passe depuis /membres.
+ * - Les messages d'échec de connexion ne révèlent pas quels comptes existent. Les tentatives sont
+ *   limitées par IP et par compte (lib/throttle.ts), l'inscription par IP.
+ * - Les sessions gardent leur format d'origine (lib/auth.ts).
+ */
+import { count, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { createSession, destroySession, hashPassword, requireUser, verifyPassword } from "@/lib/auth";
+import { COLORS } from "@/lib/constants";
+import { isUniqueViolation } from "@/lib/db-errors";
 import { afterLoginPath } from "@/lib/invitations";
-import { firstError, password as passwordSchema } from "@/lib/validation";
+import { verifyAgainstDummy } from "@/lib/password";
+import {
+  clearFailures,
+  clientIp,
+  formatWait,
+  LOGIN_ACCOUNT,
+  LOGIN_IP,
+  lockedFor,
+  recordFailure,
+  SIGNUP_IP,
+} from "@/lib/throttle";
+import { firstError, password as passwordSchema, signupInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
+
+const tooMany = (seconds: number) => `Trop de tentatives. Réessayez dans ${formatWait(seconds)}.`;
+const BAD_CREDENTIALS = "Identifiants incorrects.";
+
+/** Compte désigné par son email, sans tenir compte de la casse. */
+async function findByEmail(email: string) {
+  const [user] = await db
+    .select({ id: users.id, passwordHash: users.passwordHash })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+    .limit(1);
+  return user ?? null;
+}
+
+// --- Connexion ----------------------------------------------------------------
 
 export type LoginState = { error?: string; email?: string };
 
 export async function login(_prev: LoginState, form: FormData): Promise<LoginState> {
-  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const email = String(form.get("email") ?? "").trim().slice(0, 254);
   const password = String(form.get("password") ?? "");
   if (!email || !password) return { error: "Renseignez votre email et votre mot de passe.", email };
 
-  const [user] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-  // Même message dans les deux cas pour ne pas révéler quels emails existent.
-  if (!user || !(await verifyPassword(password, user.passwordHash))) {
-    return { error: "Email ou mot de passe incorrect.", email };
+  const user = await findByEmail(email);
+  const ipKey = `login-ip:${await clientIp()}`;
+  // Un compte existant est compté par son id ; un email inconnu l'est aussi, pour que la réponse
+  // soit la même.
+  const accountKey = `login-account:${user?.id ?? email.toLowerCase()}`;
+
+  const wait = await lockedFor([ipKey, accountKey]);
+  if (wait > 0) return { error: tooMany(wait), email };
+
+  const valid = user ? await verifyPassword(password, user.passwordHash) : await verifyAgainstDummy(password);
+  if (!user || !valid) {
+    await recordFailure(accountKey, LOGIN_ACCOUNT);
+    await recordFailure(ipKey, LOGIN_IP);
+    return { error: BAD_CREDENTIALS, email };
   }
 
+  // Le compteur de l'IP n'est pas remis à zéro : se connecter à son propre compte ne doit pas
+  // permettre d'enchaîner les essais sur ceux des autres.
+  await clearFailures([accountKey]);
   await createSession(user.id);
   redirect(afterLoginPath(form.get("suite")));
 }
 
 export async function logout() {
   await destroySession();
-  redirect("/login");
+  redirect("/connexion");
 }
 
 export async function changePassword(current: string, next: string): Promise<ActionResult> {
@@ -42,4 +92,62 @@ export async function changePassword(current: string, next: string): Promise<Act
   }
   await db.update(users).set({ passwordHash: await hashPassword(parsed.data) }).where(eq(users.id, me.id));
   return ok(undefined);
+}
+
+// --- Inscription ----------------------------------------------------------------
+
+type SignupField = "firstName" | "lastName" | "email" | "password" | "confirm";
+
+export type SignupState = {
+  error?: string;
+  fieldErrors?: Partial<Record<SignupField, string>>;
+  values?: { firstName: string; lastName: string; email: string };
+};
+
+/** Crée le compte, ouvre la session et mène à l'accueil (ou au lien d'invitation à reprendre). */
+export async function signup(_prev: SignupState, form: FormData): Promise<SignupState> {
+  const raw = {
+    firstName: String(form.get("firstName") ?? ""),
+    lastName: String(form.get("lastName") ?? ""),
+    email: String(form.get("email") ?? ""),
+    password: String(form.get("password") ?? ""),
+    confirm: String(form.get("confirm") ?? ""),
+  };
+  const values = { firstName: raw.firstName.trim(), lastName: raw.lastName.trim(), email: raw.email.trim() };
+  const parsed = signupInput.safeParse(raw);
+  if (!parsed.success) {
+    const fieldErrors: SignupState["fieldErrors"] = {};
+    for (const issue of parsed.error.issues) {
+      const field = issue.path[0] as SignupField;
+      fieldErrors[field] ??= issue.message;
+    }
+    return { fieldErrors, values };
+  }
+  const key = `signup-ip:${await clientIp()}`;
+  const wait = (await lockedFor([key])) || (await recordFailure(key, SIGNUP_IP));
+  if (wait > 0) return { error: tooMany(wait), values };
+
+  const { firstName, lastName, email, password } = parsed.data;
+  const [{ total }] = await db.select({ total: count() }).from(users);
+  let userId: string;
+  try {
+    [{ id: userId }] = await db
+      .insert(users)
+      .values({
+        firstName,
+        lastName,
+        email,
+        passwordHash: await hashPassword(password),
+        color: COLORS[total % COLORS.length],
+      })
+      .returning({ id: users.id });
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      return { fieldErrors: { email: "Un compte existe déjà avec cet email. Connectez-vous." }, values };
+    }
+    throw err;
+  }
+
+  await createSession(userId);
+  redirect(afterLoginPath(form.get("suite")));
 }

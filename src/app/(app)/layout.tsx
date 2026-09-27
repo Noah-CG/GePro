@@ -8,14 +8,24 @@ import { isDiscordConfigured } from "@/lib/discord/client";
 import { getDiscordChannelViews } from "@/lib/discord/service";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { COLLAPSED_SECTIONS_COOKIE, parseCollapsedSections, SIDEBAR_COLLAPSED_COOKIE } from "@/lib/navigation-prefs";
-import { getConnectionView, getFileLinks, getProjectLinks, getProjectOptions, getProjectsWithStats, getResourceLinks, getRunningSince, getTeam } from "@/lib/queries";
+import {
+  getConnectionView,
+  getFileLinks,
+  getProjectLinks,
+  getProjectOptions,
+  getProjectsWithStats,
+  getReceivedInvitations,
+  getResourceLinks,
+  getRunningSince,
+  getTeam,
+} from "@/lib/queries";
 
 /** Toutes les pages de ce groupe nécessitent d'être connecté. */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireUser();
   const today = todayISO();
   const discordConfigured = isDiscordConfigured();
-  const [team, projects, projectStats, resources, files, links, googleConnection, runningSince, discordChannels, cookieStore] = await Promise.all([
+  const [team, projects, projectStats, resources, files, links, googleConnection, runningSince, discordChannels, cookieStore, invitations] = await Promise.all([
     getTeam(me.id),
     getProjectOptions(me.id),
     getProjectsWithStats(me.id, { today }),
@@ -26,6 +36,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     getRunningSince(me.id),
     discordConfigured ? getDiscordChannelViews(me.id) : {},
     cookies(),
+    getReceivedInvitations(me),
   ]);
 
   const sidebar = {
@@ -34,6 +45,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     files,
     links,
     timerRunning: runningSince !== null,
+    invitations: invitations.length,
     google: { configured: isGoogleConfigured(), connection: googleConnection },
   };
   // Le layout ne connaît pas l'adresse : l'interface privilégie ensuite le projet de l'URL.

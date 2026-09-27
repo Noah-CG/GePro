@@ -25,6 +25,7 @@ import {
   type TaskStatus,
 } from "../src/db/schema";
 import { hashPassword } from "../src/lib/password";
+import { splitName } from "../src/lib/names";
 import { addDays, todayISO } from "../src/lib/dates";
 
 const DEMO_PASSWORD = "demo1234";
@@ -155,10 +156,11 @@ async function main() {
 
   const today = todayISO();
   const passwordHash = await hashPassword(DEMO_PASSWORD);
+  const demoUsers = MEMBERS.map(({ key: _, name, ...m }) => ({ ...m, ...splitName(name), passwordHash }));
 
   const insertedUsers = await db
     .insert(users)
-    .values(MEMBERS.map(({ key: _, ...m }) => ({ ...m, passwordHash })))
+    .values(demoUsers)
     .returning({ id: users.id, email: users.email });
   const userId = (key: MemberKey) => insertedUsers.find((u) => u.email === MEMBERS.find((m) => m.key === key)!.email)!.id;
   const admin = userId("camille");

@@ -1,6 +1,6 @@
 # Lancement : docker compose up -d --build
 # Les variables sont lues dans .env.local puis .env (voir .env.example) ; DATABASE_URL est obligatoire.
-# Créer un compte : docker compose run --rm migrate npm run user:create -- --name "..." --email ... --password "..." --admin
+# Créer un compte : docker compose run --rm migrate npm run user:create -- --prenom "..." --nom "..." --email ... --password "..." --admin
 
 x-env: &env
   env_file:
