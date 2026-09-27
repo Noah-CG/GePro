@@ -83,8 +83,11 @@ Retour arrière, après avoir redéployé le code d'avant les comptes (Vercel et
 ## Comptes
 
 - **Inscription** (`/inscription`) : prénom et nom (obligatoires, stockés séparément ; le nom affiché partout est « Prénom Nom », l'interface s'adresse à la personne par son prénom), email (unique sans tenir compte de la casse), mot de passe (10 caractères minimum, bcrypt coût 10 comme les comptes existants). **Aucune vérification d'email** : le compte est utilisable tout de suite, mais ne voit **aucun projet** tant qu'il n'est pas invité. Inscriptions limitées à 10 par heure et par adresse IP.
-- **Connexion** (`/connexion`, l'ancienne adresse `/login` y renvoie) : par **email** et mot de passe. Message unique « Identifiants incorrects », que le compte existe ou non. Tentatives limitées **par compte** (5 échecs, puis verrouillage de 30 s, 1 min, 2 min… jusqu'à 1 h) et **par adresse IP** (20 échecs) ; un email inconnu est verrouillé de la même façon.
-- **Mot de passe oublié** : pas de réinitialisation par email. Un administrateur de GePro réinitialise le mot de passe depuis `/membres` (ce qui ferme toutes les sessions du compte).
+- **Connexion** (`/connexion`, l'ancienne adresse `/login` y renvoie) : par **email** et mot de passe. Message unique « Identifiants incorrects », que le compte existe ou non. Tentatives limitées **par compte** (5 échecs, puis verrouillage de 30 s, 1 min, 2 min… jusqu'à 1 h) et **par adresse IP** (20 échecs) ; un email inconnu est verrouillé de la même façon. Chaque tentative est comptée **avant** la vérification du mot de passe, en une instruction SQL : des essais envoyés en rafale ne passent pas tous.
+- **Adresse IP** (limitation) : sur Vercel, `x-vercel-forwarded-for` ; ailleurs, `X-Real-IP` puis la **dernière** adresse de `X-Forwarded-For`. Sur un serveur (Docker…), placez GePro derrière un proxy inverse (nginx, Caddy, Traefik) qui pose ces en-têtes : sans proxy, le client peut les inventer et contourner la limite par IP (celle par compte reste).
+- **Sessions** : 30 jours. Changer son mot de passe ferme les autres sessions du compte ; les sessions expirées sont supprimées à chaque connexion.
+- **Mot de passe oublié** : pas de réinitialisation par email. Un administrateur de GePro réinitialise le mot de passe depuis `/membres` (ce qui ferme toutes les sessions du compte). ⚠️ C'est un pouvoir fort : en réinitialisant un mot de passe, un administrateur peut se connecter à la place du compte et voir ses projets. Ne donnez ce rôle qu'à des personnes de confiance ; chaque réinitialisation est inscrite dans les journaux du serveur (`[comptes]`).
+- **En-têtes de sécurité** (`next.config.ts`) : GePro ne s'affiche jamais dans le cadre d'un autre site (`frame-ancestors 'none'`, `X-Frame-Options: DENY`), plus `nosniff`, `Referrer-Policy` et `Permissions-Policy`.
 - **Aucun email** n'est envoyé par GePro.
 - **Jetons** (invitations, liens) : aléatoires (32 octets), stockés **hachés** (SHA-256), avec expiration et usage limité.
 - **CSRF** : cookie de session `SameSite=Lax`, `httpOnly`, `Secure` en production ; Next.js vérifie l'origine des Server Actions, et `src/proxy.ts` refuse en plus toute requête POST sans en-tête `Origin` ou venant d'un autre site.
@@ -304,7 +307,7 @@ Chaque projet est **étanche** : on ne voit, ne lit et ne modifie que les projet
   Accepter n'ajoute qu'à ce projet.
 - **Quitter / retirer** : tout membre peut quitter un projet, sauf le propriétaire (qui doit d'abord transmettre la propriété). Un membre retiré perd l'accès ; ce qu'il a créé reste dans le projet.
 - **Supprimer** un projet (propriétaire) efface toutes ses données ; le temps de travail pointé est gardé, sans projet.
-- Le rôle **administrateur de l'application** (création des comptes) ne donne accès à aucun projet.
+- Le rôle **administrateur de l'application** (création des comptes) ne donne accès à aucun projet par lui-même ; mais il peut réinitialiser le mot de passe de n'importe quel compte (voir [Comptes](#comptes)).
 
 Le contrôle d'accès est fait côté serveur uniquement, dans `src/lib/access.ts` : `requireProjectAccess` (pages, 404), `authorizeProject` / `authorizeProjectOf` (Server Actions), `getProjectRole` (routes API). Aucun `project_id` envoyé par le navigateur n'est cru sur parole.
 

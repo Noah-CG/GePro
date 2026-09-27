@@ -206,6 +206,14 @@ describe("limitation des tentatives de connexion", () => {
     expect((await loginWith("inconnu@exemple.fr", "x")).error).toBe("Trop de tentatives. Réessayez dans 30 secondes.");
   });
 
+  it("des essais simultanés ne passent pas tous avant le verrouillage", async () => {
+    const results = await Promise.all(Array.from({ length: 12 }, () => loginWith(NADIA, "faux-mot-de-passe")));
+    const checked = results.filter((r) => r.error === "Identifiants incorrects.");
+    // 5 essais libres, plus celui qui déclenche le verrouillage : jamais davantage.
+    expect(checked.length).toBeLessThanOrEqual(6);
+    expect(results.filter((r) => r.error?.startsWith("Trop de tentatives")).length).toBeGreaterThanOrEqual(6);
+  });
+
   it("verrouille une adresse IP qui essaie beaucoup de comptes", async () => {
     for (let i = 0; i < 21; i++) await loginWith(`inconnu${i}@exemple.fr`, "x");
     expect((await loginWith(NADIA, PASSWORD)).error).toMatch(/^Trop de tentatives/);
@@ -254,6 +262,32 @@ describe("comptes existants (migrés)", () => {
     await redirectOf(() => loginWith(hugo.email, "demo1234"));
     expect(await changePassword("demo1234", "court123")).toEqual({ ok: false, error: "10 caractères minimum" });
     expect(await changePassword("demo1234", "beaucoup-plus-long")).toEqual({ ok: true, data: undefined });
+  });
+
+  it("changer son mot de passe ferme les autres sessions, pas celle en cours", async () => {
+    const hugo = await insertUser(db, "Hugo", { passwordHash: await hashPassword(PASSWORD) });
+    await redirectOf(() => loginWith(hugo.email)); // autre appareil
+    const otherDevice = web.jar.get(SESSION_COOKIE)!;
+    web.jar.clear();
+    await redirectOf(() => loginWith(hugo.email));
+    expect(await changePassword(PASSWORD, "nouveau-mot-de-passe")).toEqual({ ok: true, data: undefined });
+    expect((await getCurrentUser())?.id).toBe(hugo.id);
+    web.jar.set(SESSION_COOKIE, otherDevice);
+    expect(await getCurrentUser()).toBeNull();
+  });
+
+  it("limite les essais du mot de passe actuel", async () => {
+    const hugo = await insertUser(db, "Hugo", { passwordHash: await hashPassword(PASSWORD) });
+    await redirectOf(() => loginWith(hugo.email));
+    for (let i = 0; i < 6; i++) expect(await changePassword("faux", "nouveau-mot-de-passe")).toMatchObject({ ok: false });
+    expect(await changePassword(PASSWORD, "nouveau-mot-de-passe")).toEqual({ ok: false, error: "Trop de tentatives. Réessayez dans 30 secondes." });
+  });
+
+  it("les sessions expirées sont supprimées à la connexion suivante", async () => {
+    const hugo = await insertUser(db, "Hugo", { passwordHash: await hashPassword(PASSWORD) });
+    await db.insert(sessions).values({ id: "ancienne", userId: hugo.id, expiresAt: new Date(Date.now() - 1000) });
+    await redirectOf(() => loginWith(hugo.email));
+    expect((await db.select().from(sessions)).map((s) => s.id)).not.toContain("ancienne");
   });
 });
 

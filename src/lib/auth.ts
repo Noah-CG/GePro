@@ -7,7 +7,7 @@
  */
 import "server-only";
 import { createHash, randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, lt, ne } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -41,6 +41,8 @@ export async function createSession(userId: string) {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
   await db.insert(sessions).values({ id: hashToken(token), userId, expiresAt });
+  // Ménage : les sessions expirées ne servent plus à rien.
+  await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
 
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -56,6 +58,12 @@ export async function destroySession() {
   const token = store.get(SESSION_COOKIE)?.value;
   if (token) await db.delete(sessions).where(eq(sessions.id, hashToken(token)));
   store.delete(SESSION_COOKIE);
+}
+
+/** Ferme toutes les sessions du compte sauf celle de ce navigateur (après un changement de mot de passe). */
+export async function destroyOtherSessions(userId: string) {
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  await db.delete(sessions).where(and(eq(sessions.userId, userId), token ? ne(sessions.id, hashToken(token)) : undefined));
 }
 
 /** Utilisateur connecté, ou null. Mis en cache pour la durée d'une requête. */

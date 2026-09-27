@@ -13,21 +13,12 @@ import { count, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { createSession, destroySession, hashPassword, requireUser, verifyPassword } from "@/lib/auth";
+import { createSession, destroyOtherSessions, destroySession, hashPassword, requireUser, verifyPassword } from "@/lib/auth";
 import { COLORS } from "@/lib/constants";
 import { isUniqueViolation } from "@/lib/db-errors";
 import { afterLoginPath } from "@/lib/invitations";
 import { verifyAgainstDummy } from "@/lib/password";
-import {
-  clearFailures,
-  clientIp,
-  formatWait,
-  LOGIN_ACCOUNT,
-  LOGIN_IP,
-  lockedFor,
-  recordFailure,
-  SIGNUP_IP,
-} from "@/lib/throttle";
+import { claimAttempt, clearFailures, clientIp, formatWait, LOGIN_ACCOUNT, LOGIN_IP, releaseAttempt, SIGNUP_IP } from "@/lib/throttle";
 import { firstError, password as passwordSchema, signupInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -59,19 +50,19 @@ export async function login(_prev: LoginState, form: FormData): Promise<LoginSta
   // soit la même.
   const accountKey = `login-account:${user?.id ?? email.toLowerCase()}`;
 
-  const wait = await lockedFor([ipKey, accountKey]);
-  if (wait > 0) return { error: tooMany(wait), email };
-
-  const valid = user ? await verifyPassword(password, user.passwordHash) : await verifyAgainstDummy(password);
-  if (!user || !valid) {
-    await recordFailure(accountKey, LOGIN_ACCOUNT);
-    await recordFailure(ipKey, LOGIN_IP);
-    return { error: BAD_CREDENTIALS, email };
+  // Tentative comptée avant la vérification : des essais simultanés ne passent pas tous.
+  for (const [key, policy] of [[ipKey, LOGIN_IP], [accountKey, LOGIN_ACCOUNT]] as const) {
+    const attempt = await claimAttempt(key, policy);
+    if (!attempt.claimed) return { error: tooMany(attempt.wait), email };
   }
 
-  // Le compteur de l'IP n'est pas remis à zéro : se connecter à son propre compte ne doit pas
-  // permettre d'enchaîner les essais sur ceux des autres.
+  const valid = user ? await verifyPassword(password, user.passwordHash) : await verifyAgainstDummy(password);
+  if (!user || !valid) return { error: BAD_CREDENTIALS, email };
+
+  // Le compteur de l'IP n'est pas remis à zéro (seule cette tentative est annulée) : se connecter
+  // à son propre compte ne doit pas permettre d'enchaîner les essais sur ceux des autres.
   await clearFailures([accountKey]);
+  await releaseAttempt(ipKey, LOGIN_IP);
   await createSession(user.id);
   redirect(afterLoginPath(form.get("suite")));
 }
@@ -81,16 +72,25 @@ export async function logout() {
   redirect("/connexion");
 }
 
+/**
+ * Change le mot de passe du compte connecté (essais limités comme la connexion). Les autres
+ * sessions du compte sont fermées : un appareil perdu ou une session volée perd l'accès.
+ */
 export async function changePassword(current: string, next: string): Promise<ActionResult> {
   const me = await requireUser();
   const parsed = passwordSchema.safeParse(next);
   if (!parsed.success) return fail(firstError(parsed.error));
 
+  const key = `password-change:${me.id}`;
+  const attempt = await claimAttempt(key, LOGIN_ACCOUNT);
+  if (!attempt.claimed) return fail(tooMany(attempt.wait));
   const [user] = await db.select().from(users).where(eq(users.id, me.id)).limit(1);
-  if (!user || !(await verifyPassword(current, user.passwordHash))) {
+  if (!user || !(await verifyPassword(String(current), user.passwordHash))) {
     return fail("Mot de passe actuel incorrect.");
   }
+  await clearFailures([key]);
   await db.update(users).set({ passwordHash: await hashPassword(parsed.data) }).where(eq(users.id, me.id));
+  await destroyOtherSessions(me.id);
   return ok(undefined);
 }
 
@@ -124,8 +124,9 @@ export async function signup(_prev: SignupState, form: FormData): Promise<Signup
     return { fieldErrors, values };
   }
   const key = `signup-ip:${await clientIp()}`;
-  const wait = (await lockedFor([key])) || (await recordFailure(key, SIGNUP_IP));
-  if (wait > 0) return { error: tooMany(wait), values };
+  // Chaque inscription compte ; celle qui dépasse la limite est refusée aussi.
+  const attempt = await claimAttempt(key, SIGNUP_IP);
+  if (!attempt.claimed || attempt.wait > 0) return { error: tooMany(attempt.wait), values };
 
   const { firstName, lastName, email, password } = parsed.data;
   const [{ total }] = await db.select({ total: count() }).from(users);

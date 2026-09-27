@@ -12,7 +12,8 @@
  *
  * Rôles : owner (tous les droits, dont supprimer le projet) > admin (membres, invitations,
  * paramètres) > member (contenu : tâches, calendrier, documents…). Le rôle global « admin » d'un
- * compte ne sert qu'à gérer les comptes : il ne donne aucun droit sur les projets.
+ * compte ne sert qu'à gérer les comptes : il ne donne aucun droit sur les projets (mais il peut
+ * réinitialiser un mot de passe, donc se connecter à la place d'un compte : voir le README).
  */
 import "server-only";
 import { and, eq, inArray } from "drizzle-orm";
