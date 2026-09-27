@@ -24,16 +24,10 @@ export function ProjectDialog({
 }) {
   const { toast } = useApp();
   const router = useRouter();
-  const [draft, setDraft] = useState({
-    name: project?.name ?? "",
-    description: project?.description ?? "",
-    color: project?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],
-    startDate: project?.startDate ?? "",
-    endDate: project?.endDate ?? "",
-  });
+  const [draft, setDraft] = useState(() => projectDraft(project));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const set = (key: keyof typeof draft, value: string) => setDraft((d) => ({ ...d, [key]: value }));
+  const set = (key: keyof ProjectDraft, value: string) => setDraft((d) => ({ ...d, [key]: value }));
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -56,37 +50,7 @@ export function ProjectDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title={project ? "Modifier le projet" : "Nouveau projet"}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Nom" htmlFor="project-name">
-          <Input id="project-name" autoFocus value={draft.name} onChange={(e) => set("name", e.target.value)} maxLength={120} placeholder="Ex. Refonte du site web" />
-        </Field>
-        <Field label="Description" htmlFor="project-desc">
-          <Textarea id="project-desc" value={draft.description} onChange={(e) => set("description", e.target.value)} placeholder="Objectif, contexte, livrables…" />
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Début" htmlFor="project-start">
-            <DatePicker id="project-start" value={draft.startDate} onChange={(v) => set("startDate", v)} />
-          </Field>
-          <Field label="Fin" htmlFor="project-end">
-            <DatePicker id="project-end" value={draft.endDate} onChange={(v) => set("endDate", v)} min={draft.startDate || undefined} />
-          </Field>
-        </div>
-        <Field label="Couleur">
-          <div className="flex flex-wrap gap-2">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => set("color", c)}
-                className="flex h-7 w-7 items-center justify-center rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110"
-                style={{ background: c, boxShadow: draft.color === c ? `0 0 0 2px var(--surface), 0 0 0 4px ${c}` : undefined }}
-                aria-label={`Couleur ${c}`}
-                aria-pressed={draft.color === c}
-              >
-                {draft.color === c && <Check size={14} className="text-white" />}
-              </button>
-            ))}
-          </div>
-        </Field>
+        <ProjectFields draft={draft} set={set} autoFocus />
 
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}
 
@@ -100,5 +64,68 @@ export function ProjectDialog({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+export type ProjectDraft = { name: string; description: string; color: string; startDate: string; endDate: string };
+
+/** Valeurs de départ du formulaire : celles du projet, ou un projet vierge de couleur au hasard. */
+export function projectDraft(project?: ProjectWithStats): ProjectDraft {
+  return {
+    name: project?.name ?? "",
+    description: project?.description ?? "",
+    color: project?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],
+    startDate: project?.startDate ?? "",
+    endDate: project?.endDate ?? "",
+  };
+}
+
+/** Champs d'un projet (nom, description, dates, couleur) : fenêtre de création/modification et paramètres. */
+export function ProjectFields({
+  draft,
+  set,
+  autoFocus,
+  idPrefix = "project",
+}: {
+  draft: ProjectDraft;
+  set: (key: keyof ProjectDraft, value: string) => void;
+  autoFocus?: boolean;
+  /** Préfixe des id : la fenêtre « Nouveau projet » peut s'ouvrir par-dessus les paramètres. */
+  idPrefix?: string;
+}) {
+  return (
+    <>
+      <Field label="Nom" htmlFor={`${idPrefix}-name`}>
+        <Input id={`${idPrefix}-name`} autoFocus={autoFocus} value={draft.name} onChange={(e) => set("name", e.target.value)} maxLength={120} placeholder="Ex. Refonte du site web" />
+      </Field>
+      <Field label="Description" htmlFor={`${idPrefix}-desc`}>
+        <Textarea id={`${idPrefix}-desc`} value={draft.description} onChange={(e) => set("description", e.target.value)} placeholder="Objectif, contexte, livrables…" />
+      </Field>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Début" htmlFor={`${idPrefix}-start`}>
+          <DatePicker id={`${idPrefix}-start`} value={draft.startDate} onChange={(v) => set("startDate", v)} />
+        </Field>
+        <Field label="Fin" htmlFor={`${idPrefix}-end`}>
+          <DatePicker id={`${idPrefix}-end`} value={draft.endDate} onChange={(v) => set("endDate", v)} min={draft.startDate || undefined} />
+        </Field>
+      </div>
+      <Field label="Couleur">
+        <div className="flex flex-wrap gap-2">
+          {COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => set("color", c)}
+              className="flex h-7 w-7 items-center justify-center rounded-full ring-offset-2 ring-offset-surface transition-transform hover:scale-110"
+              style={{ background: c, boxShadow: draft.color === c ? `0 0 0 2px var(--surface), 0 0 0 4px ${c}` : undefined }}
+              aria-label={`Couleur ${c}`}
+              aria-pressed={draft.color === c}
+            >
+              {draft.color === c && <Check size={14} className="text-white" />}
+            </button>
+          ))}
+        </div>
+      </Field>
+    </>
   );
 }

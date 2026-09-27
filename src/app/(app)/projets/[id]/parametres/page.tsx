@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DiscordChannelCard } from "@/components/discord/discord-channel-card";
 import { GoogleConnectionCard, type Notice } from "@/components/integrations/google-connection-card";
 import { MembersManager } from "@/components/members/members-manager";
+import { ProjectInfoForm } from "@/components/projects/project-info-form";
 import { ProjectDangerZone, ProjectMembers } from "@/components/projects/project-members";
 import { PageHeader } from "@/components/ui/misc";
 import { isDiscordConfigured } from "@/lib/discord/client";
@@ -54,6 +55,18 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
         <ArrowLeft size={14} /> {project.name}
       </Link>
       <PageHeader title="Paramètres du projet" />
+
+      <section className="mb-8">
+        <h2 className="mb-1 text-sm font-semibold">Informations</h2>
+        {manager ? (
+          <>
+            <p className="mb-3 text-sm text-muted">Nom, description, dates et couleur du projet, visibles par tous ses membres.</p>
+            <ProjectInfoForm project={project} />
+          </>
+        ) : (
+          <p className="text-sm text-muted">Seuls le propriétaire et les administrateurs du projet peuvent modifier ses informations.</p>
+        )}
+      </section>
 
       <section className="mb-8">
         <h2 className="mb-1 text-sm font-semibold">Membres</h2>
