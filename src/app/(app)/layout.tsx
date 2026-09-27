@@ -5,6 +5,7 @@ import { requireUser } from "@/lib/auth";
 import { resolveSelectedProjectId, SELECTED_PROJECT_COOKIE } from "@/lib/current-project";
 import { todayISO } from "@/lib/dates";
 import { isDiscordConfigured } from "@/lib/discord/client";
+import { isEmailEnabled } from "@/lib/email";
 import { getDiscordChannelViews } from "@/lib/discord/service";
 import { isGoogleConfigured } from "@/lib/integrations/google";
 import { COLLAPSED_SECTIONS_COOKIE, parseCollapsedSections, SIDEBAR_COLLAPSED_COOKIE } from "@/lib/navigation-prefs";
@@ -27,6 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const me = await requireUser();
   const today = todayISO();
   const discordConfigured = isDiscordConfigured();
+  const emailEnabled = isEmailEnabled();
   const [team, projects, projectStats, resources, files, links, googleConnection, runningSince, discordChannels, cookieStore, invitations, awaitingVerification] = await Promise.all([
     getTeam(me.id),
     getProjectOptions(me.id),
@@ -39,7 +41,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     discordConfigured ? getDiscordChannelViews(me.id) : {},
     cookies(),
     getReceivedInvitations(me),
-    countInvitationsAwaitingVerification(me),
+    emailEnabled ? countInvitationsAwaitingVerification(me) : 0,
   ]);
 
   const sidebar = {
@@ -65,7 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AppProvider me={me} team={team} projects={projects} today={today} selectedProjectId={selectedProjectId}>
       <AppShell sidebar={sidebar} prefs={prefs} discord={{ configured: discordConfigured, channels: discordChannels }}>
-        <AccountBanners invitationsAwaitingVerification={awaitingVerification} />
+        <AccountBanners emailEnabled={emailEnabled} invitationsAwaitingVerification={awaitingVerification} />
         {children}
       </AppShell>
     </AppProvider>

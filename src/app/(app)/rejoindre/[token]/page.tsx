@@ -6,6 +6,7 @@ import { JoinProjectButton } from "@/components/projects/join-project-button";
 import { Card, EmptyState } from "@/components/ui/misc";
 import { getProjectRole } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
+import { isEmailEnabled } from "@/lib/email";
 import { hashInvitationToken } from "@/lib/invitations";
 import { getInviteLinkByTokenHash } from "@/lib/queries";
 
@@ -16,7 +17,8 @@ type Props = { params: Promise<{ token: string }> };
 /**
  * Lien d'invitation ouvert. Sans compte, on arrive ici après l'inscription (le lien est repris) ;
  * connecté, on rejoint le projet après confirmation, comme simple membre. L'adresse email doit
- * être vérifiée. Un lien invalide, expiré, révoqué ou épuisé ne révèle rien du projet.
+ * être vérifiée (si l'envoi d'emails est configuré). Un lien invalide, expiré, révoqué ou épuisé
+ * ne révèle rien du projet.
  */
 export default async function JoinPage({ params }: Props) {
   const me = await requireUser();
@@ -40,7 +42,7 @@ export default async function JoinPage({ params }: Props) {
     );
   }
 
-  if (!me.emailVerifiedAt) {
+  if (!me.emailVerifiedAt && isEmailEnabled()) {
     return (
       <div className="mx-auto max-w-lg pt-10">
         <EmptyState icon={<MailWarning size={28} />} title="Vérifiez d'abord votre adresse email">

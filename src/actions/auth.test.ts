@@ -6,7 +6,7 @@
  * Les emails sont capturés (sendEmail simulé) pour y lire les liens.
  */
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { authThrottle, sessions, users } from "@/db/schema";
 import { getCurrentUser, hashPassword, SESSION_COOKIE } from "@/lib/auth";
@@ -443,5 +443,29 @@ describe("lien d'invitation ouvert, sans compte", () => {
     const [membership] = await db.select().from(projectMembers).where(eq(projectMembers.userId, me.id));
     expect(membership).toMatchObject({ projectId: project.id, role: "member" });
     expect((await getProjectsWithStats(me.id, { today: "2026-09-26" })).map((p) => p.id)).toEqual([project.id]);
+  });
+});
+
+describe("sans envoi d'emails configuré (production sans Resend)", () => {
+  beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RESEND_API_KEY", "");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("inscription : pas d'email, direction l'accueil ou le lien d'invitation", async () => {
+    expect(await signUp("nadia", "nadia@exemple.fr")).toBe("/");
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect((await getCurrentUser())?.emailVerifiedAt).toBeNull();
+    web.jar.clear();
+    expect(await signUp("lea", "lea@exemple.fr", { suite: "/rejoindre/abc123" })).toBe("/rejoindre/abc123");
+  });
+
+  it("mot de passe oublié : renvoie vers un administrateur", async () => {
+    await signUp("nadia", "nadia@exemple.fr");
+    expect(await requestPasswordReset({}, form({ email: "nadia@exemple.fr" }))).toEqual({ error: expect.stringMatching(/demandez à un administrateur/) });
+    expect(sendEmail).not.toHaveBeenCalled();
   });
 });

@@ -79,7 +79,7 @@ npm run db:comptes-preview
 npm run db:migrate
 ```
 
-Les nouvelles colonnes sont nullables : l'ancienne version (serveur Linux pas encore mis à jour, par exemple) continue de fonctionner sur la base migrée. Déployez ensuite **Vercel et le serveur Linux**, avec les variables `RESEND_API_KEY`, `EMAIL_FROM_DOMAIN` et `APP_URL`.
+Les nouvelles colonnes sont nullables : l'ancienne version (serveur Linux pas encore mis à jour, par exemple) continue de fonctionner sur la base migrée. Déployez ensuite **Vercel et le serveur Linux**, avec les variables `RESEND_API_KEY`, `EMAIL_FROM_DOMAIN` et `APP_URL` (facultatives : sans elles, pas de vérification d'email, voir « Comptes »).
 
 Retour arrière, après avoir redéployé le code d'avant les comptes (Vercel et serveur Linux) : `npm run db:comptes-rollback -- --confirm`. Aucun compte n'est supprimé ; noms d'utilisateur, vérifications, jetons, liens d'invitation et invitations par nom d'utilisateur sont perdus (les membres déjà entrés restent membres).
 
@@ -91,6 +91,7 @@ Retour arrière, après avoir redéployé le code d'avant les comptes (Vercel et
 - **Mot de passe oublié** (`/mot-de-passe-oublie`) : même réponse que le compte existe ou non ; lien à usage unique valable 1 h. Changer le mot de passe **ferme toutes les sessions** du compte.
 - **Emails** : envoyés par [Resend](https://resend.com) (`src/lib/email/`). Si un envoi échoue (service en panne, quota dépassé), l'utilisateur voit un message clair et l'échec est journalisé côté serveur (sans le contenu de l'email). Exception : « mot de passe oublié » répond toujours la même chose, pour ne pas révéler les comptes existants.
 - **Jetons** (vérification, réinitialisation, invitations, liens) : aléatoires (32 octets), stockés **hachés** (SHA-256), avec expiration et usage limité.
+- **Sans envoi d'emails** (production sans `RESEND_API_KEY`, `EMAIL_FROM_DOMAIN` et `APP_URL`) : pas de vérification d'adresse ni d'email envoyé. Une invitation par email reste cachée de la liste d'un compte non vérifié, mais s'accepte avec le **lien transmis par l'inviteur** (comme avant les comptes) ; les liens ouverts et les invitations par nom d'utilisateur fonctionnent ; « mot de passe oublié » renvoie vers un administrateur (réinitialisation depuis `/membres`). Tout se réactive dès que les trois variables sont renseignées.
 - **CSRF** : cookie de session `SameSite=Lax`, `httpOnly`, `Secure` en production ; Next.js vérifie l'origine des Server Actions, et `src/proxy.ts` refuse en plus toute requête POST sans en-tête `Origin` ou venant d'un autre site.
 
 ## Intégration Google Docs

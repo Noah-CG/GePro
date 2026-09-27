@@ -10,15 +10,22 @@ import { UsernameDialog } from "./username-dialog";
 
 /**
  * Bandeaux du compte, en haut des pages :
- * - adresse email à vérifier (pour pouvoir accepter les invitations par email ou par lien) ;
+ * - adresse email à vérifier (pour pouvoir accepter les invitations par email ou par lien), si
+ *   l'envoi d'emails est configuré ;
  * - nom d'utilisateur proposé par la migration, à garder ou à modifier (première connexion) ; ou à
  *   choisir s'il n'y en a pas (compte créé par l'ancienne version pendant le déploiement).
  */
-export function AccountBanners({ invitationsAwaitingVerification }: { invitationsAwaitingVerification: number }) {
+export function AccountBanners({
+  emailEnabled,
+  invitationsAwaitingVerification,
+}: {
+  emailEnabled: boolean;
+  invitationsAwaitingVerification: number;
+}) {
   const { me } = useApp();
   return (
     <>
-      {!me.emailVerifiedAt && <VerifyEmailBanner email={me.email} waiting={invitationsAwaitingVerification} />}
+      {emailEnabled && !me.emailVerifiedAt && <VerifyEmailBanner email={me.email} waiting={invitationsAwaitingVerification} />}
       {!me.usernameConfirmedAt && <ConfirmUsernameBanner username={me.username} />}
     </>
   );

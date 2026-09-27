@@ -26,7 +26,7 @@ import {
 } from "@/db/schema";
 import { atLeast, authorizeProject, getProjectRole } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
-import { appUrl, emailErrorMessage, invitationEmail, sendEmail } from "@/lib/email";
+import { appUrl, emailErrorMessage, invitationEmail, isEmailEnabled, sendEmail } from "@/lib/email";
 import { scheduleReconcile } from "@/lib/integrations/calendar-sync";
 import { hashInvitationToken, INVITATION_DAYS, newInvitationToken } from "@/lib/invitations";
 import { isInvitationFor, type Invitee } from "@/lib/queries";
@@ -48,6 +48,9 @@ const refresh = () => revalidatePath("/", "layout");
 const INVITATION_NOT_FOUND = "Invitation introuvable, expirée ou déjà utilisée.";
 const LINK_NOT_FOUND = "Ce lien d'invitation est invalide, a expiré, a été révoqué ou a atteint son nombre d'utilisations.";
 const VERIFY_EMAIL_FIRST = "Vérifiez d'abord votre adresse email (lien reçu par email) pour rejoindre un projet.";
+/** Sans envoi d'emails : une invitation par email ne s'accepte qu'avec le lien transmis par l'inviteur. */
+const OPEN_INVITATION_LINK = "Pour accepter cette invitation, ouvrez le lien d'invitation que vous a transmis l'administrateur du projet.";
+const unverifiedError = () => (isEmailEnabled() ? VERIFY_EMAIL_FIRST : OPEN_INVITATION_LINK);
 const MEMBER_NOT_FOUND = "Membre introuvable.";
 
 /**
@@ -91,12 +94,13 @@ export async function inviteMember(projectId: string, input: InvitationInput): P
 /**
  * Invite un compte désigné par son nom d'utilisateur exact (casse indifférente) : aucune recherche
  * ni liste des comptes. La personne voit l'invitation dans GePro et reçoit un email ; si l'email
- * ne part pas, l'invitation reste valable et `emailError` l'explique.
+ * ne part pas, l'invitation reste valable et `emailError` l'explique. Sans envoi d'emails
+ * configuré, aucun email n'est tenté (`notified` faux).
  */
 export async function inviteByUsername(
   projectId: string,
   input: UsernameInvitationInput,
-): Promise<ActionResult<{ name: string; emailError: string | null }>> {
+): Promise<ActionResult<{ name: string; notified: boolean; emailError: string | null }>> {
   const auth = await authorizeProject(projectId, "admin");
   if (!auth.ok) return fail(auth.error);
   const parsed = usernameInvitationInput.safeParse(input);
@@ -128,6 +132,7 @@ export async function inviteByUsername(
   });
   refresh();
 
+  if (!isEmailEnabled()) return ok({ name: invitee.name, notified: false, emailError: null });
   const [project] = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, projectId));
   const base = appUrl();
   const sent = base
@@ -141,8 +146,7 @@ export async function inviteByUsername(
         }),
       })
     : ({ ok: false, code: "not_configured" } as const);
-  const emailError = sent.ok ? null : emailErrorMessage(sent.code);
-  return ok({ name: invitee.name, emailError });
+  return ok({ name: invitee.name, notified: sent.ok, emailError: sent.ok ? null : emailErrorMessage(sent.code) });
 }
 
 /**
@@ -185,13 +189,14 @@ export async function revokeInviteLink(linkId: string): Promise<ActionResult> {
 }
 
 /**
- * Rejoint un projet avec un lien d'invitation ouvert. L'adresse email du compte doit être vérifiée.
+ * Rejoint un projet avec un lien d'invitation ouvert. L'adresse email du compte doit être vérifiée
+ * (sauf si l'envoi d'emails n'est pas configuré : la vérification est alors impossible).
  * En une seule instruction : utilisation comptée (sans jamais dépasser le maximum, même avec des
  * clics simultanés), membre ajouté et utilisation journalisée. Déjà membre : rien n'est consommé.
  */
 export async function joinWithInviteLink(token: string): Promise<ActionResult<{ projectId: string }>> {
   const me = await requireUser();
-  if (!me.emailVerifiedAt) return fail(VERIFY_EMAIL_FIRST);
+  if (!me.emailVerifiedAt && isEmailEnabled()) return fail(VERIFY_EMAIL_FIRST);
   if (!/^[A-Za-z0-9_-]{1,100}$/.test(token)) return fail(LINK_NOT_FOUND);
   const tokenHash = hashInvitationToken(token);
 
@@ -252,7 +257,9 @@ export async function revokeInvitation(invitationId: string): Promise<ActionResu
 /**
  * Invitation en attente et valable, désignée par son lien ou son id, adressée au compte connecté :
  * par son nom d'utilisateur, ou par son email (vérifié). `unverified` : l'invitation est bien pour
- * cet email, mais l'adresse n'est pas encore vérifiée.
+ * cet email, mais l'adresse n'est pas encore vérifiée. Sans envoi d'emails (vérification
+ * impossible), le lien transmis par l'inviteur tient lieu de preuve, comme avant les comptes ;
+ * l'invitation reste cachée de la liste des invitations reçues.
  */
 async function findMyInvitation(ref: { token: string } | { id: string }, me: Invitee) {
   if ("id" in ref && !isUuid(ref.id)) return null;
@@ -275,18 +282,20 @@ async function findMyInvitation(ref: { token: string } | { id: string }, me: Inv
       ),
     );
   if (!invitation) return null;
-  return isInvitationFor(invitation, me) ? invitation : ("unverified" as const);
+  if (isInvitationFor(invitation, me)) return invitation;
+  if (!isEmailEnabled() && "token" in ref) return invitation;
+  return "unverified" as const;
 }
 
 /**
  * Accepte une invitation (lien reçu, ou liste des invitations) : ajoute le compte connecté à ce
  * projet seulement, avec le rôle prévu. L'invitation est consommée et l'ajout fait en une seule
- * instruction SQL. Une invitation par email exige une adresse vérifiée.
+ * instruction SQL. Une invitation par email exige une adresse vérifiée (ou, sans envoi d'emails, le lien).
  */
 export async function acceptInvitation(ref: { token: string } | { id: string }): Promise<ActionResult<{ projectId: string }>> {
   const me = await requireUser();
   const invitation = await findMyInvitation(ref, me);
-  if (invitation === "unverified") return fail(VERIFY_EMAIL_FIRST);
+  if (invitation === "unverified") return fail(unverifiedError());
   if (!invitation) return fail(INVITATION_NOT_FOUND);
 
   await db.execute(sql`
@@ -309,7 +318,7 @@ export async function acceptInvitation(ref: { token: string } | { id: string }):
 export async function declineInvitation(ref: { token: string } | { id: string }): Promise<ActionResult> {
   const me = await requireUser();
   const invitation = await findMyInvitation(ref, me);
-  if (invitation === "unverified") return fail(VERIFY_EMAIL_FIRST);
+  if (invitation === "unverified") return fail(unverifiedError());
   if (!invitation) return fail(INVITATION_NOT_FOUND);
   await db.update(projectInvitations).set({ status: "revoked" }).where(eq(projectInvitations.id, invitation.id));
   refresh();

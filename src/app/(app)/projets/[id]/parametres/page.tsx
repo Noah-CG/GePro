@@ -13,6 +13,7 @@ import { isGoogleConfigured } from "@/lib/integrations/google";
 import { MEMBERS_SECTION_ID } from "@/lib/members";
 import { loadProjectPage } from "@/lib/project-page";
 import { atLeast } from "@/lib/access";
+import { isEmailEnabled } from "@/lib/email";
 import { getAccounts, getConnectionView, getInviteLinks, getPendingInvitations, getProjectMembers } from "@/lib/queries";
 
 type Props = {
@@ -61,7 +62,7 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
           Seuls les membres voient le projet et ses données. On n&apos;y entre que sur invitation
           {manager ? "." : " d'un propriétaire ou d'un administrateur."}
         </p>
-        <ProjectMembers projectId={project.id} myRole={role} members={members} invitations={invitations} links={links} />
+        <ProjectMembers projectId={project.id} myRole={role} members={members} invitations={invitations} links={links} emailEnabled={isEmailEnabled()} />
       </section>
 
       <section className="mb-8">

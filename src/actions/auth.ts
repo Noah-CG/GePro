@@ -16,7 +16,7 @@ import { emailVerificationTokens, passwordResetTokens, sessions, users } from "@
 import { createSession, destroySession, hashPassword, requireUser, verifyPassword } from "@/lib/auth";
 import { COLORS } from "@/lib/constants";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { appUrl, emailErrorMessage, passwordResetEmail, sendEmail, verificationEmail, type SendResult } from "@/lib/email";
+import { appUrl, emailErrorMessage, isEmailEnabled, passwordResetEmail, RESET_BY_ADMIN, sendEmail, verificationEmail, type SendResult } from "@/lib/email";
 import { afterLoginPath, suiteQuery } from "@/lib/invitations";
 import {
   EMAIL_VERIFICATION_HOURS,
@@ -178,6 +178,11 @@ export async function signup(_prev: SignupState, form: FormData): Promise<Signup
   }
 
   const suite = form.get("suite");
+  // Sans envoi d'emails, pas de vérification : direction l'accueil, ou le lien d'invitation.
+  if (!isEmailEnabled()) {
+    await createSession(user.id);
+    redirect(afterLoginPath(suite));
+  }
   const sent = await sendVerification(user, suite);
   await createSession(user.id);
   const query = new URLSearchParams();
@@ -191,6 +196,7 @@ export async function signup(_prev: SignupState, form: FormData): Promise<Signup
 export async function resendVerification(suite?: string): Promise<ActionResult> {
   const me = await requireUser();
   if (me.emailVerifiedAt) return fail("Votre adresse email est déjà vérifiée.");
+  if (!isEmailEnabled()) return fail(emailErrorMessage("not_configured"));
   const limited = await emailActionLimit();
   if (limited) return fail(limited);
   const sent = await sendVerification(me, suite);
@@ -227,6 +233,7 @@ export type ForgotState = { done?: boolean; error?: string; email?: string };
  * les cas (y compris si l'envoi échoue : l'échec est journalisé côté serveur).
  */
 export async function requestPasswordReset(_prev: ForgotState, form: FormData): Promise<ForgotState> {
+  if (!isEmailEnabled()) return { error: RESET_BY_ADMIN };
   const parsed = emailInput.safeParse(String(form.get("email") ?? ""));
   if (!parsed.success) return { error: firstError(parsed.error), email: String(form.get("email") ?? "") };
   const limited = await emailActionLimit();

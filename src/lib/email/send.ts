@@ -27,6 +27,10 @@ const MESSAGES: Record<EmailErrorCode, string> = {
 
 export const emailErrorMessage = (code: EmailErrorCode) => MESSAGES[code];
 
+/** Mot de passe oublié sans envoi d'emails : seul un administrateur peut le réinitialiser (/membres). */
+export const RESET_BY_ADMIN =
+  "La réinitialisation par email n'est pas disponible : demandez à un administrateur de GePro de réinitialiser votre mot de passe.";
+
 const env = (name: string) => process.env[name]?.trim() || null;
 
 /** Adresse publique de l'application, sans / final. Hors production, http://localhost:3000 par défaut. */
@@ -36,6 +40,18 @@ export function appUrl(): string | null {
   // En production, jamais déduite de l'en-tête Host : un lien de réinitialisation pourrait
   // alors pointer vers un site choisi par un attaquant.
   return process.env.NODE_ENV === "production" ? null : "http://localhost:3000";
+}
+
+/**
+ * Envoi d'emails possible. En production : RESEND_API_KEY, EMAIL_FROM_DOMAIN et APP_URL renseignées.
+ * Hors production : toujours (sans clé, les emails sont écrits dans la console).
+ *
+ * Sans envoi d'emails, la vérification d'adresse est impossible : l'application s'en passe
+ * (voir actions/project-members.ts) et le mot de passe oublié passe par un administrateur.
+ */
+export function isEmailEnabled(): boolean {
+  if (process.env.NODE_ENV !== "production") return true;
+  return Boolean(env("RESEND_API_KEY") && env("EMAIL_FROM_DOMAIN") && appUrl());
 }
 
 /** Code d'erreur Resend → catégorie montrée à l'utilisateur. */

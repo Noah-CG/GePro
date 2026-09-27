@@ -5,6 +5,7 @@ import { InvitationActions } from "@/components/projects/received-invitations";
 import { Card, EmptyState } from "@/components/ui/misc";
 import { requireUser } from "@/lib/auth";
 import { formatDateTime } from "@/lib/dates";
+import { isEmailEnabled } from "@/lib/email";
 import { hashInvitationToken } from "@/lib/invitations";
 import { getInvitationByTokenHash, isInvitationFor } from "@/lib/queries";
 
@@ -24,7 +25,12 @@ export default async function InvitationPage({ params }: Props) {
   const { token } = await params;
   const invitation = await getInvitationByTokenHash(hashInvitationToken(token));
 
-  if (invitation && !invitation.invitedUserId && invitation.email === me.email.toLowerCase() && !me.emailVerifiedAt) {
+  const emailEnabled = isEmailEnabled();
+  // Invitation pour l'email de ce compte, pas encore vérifié. Sans envoi d'emails (vérification
+  // impossible), le lien transmis par l'inviteur suffit.
+  const unverifiedEmailMatch =
+    invitation !== null && !invitation.invitedUserId && invitation.email === me.email.toLowerCase() && !me.emailVerifiedAt;
+  if (unverifiedEmailMatch && emailEnabled) {
     return (
       <div className="mx-auto max-w-lg pt-10">
         <EmptyState icon={<MailWarning size={28} />} title="Vérifiez d'abord votre adresse email">
@@ -35,7 +41,7 @@ export default async function InvitationPage({ params }: Props) {
     );
   }
 
-  if (!invitation || !isInvitationFor(invitation, me)) {
+  if (!invitation || !(isInvitationFor(invitation, me) || unverifiedEmailMatch)) {
     return (
       <div className="mx-auto max-w-lg pt-10">
         <EmptyState icon={<MailX size={28} />} title="Invitation introuvable">

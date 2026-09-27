@@ -87,3 +87,22 @@ describe("modèles d'email", () => {
     expect(passwordResetEmail({ name: "N", url: "u" }).text).toContain("1 heure");
   });
 });
+
+describe("isEmailEnabled", () => {
+  it("en production : seulement si Resend, le domaine d'envoi et APP_URL sont configurés", async () => {
+    const { isEmailEnabled } = await import("./send");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RESEND_API_KEY", "");
+    expect(isEmailEnabled()).toBe(false);
+    configure();
+    expect(isEmailEnabled()).toBe(true);
+    vi.stubEnv("APP_URL", "");
+    expect(isEmailEnabled()).toBe(false);
+  });
+
+  it("hors production : toujours (emails dans la console sans clé)", async () => {
+    const { isEmailEnabled } = await import("./send");
+    vi.stubEnv("RESEND_API_KEY", "");
+    expect(isEmailEnabled()).toBe(true);
+  });
+});

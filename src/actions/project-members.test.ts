@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { projectInvitations, projectInviteLinks, projectInviteLinkUses, projectMembers, projects, taskAssignees, tasks, users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
@@ -237,7 +237,7 @@ describe("invitation par nom d'utilisateur", () => {
   };
 
   it("vise un compte existant par son nom exact (casse indifférente) et le prévient par email", async () => {
-    expect(await byUsername(outsider.username!.toUpperCase(), "admin")).toEqual({ ok: true, data: { name: outsider.name, emailError: null } });
+    expect(await byUsername(outsider.username!.toUpperCase(), "admin")).toEqual({ ok: true, data: { name: outsider.name, notified: true, emailError: null } });
 
     const [invitation] = await db.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId));
     expect(invitation).toMatchObject({ email: null, invitedUserId: outsider.id, role: "admin", status: "pending" });
@@ -281,7 +281,7 @@ describe("invitation par nom d'utilisateur", () => {
   it("si l'email ne part pas, l'invitation reste valable et l'erreur est remontée", async () => {
     vi.mocked(sendEmail).mockResolvedValue({ ok: false, code: "unavailable" });
     const res = await byUsername(outsider.username!);
-    expect(res).toEqual({ ok: true, data: { name: outsider.name, emailError: expect.stringMatching(/ne répond pas/) } });
+    expect(res).toEqual({ ok: true, data: { name: outsider.name, notified: false, emailError: expect.stringMatching(/ne répond pas/) } });
     expect(await getReceivedInvitations(outsider)).toHaveLength(1);
   });
 
@@ -408,5 +408,54 @@ describe("lien d'invitation ouvert", () => {
     expect(await getInviteLinks(projectId)).toMatchObject([
       { state: "active", useCount: 1, maxUses: 2, createdByName: "Alice Propriétaire", uses: [{ name: "Bob Extérieur" }] },
     ]);
+  });
+});
+
+describe("sans envoi d'emails configuré (production sans Resend)", () => {
+  beforeEach(() => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RESEND_API_KEY", "");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("invitation par email : un compte non vérifié l'accepte avec le lien, pas depuis sa liste", async () => {
+    const newcomer = await insertUser(db, "Nouveau", { emailVerified: false });
+    const token = await invite(newcomer.email);
+    const [invitation] = await db.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId));
+
+    actAs(newcomer);
+    // Toujours cachée de la liste : sans le lien, rien ne prouve que l'email est le sien.
+    expect(await getReceivedInvitations(newcomer)).toEqual([]);
+    expect(await acceptInvitation({ id: invitation.id })).toEqual({ ok: false, error: expect.stringMatching(/^Pour accepter cette invitation, ouvrez le lien/) });
+    // Le lien, transmis par l'inviteur, tient lieu de preuve (comme avant les comptes).
+    expect(await acceptInvitation({ token })).toEqual({ ok: true, data: { projectId } });
+  });
+
+  it("un autre compte ne peut toujours pas utiliser le lien", async () => {
+    const token = await invite(outsider.email);
+    const newcomer = await insertUser(db, "Nouveau", { emailVerified: false });
+    actAs(newcomer);
+    expect(await acceptInvitation({ token })).toMatchObject({ ok: false, error: "Invitation introuvable, expirée ou déjà utilisée." });
+  });
+
+  it("lien ouvert : pas de vérification d'email exigée", async () => {
+    actAs(owner);
+    const res = await createInviteLink(projectId, {});
+    if (!res.ok) throw new Error(res.error);
+    const newcomer = await insertUser(db, "Nouveau", { emailVerified: false });
+    actAs(newcomer);
+    expect(await joinWithInviteLink(res.data.path.split("/").pop()!)).toEqual({ ok: true, data: { projectId } });
+  });
+
+  it("invitation par nom d'utilisateur : créée sans tenter d'email", async () => {
+    actAs(owner);
+    expect(await inviteByUsername(projectId, { username: outsider.username! })).toEqual({
+      ok: true,
+      data: { name: outsider.name, notified: false, emailError: null },
+    });
+    expect(sendEmail).not.toHaveBeenCalled();
+    expect(await getReceivedInvitations(outsider)).toHaveLength(1);
   });
 });

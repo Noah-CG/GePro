@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { AuthCard, AuthShell, FormError, FormNotice } from "@/components/auth/auth-shell";
 import { buttonClass } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
-import { emailErrorMessage, type EmailErrorCode } from "@/lib/email/send";
+import { emailErrorMessage, isEmailEnabled, type EmailErrorCode } from "@/lib/email/send";
 import { afterLoginPath } from "@/lib/invitations";
 import { ResendVerificationButton } from "./resend-button";
 
@@ -20,6 +20,8 @@ export default async function VerifyEmailPendingPage({ searchParams }: Props) {
   const { suite, envoi } = await searchParams;
   const next = afterLoginPath(suite);
   if (!me) redirect("/connexion");
+  // Sans envoi d'emails, pas de vérification : rien à faire ici.
+  if (!isEmailEnabled()) redirect(next);
   const sendError = SEND_ERRORS.find((code) => code === envoi);
 
   return (
