@@ -1,6 +1,6 @@
 /**
  * Authentification par email ou nom d'utilisateur + mot de passe, avec sessions stockées en base.
- * Inscription, vérification d'email et mot de passe oublié : actions/auth.ts.
+ * Inscription et nom d'utilisateur : actions/auth.ts.
  *
  * Le cookie contient un jeton aléatoire ; la base ne stocke que son hash SHA-256.
  * Une fuite de la table `sessions` ne permet donc pas d'usurper une session.
@@ -27,8 +27,6 @@ export type SessionUser = {
   username: string | null;
   /** Nul tant que le nom d'utilisateur proposé par la migration n'a pas été confirmé. */
   usernameConfirmedAt: Date | null;
-  /** Nul tant que l'adresse email n'est pas vérifiée. */
-  emailVerifiedAt: Date | null;
 };
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
@@ -74,7 +72,6 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
       color: users.color,
       username: users.username,
       usernameConfirmedAt: users.usernameConfirmedAt,
-      emailVerifiedAt: users.emailVerifiedAt,
       expiresAt: sessions.expiresAt,
     })
     .from(sessions)

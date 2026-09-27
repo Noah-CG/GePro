@@ -9,8 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { PASSWORD_MIN } from "@/lib/validation";
 
-/** `emailEnabled` : un lien de vérification est envoyé (sinon, pas de vérification d'adresse). */
-export function SignupForm({ next, emailEnabled }: { next: string; emailEnabled: boolean }) {
+export function SignupForm({ next }: { next: string }) {
   const [state, action, pending] = useActionState<SignupState, FormData>(signup, {});
   const [username, setUsername] = useState(state.values?.username ?? "");
   const check = useUsernameCheck(username);
@@ -50,7 +49,7 @@ export function SignupForm({ next, emailEnabled }: { next: string; emailEnabled:
             aria-invalid={Boolean(check.error ?? errors.username)}
           />
         </Field>
-        <Field label="Email" htmlFor="email" error={errors.email} hint={emailEnabled ? "Un lien de confirmation vous sera envoyé." : undefined}>
+        <Field label="Email" htmlFor="email" error={errors.email}>
           <Input id="email" name="email" type="email" autoComplete="email" required defaultValue={state.values?.email} aria-invalid={Boolean(errors.email)} />
         </Field>
         <Field label="Mot de passe" htmlFor="password" error={errors.password} hint={`${PASSWORD_MIN} caractères minimum.`}>

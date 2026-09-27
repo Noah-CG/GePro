@@ -44,15 +44,12 @@ export function ProjectMembers({
   members,
   invitations,
   links,
-  emailEnabled,
 }: {
   projectId: string;
   myRole: ProjectRole;
   members: ProjectMember[];
   invitations: PendingInvitation[];
   links: InviteLinkView[];
-  /** Envoi d'emails configuré : notification des invitations et vérification des adresses. */
-  emailEnabled: boolean;
 }) {
   const manager = canManage(myRole);
   return (
@@ -64,7 +61,7 @@ export function ProjectMembers({
           ))}
         </ul>
       </Card>
-      {manager && <InviteForm projectId={projectId} emailEnabled={emailEnabled} />}
+      {manager && <InviteForm projectId={projectId} />}
       {manager && invitations.length > 0 && (
         <Card>
           <p className="border-b border-border px-4 py-2.5 text-xs font-medium text-muted">Invitations en attente</p>
@@ -155,23 +152,19 @@ const MODE_OPTIONS: { value: InviteMode; label: string }[] = [
 ];
 
 /** Inviter : par email exact, par nom d'utilisateur exact, ou en créant un lien ouvert. */
-function InviteForm({ projectId, emailEnabled }: { projectId: string; emailEnabled: boolean }) {
+function InviteForm({ projectId }: { projectId: string }) {
   const [mode, setMode] = useState<InviteMode>("email");
   return (
     <Card className="space-y-3 p-4">
       <div className="max-w-md">
         <Segmented label="Mode d'invitation" value={mode} onChange={setMode} options={MODE_OPTIONS} />
       </div>
-      {mode === "link" ? (
-        <InviteLinkForm projectId={projectId} emailEnabled={emailEnabled} />
-      ) : (
-        <PersonInviteForm key={mode} projectId={projectId} mode={mode} emailEnabled={emailEnabled} />
-      )}
+      {mode === "link" ? <InviteLinkForm projectId={projectId} /> : <PersonInviteForm key={mode} projectId={projectId} mode={mode} />}
     </Card>
   );
 }
 
-function PersonInviteForm({ projectId, mode, emailEnabled }: { projectId: string; mode: "email" | "username"; emailEnabled: boolean }) {
+function PersonInviteForm({ projectId, mode }: { projectId: string; mode: "email" | "username" }) {
   const { toast } = useApp();
   const [target, setTarget] = useState("");
   const [role, setRole] = useState<"admin" | "member">("member");
@@ -192,9 +185,7 @@ function PersonInviteForm({ projectId, mode, emailEnabled }: { projectId: string
         const res = await inviteByUsername(projectId, { username: target, role });
         if (!res.ok) return setError(res.error);
         setLink(null);
-        if (res.data.emailError) toast(`Invitation créée pour ${res.data.name}, mais l'email n'est pas parti : ${res.data.emailError}`, "error");
-        else if (res.data.notified) toast(`Invitation envoyée à ${res.data.name}`);
-        else toast(`Invitation créée pour ${res.data.name} : elle apparaît dans sa page Projets`);
+        toast(`Invitation créée pour ${res.data.name} : elle apparaît dans sa page Projets`);
       }
       setError(null);
       setTarget("");
@@ -206,7 +197,7 @@ function PersonInviteForm({ projectId, mode, emailEnabled }: { projectId: string
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-0 flex-1">
           {byEmail ? (
-            <Field label="Email" htmlFor="invite-target" hint={emailEnabled ? "L'adresse exacte du compte GePro de la personne (vérifiée pour pouvoir accepter)." : "L'adresse exacte du compte GePro de la personne."}>
+            <Field label="Email" htmlFor="invite-target" hint="L'adresse exacte du compte GePro de la personne.">
               <Input
                 id="invite-target"
                 type="email"
@@ -218,7 +209,7 @@ function PersonInviteForm({ projectId, mode, emailEnabled }: { projectId: string
               />
             </Field>
           ) : (
-            <Field label="Nom d'utilisateur" htmlFor="invite-target" hint={`Le nom exact, visible dans le menu de compte de la personne.${emailEnabled ? " Elle est prévenue par email." : ""}`}>
+            <Field label="Nom d'utilisateur" htmlFor="invite-target" hint="Le nom exact, visible dans le menu de compte de la personne. Elle voit l'invitation dans GePro.">
               <Input
                 id="invite-target"
                 value={target}

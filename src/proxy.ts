@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /** Pages accessibles sans être connecté (comptes). Tout le reste exige le cookie de session. */
-const PUBLIC_PATHS = /^\/(login|connexion|inscription|mot-de-passe-oublie|reinitialisation\/[^/]+|verification-email\/[^/]+)\/?$/;
+const PUBLIC_PATHS = /^\/(login|connexion|inscription)\/?$/;
 
 /**
  * Protection CSRF : toute requête qui modifie quelque chose (POST : Server Actions, formulaires,

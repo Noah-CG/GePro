@@ -26,13 +26,13 @@ export async function resetDb(db: Db) {
 let counter = 0;
 
 /**
- * Compte de test, comme un compte existant (créé par un administrateur) : email vérifié, nom
- * d'utilisateur confirmé. `options` pour un compte fraîchement inscrit, à l'email non vérifié.
+ * Compte de test, comme un compte existant (créé par un administrateur) : nom d'utilisateur
+ * confirmé.
  */
 export async function insertUser(
   db: Db,
   name = "Camille Martin",
-  options: { emailVerified?: boolean; passwordHash?: string; username?: string } = {},
+  options: { passwordHash?: string; username?: string } = {},
 ) {
   const n = ++counter;
   const [user] = await db
@@ -43,7 +43,6 @@ export async function insertUser(
       passwordHash: options.passwordHash ?? "x",
       username: options.username ?? `user${n}`,
       usernameConfirmedAt: new Date(),
-      emailVerifiedAt: options.emailVerified === false ? null : new Date(),
     })
     .returning();
   return user;

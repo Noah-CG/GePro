@@ -25,7 +25,7 @@ const USES_OPTIONS: { value: UsesMode; label: string }[] = [
  * Création d'un lien d'invitation ouvert : lié à aucun email, il fait entrer quiconque le possède,
  * toujours comme simple membre. Durée et nombre d'utilisations au choix.
  */
-export function InviteLinkForm({ projectId, emailEnabled }: { projectId: string; emailEnabled: boolean }) {
+export function InviteLinkForm({ projectId }: { projectId: string }) {
   const { toast } = useApp();
   const [days, setDays] = useState(String(INVITE_LINK_DEFAULT_DAYS));
   const [usesMode, setUsesMode] = useState<UsesMode>("single");
@@ -50,7 +50,7 @@ export function InviteLinkForm({ projectId, emailEnabled }: { projectId: string;
     <form onSubmit={submit} className="space-y-3">
       <p className="text-sm text-muted">
         Toute personne qui a ce lien peut rejoindre le projet comme <strong>membre</strong> (jamais administrateur), après avoir créé un
-        compte{emailEnabled && " et vérifié son email"}. Révocable à tout moment.
+        compte. Révocable à tout moment.
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-32">

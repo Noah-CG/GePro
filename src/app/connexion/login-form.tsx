@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useActionState } from "react";
 import { login, type LoginState } from "@/actions/auth";
 import { AuthCard, FormError } from "@/components/auth/auth-shell";
@@ -30,11 +29,7 @@ export function LoginForm({ next }: { next: string }) {
         <Field
           label="Mot de passe"
           htmlFor="password"
-          hint={
-            <Link href="/mot-de-passe-oublie" className="hover:text-text hover:underline">
-              Mot de passe oublié ?
-            </Link>
-          }
+          hint="Mot de passe oublié ? Demandez à un administrateur de GePro de le réinitialiser."
         >
           <Input id="password" name="password" type="password" autoComplete="current-password" required />
         </Field>

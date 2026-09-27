@@ -3,7 +3,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { getCurrentUser } from "@/lib/auth";
-import { isEmailEnabled } from "@/lib/email";
 import { afterLoginPath, suiteQuery } from "@/lib/invitations";
 import { SignupForm } from "./signup-form";
 
@@ -33,7 +32,7 @@ export default async function SignupPage({ searchParams }: Props) {
         </p>
       }
     >
-      <SignupForm next={next} emailEnabled={isEmailEnabled()} />
+      <SignupForm next={next} />
     </AuthShell>
   );
 }

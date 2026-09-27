@@ -33,8 +33,8 @@ async function main() {
 
   if (await hasColumn("users", "username")) {
     console.log("\nLa migration 0013 est déjà appliquée : noms d'utilisateur actuels.\n");
-    const users = await rows<{ email: string; username: string | null; confirmed: boolean; verified: boolean }>(sql`
-      select email, username, username_confirmed_at is not null as confirmed, email_verified_at is not null as verified
+    const users = await rows<{ email: string; username: string | null; confirmed: boolean }>(sql`
+      select email, username, username_confirmed_at is not null as confirmed
       from users order by created_at, id
     `);
     console.table(users);
@@ -65,7 +65,7 @@ async function main() {
     taken.add(username.toLowerCase());
     proposals.push({ email: u.email, nom: u.name, "nom d'utilisateur proposé": username });
   }
-  console.log(`\n${users.length} compte(s) : nom d'utilisateur proposé (modifiable à la première connexion), email marqué vérifié.\n`);
+  console.log(`\n${users.length} compte(s) : nom d'utilisateur proposé (modifiable à la première connexion).\n`);
   console.table(proposals);
 }
 

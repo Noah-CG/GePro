@@ -39,14 +39,13 @@ async function main() {
 
   const all = await db.select({ username: users.username }).from(users);
   const taken = new Set(all.map((u) => u.username?.toLowerCase()));
-  // Compte créé par un administrateur : email de confiance ; nom d'utilisateur à confirmer à la première connexion.
+  // Nom d'utilisateur proposé, à confirmer à la première connexion.
   const username = await suggestUsername(data.name, data.email, (c) => taken.has(c.toLowerCase()));
   await db.insert(users).values({
     ...data,
     passwordHash: await hashPassword(password),
     color: COLORS[all.length % COLORS.length],
     username,
-    emailVerifiedAt: new Date(),
   });
   console.log(`✔ Compte ${data.role === "admin" ? "administrateur " : ""}créé : ${data.email} (nom d'utilisateur : ${username})`);
 }

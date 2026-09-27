@@ -156,13 +156,13 @@ async function main() {
 
   const today = todayISO();
   const passwordHash = await hashPassword(DEMO_PASSWORD);
-  // Comptes de démo : nom d'utilisateur tiré du nom, email vérifié.
+  // Comptes de démo : nom d'utilisateur tiré du nom.
   const usernames = new Set<string>();
   const demoUsers = [];
   for (const { key: _, ...m } of MEMBERS) {
     const username = await suggestUsername(m.name, m.email, (c) => usernames.has(c));
     usernames.add(username);
-    demoUsers.push({ ...m, passwordHash, username, usernameConfirmedAt: new Date(), emailVerifiedAt: new Date() });
+    demoUsers.push({ ...m, passwordHash, username, usernameConfirmedAt: new Date() });
   }
 
   const insertedUsers = await db

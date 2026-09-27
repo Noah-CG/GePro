@@ -327,39 +327,18 @@ export async function getInvitationByTokenHash(
   return row ? { ...row, expiresAt: row.expiresAt.toISOString() } : null;
 }
 
-/** Compte tel que vu par les invitations : son id, son email et si celui-ci est vérifié. */
-export type Invitee = { id: string; email: string; emailVerifiedAt: Date | null };
+/** Compte tel que vu par les invitations : son id et son email. */
+export type Invitee = { id: string; email: string };
 
-/**
- * Invitation adressée à ce compte : par son nom d'utilisateur (id), ou par son email à condition
- * qu'il soit vérifié (sinon n'importe qui pourrait s'inscrire avec l'email d'un autre et récupérer
- * ses invitations).
- */
+/** Invitation adressée à ce compte : par son nom d'utilisateur (id), ou par son email exact. */
 export function isInvitationFor(invitation: { email: string | null; invitedUserId: string | null }, user: Invitee): boolean {
   if (invitation.invitedUserId) return invitation.invitedUserId === user.id;
-  return invitation.email !== null && invitation.email === user.email.toLowerCase() && user.emailVerifiedAt !== null;
+  return invitation.email !== null && invitation.email === user.email.toLowerCase();
 }
 
 /** Condition SQL équivalente à `isInvitationFor`. */
 export function invitationForUser(user: Invitee) {
-  const byUser = eq(projectInvitations.invitedUserId, user.id);
-  return user.emailVerifiedAt ? or(byUser, eq(projectInvitations.email, user.email.toLowerCase()))! : byUser;
-}
-
-/** Nombre d'invitations par email en attente, cachées tant que l'adresse n'est pas vérifiée. */
-export async function countInvitationsAwaitingVerification(user: Invitee): Promise<number> {
-  if (user.emailVerifiedAt) return 0;
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(projectInvitations)
-    .where(
-      and(
-        eq(projectInvitations.email, user.email.toLowerCase()),
-        eq(projectInvitations.status, "pending"),
-        gte(projectInvitations.expiresAt, new Date()),
-      ),
-    );
-  return row?.n ?? 0;
+  return or(eq(projectInvitations.invitedUserId, user.id), eq(projectInvitations.email, user.email.toLowerCase()))!;
 }
 
 /**

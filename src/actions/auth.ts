@@ -1,44 +1,36 @@
 "use server";
 
 /**
- * Comptes : connexion (email ou nom d'utilisateur), inscription, vérification de l'email, mot de
- * passe oublié, nom d'utilisateur.
+ * Comptes : connexion (email ou nom d'utilisateur), inscription, nom d'utilisateur.
  *
- * - Les messages d'échec de connexion et de mot de passe oublié ne révèlent pas quels comptes
- *   existent. Les tentatives sont limitées par IP et par compte (lib/throttle.ts).
- * - Tous les jetons envoyés par email sont à usage unique, stockés hachés, avec une expiration.
+ * - Pas de vérification d'email ni de mot de passe oublié par email : un compte est utilisable dès
+ *   l'inscription, et un administrateur réinitialise un mot de passe depuis /membres.
+ * - Les messages d'échec de connexion ne révèlent pas quels comptes existent. Les tentatives sont
+ *   limitées par IP et par compte (lib/throttle.ts), l'inscription par IP.
  * - Les sessions gardent leur format d'origine (lib/auth.ts).
  */
-import { and, count, eq, gt, isNull, sql } from "drizzle-orm";
+import { count, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { emailVerificationTokens, passwordResetTokens, sessions, users } from "@/db/schema";
+import { users } from "@/db/schema";
 import { createSession, destroySession, hashPassword, requireUser, verifyPassword } from "@/lib/auth";
 import { COLORS } from "@/lib/constants";
 import { isUniqueViolation } from "@/lib/db-errors";
-import { appUrl, emailErrorMessage, isEmailEnabled, passwordResetEmail, RESET_BY_ADMIN, sendEmail, verificationEmail, type SendResult } from "@/lib/email";
-import { afterLoginPath, suiteQuery } from "@/lib/invitations";
-import {
-  EMAIL_VERIFICATION_HOURS,
-  hashToken,
-  isTokenShaped,
-  issueToken,
-  PASSWORD_RESET_HOURS,
-} from "@/lib/one-time-tokens";
+import { afterLoginPath } from "@/lib/invitations";
 import { verifyAgainstDummy } from "@/lib/password";
 import {
   clearFailures,
   clientIp,
-  EMAIL_ACTIONS_IP,
   formatWait,
   LOGIN_ACCOUNT,
   LOGIN_IP,
   lockedFor,
   recordFailure,
+  SIGNUP_IP,
   USERNAME_CHECK_IP,
 } from "@/lib/throttle";
 import { usernameFormatError } from "@/lib/usernames";
-import { emailInput, firstError, password as passwordSchema, resetPasswordInput, signupInput, usernameInput } from "@/lib/validation";
+import { firstError, password as passwordSchema, signupInput, usernameInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
 const tooMany = (seconds: number) => `Trop de tentatives. Réessayez dans ${formatWait(seconds)}.`;
@@ -105,26 +97,7 @@ export async function changePassword(current: string, next: string): Promise<Act
   return ok(undefined);
 }
 
-// --- Inscription et vérification de l'email ------------------------------------
-
-/** Compte une action envoyant un email (par IP) ; renvoie un message si la limite est atteinte. */
-async function emailActionLimit(): Promise<string | null> {
-  const key = `email-ip:${await clientIp()}`;
-  const wait = (await lockedFor([key])) || (await recordFailure(key, EMAIL_ACTIONS_IP));
-  return wait > 0 ? tooMany(wait) : null;
-}
-
-/** Envoie le lien de vérification de l'adresse de `user`. `suite` : lien d'invitation à reprendre. */
-async function sendVerification(user: { id: string; name: string; email: string }, suite?: unknown): Promise<SendResult> {
-  const base = appUrl();
-  if (!base) {
-    console.error("[email] APP_URL manquante : lien de vérification non envoyé.");
-    return { ok: false, code: "not_configured" };
-  }
-  const token = await issueToken(emailVerificationTokens, user.id, EMAIL_VERIFICATION_HOURS);
-  const url = `${base}/verification-email/${token}${suiteQuery(suite)}`;
-  return sendEmail({ to: user.email, ...verificationEmail({ name: user.name, url }) });
-}
+// --- Inscription ----------------------------------------------------------------
 
 export type SignupState = {
   error?: string;
@@ -132,6 +105,7 @@ export type SignupState = {
   values?: { username: string; email: string };
 };
 
+/** Crée le compte, ouvre la session et mène à l'accueil (ou au lien d'invitation à reprendre). */
 export async function signup(_prev: SignupState, form: FormData): Promise<SignupState> {
   const raw = {
     username: String(form.get("username") ?? ""),
@@ -149,14 +123,15 @@ export async function signup(_prev: SignupState, form: FormData): Promise<Signup
     }
     return { fieldErrors, values };
   }
-  const limited = await emailActionLimit();
-  if (limited) return { error: limited, values };
+  const key = `signup-ip:${await clientIp()}`;
+  const wait = (await lockedFor([key])) || (await recordFailure(key, SIGNUP_IP));
+  if (wait > 0) return { error: tooMany(wait), values };
 
   const { username, email, password } = parsed.data;
   const [{ total }] = await db.select({ total: count() }).from(users);
-  let user: { id: string; name: string; email: string };
+  let userId: string;
   try {
-    [user] = await db
+    [{ id: userId }] = await db
       .insert(users)
       .values({
         name: username,
@@ -166,149 +141,19 @@ export async function signup(_prev: SignupState, form: FormData): Promise<Signup
         passwordHash: await hashPassword(password),
         color: COLORS[total % COLORS.length],
       })
-      .returning({ id: users.id, name: users.name, email: users.email });
+      .returning({ id: users.id });
   } catch (err) {
     if (isUniqueViolation(err, "users_username_lower_uq")) {
       return { fieldErrors: { username: "Ce nom d'utilisateur est déjà pris." }, values };
     }
     if (isUniqueViolation(err)) {
-      return { fieldErrors: { email: "Un compte existe déjà avec cet email. Connectez-vous, ou utilisez « Mot de passe oublié »." }, values };
+      return { fieldErrors: { email: "Un compte existe déjà avec cet email. Connectez-vous." }, values };
     }
     throw err;
   }
 
-  const suite = form.get("suite");
-  // Sans envoi d'emails, pas de vérification : direction l'accueil, ou le lien d'invitation.
-  if (!isEmailEnabled()) {
-    await createSession(user.id);
-    redirect(afterLoginPath(suite));
-  }
-  const sent = await sendVerification(user, suite);
-  await createSession(user.id);
-  const query = new URLSearchParams();
-  if (!sent.ok) query.set("envoi", sent.code);
-  const next = afterLoginPath(suite);
-  if (next !== "/") query.set("suite", next);
-  redirect(`/verification-email${query.size > 0 ? `?${query}` : ""}`);
-}
-
-/** Renvoie l'email de vérification au compte connecté. */
-export async function resendVerification(suite?: string): Promise<ActionResult> {
-  const me = await requireUser();
-  if (me.emailVerifiedAt) return fail("Votre adresse email est déjà vérifiée.");
-  if (!isEmailEnabled()) return fail(emailErrorMessage("not_configured"));
-  const limited = await emailActionLimit();
-  if (limited) return fail(limited);
-  const sent = await sendVerification(me, suite);
-  return sent.ok ? ok(undefined) : fail(emailErrorMessage(sent.code));
-}
-
-/**
- * Confirme l'adresse email avec le jeton reçu (valable 24 h, une seule fois). Pas besoin d'être
- * connecté : le jeton prouve que l'on reçoit les emails de cette adresse.
- */
-export async function verifyEmail(token: string): Promise<ActionResult> {
-  if (!isTokenShaped(token)) return fail("Lien de vérification invalide ou expiré.");
-  // Une seule instruction : le jeton est consommé et l'adresse marquée vérifiée ensemble.
-  const result = await db.execute<{ id: string }>(sql`
-    with used as (
-      update ${emailVerificationTokens} set used_at = now()
-      where token_hash = ${hashToken(token)} and used_at is null and expires_at > now()
-      returning user_id
-    )
-    update ${users} set email_verified_at = coalesce(email_verified_at, now())
-    from used where ${users.id} = used.user_id
-    returning ${users.id} as id
-  `);
-  if (result.rows.length === 0) return fail("Lien de vérification invalide, expiré ou déjà utilisé.");
-  return ok(undefined);
-}
-
-// --- Mot de passe oublié --------------------------------------------------------
-
-export type ForgotState = { done?: boolean; error?: string; email?: string };
-
-/**
- * Envoie un lien de réinitialisation si un compte a cet email. La réponse est la même dans tous
- * les cas (y compris si l'envoi échoue : l'échec est journalisé côté serveur).
- */
-export async function requestPasswordReset(_prev: ForgotState, form: FormData): Promise<ForgotState> {
-  if (!isEmailEnabled()) return { error: RESET_BY_ADMIN };
-  const parsed = emailInput.safeParse(String(form.get("email") ?? ""));
-  if (!parsed.success) return { error: firstError(parsed.error), email: String(form.get("email") ?? "") };
-  const limited = await emailActionLimit();
-  if (limited) return { error: limited, email: parsed.data };
-
-  const [user] = await db
-    .select({ id: users.id, name: users.name, email: users.email })
-    .from(users)
-    .where(sql`lower(${users.email}) = ${parsed.data}`)
-    .limit(1);
-  const base = appUrl();
-  if (user && base) {
-    const token = await issueToken(passwordResetTokens, user.id, PASSWORD_RESET_HOURS);
-    await sendEmail({ to: user.email, ...passwordResetEmail({ name: user.name, url: `${base}/reinitialisation/${token}` }) });
-  } else if (user) {
-    console.error("[email] APP_URL manquante : lien de réinitialisation non envoyé.");
-  }
-  return { done: true, email: parsed.data };
-}
-
-/** Jeton de réinitialisation encore valable (pour afficher le formulaire ou un message d'erreur). */
-export async function isResetTokenValid(token: string): Promise<boolean> {
-  if (!isTokenShaped(token)) return false;
-  const [row] = await db
-    .select({ id: passwordResetTokens.id })
-    .from(passwordResetTokens)
-    .where(and(eq(passwordResetTokens.tokenHash, hashToken(token)), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, new Date())))
-    .limit(1);
-  return Boolean(row);
-}
-
-export type ResetState = { error?: string; fieldErrors?: Partial<Record<"password" | "confirm", string>> };
-
-/**
- * Nouveau mot de passe avec le jeton reçu (valable 1 h, une seule fois). En une seule instruction :
- * jeton consommé, mot de passe changé, toutes les sessions du compte fermées.
- */
-export async function resetPassword(_prev: ResetState, form: FormData): Promise<ResetState> {
-  const token = String(form.get("token") ?? "");
-  const parsed = resetPasswordInput.safeParse({ password: String(form.get("password") ?? ""), confirm: String(form.get("confirm") ?? "") });
-  if (!parsed.success) {
-    const fieldErrors: ResetState["fieldErrors"] = {};
-    for (const issue of parsed.error.issues) fieldErrors[issue.path[0] as "password" | "confirm"] ??= issue.message;
-    return { fieldErrors };
-  }
-  const invalid = { error: "Ce lien de réinitialisation est invalide, a expiré ou a déjà servi. Demandez-en un nouveau." };
-  if (!isTokenShaped(token)) return invalid;
-
-  const passwordHash = await hashPassword(parsed.data.password);
-  const tokenHash = hashToken(token);
-  const result = await db.execute<{ id: string }>(sql`
-    with used as (
-      update ${passwordResetTokens} set used_at = now()
-      where token_hash = ${tokenHash} and used_at is null and expires_at > now()
-      returning user_id
-    ),
-    changed as (
-      update ${users} set password_hash = ${passwordHash}, updated_at = now()
-      from used where ${users.id} = used.user_id
-      returning ${users.id} as id
-    ),
-    closed as (
-      delete from ${sessions} using used where ${sessions.userId} = used.user_id
-    ),
-    others as (
-      update ${passwordResetTokens} t set used_at = now()
-      from used where t.user_id = used.user_id and t.used_at is null and t.token_hash <> ${tokenHash}
-    )
-    select id from changed
-  `);
-  const [changed] = result.rows;
-  if (!changed) return invalid;
-  // Le compte peut se reconnecter tout de suite, même s'il était verrouillé.
-  await clearFailures([`login-account:${changed.id}`]);
-  redirect("/connexion?reinitialise=1");
+  await createSession(userId);
+  redirect(afterLoginPath(form.get("suite")));
 }
 
 // --- Nom d'utilisateur ----------------------------------------------------------

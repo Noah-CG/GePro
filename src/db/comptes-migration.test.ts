@@ -1,7 +1,7 @@
 /**
  * Migration 0013_comptes_utilisateurs sur des données d'avant les comptes : aucun compte ni donnée
- * perdus ou recréés (mêmes id, emails, mots de passe), noms d'utilisateur proposés sans collision,
- * emails existants marqués vérifiés ; rejouable, refusée en cas de doublons d'email, réversible.
+ * perdus ou recréés (mêmes id, emails, mots de passe), noms d'utilisateur proposés sans collision ;
+ * rejouable, refusée en cas de doublons d'email ou d'ancienne version, réversible.
  */
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,7 +14,7 @@ import { RESERVED_USERNAMES, suggestUsername } from "@/lib/usernames";
 
 const MIGRATION = readFileSync("drizzle/0013_comptes_utilisateurs.sql", "utf8");
 const ROLLBACK = readFileSync("scripts/rollback/0013_comptes_utilisateurs.sql", "utf8");
-const JOURNAL_WHEN = 1790455614209;
+const JOURNAL_WHEN = 1790501117470;
 
 const folders: string[] = [];
 
@@ -81,7 +81,7 @@ async function fingerprint(client: PGlite) {
     client,
     `select table_name as t from information_schema.tables
      where table_schema = 'public' and table_type = 'BASE TABLE'
-       and table_name not in ('users', 'project_invitations', 'auth_throttle', 'email_verification_tokens', 'password_reset_tokens', 'project_invite_links', 'project_invite_link_uses')
+       and table_name not in ('users', 'project_invitations', 'auth_throttle', 'project_invite_links', 'project_invite_link_uses')
      order by 1`,
   );
   const result: Record<string, string> = {};
@@ -184,11 +184,6 @@ describe("migration 0013_comptes_utilisateurs", () => {
     }
   });
 
-  it("marque les emails existants comme vérifiés (comptes de confiance)", async () => {
-    const [{ n }] = await rows<{ n: number }>(client, "select count(*)::int as n from users where email_verified_at is null");
-    expect(n).toBe(0);
-  });
-
   it("impose l'unicité sans tenir compte de la casse, et le format du nom d'utilisateur", async () => {
     await expect(client.exec(`update users set email = 'CAMILLE@exemple.fr' where id = '${ids.camille2}'`)).rejects.toThrow(/users_email_lower_uq/);
     await expect(client.exec(`update users set username = 'CAMILLE-MARTIN' where id = '${ids.camille2}'`)).rejects.toThrow(/users_username_lower_uq/);
@@ -206,9 +201,9 @@ describe("migration 0013_comptes_utilisateurs", () => {
   });
 
   it("est rejouable sans effet", async () => {
-    const snapshot = await rows(client, "select id, username, email_verified_at from users order by id");
+    const snapshot = await rows(client, "select id, username, username_confirmed_at from users order by id");
     await client.exec(MIGRATION);
-    expect(await rows(client, "select id, username, email_verified_at from users order by id")).toEqual(snapshot);
+    expect(await rows(client, "select id, username, username_confirmed_at from users order by id")).toEqual(snapshot);
   });
 
   it("utilise la même liste de noms réservés que l'application", () => {
@@ -246,7 +241,7 @@ describe("retour arrière de la migration 0013", () => {
     await db.exec(ROLLBACK);
     const columns = await rows<{ c: string }>(db, "select column_name as c from information_schema.columns where table_name = 'users' order by 1");
     expect(columns.map((c) => c.c)).not.toContain("username");
-    expect(await rows(db, "select to_regclass('public.password_reset_tokens') as t")).toEqual([{ t: null }]);
+    expect(await rows(db, "select to_regclass('public.project_invite_links') as t")).toEqual([{ t: null }]);
     expect(await rows(db, `select count(*)::int as n from drizzle.__drizzle_migrations where created_at = ${JOURNAL_WHEN}`)).toEqual([{ n: 0 }]);
 
     // Aucun compte supprimé, pas même celui créé après la migration ; données d'origine intactes.
@@ -261,6 +256,41 @@ describe("retour arrière de la migration 0013", () => {
 
     // Sans effet une deuxième fois, et la migration se réapplique.
     await db.exec(ROLLBACK);
+    await db.exec(MIGRATION);
+    expect(await rows(db, "select count(*)::int as n from users where username is null")).toEqual([{ n: 0 }]);
+    await db.close();
+  }, 120_000);
+});
+
+describe("migration 0013 : ancienne version de développement (avec vérification d'email)", () => {
+  it("refuse de s'appliquer par-dessus, et le retour arrière la défait entièrement", async () => {
+    const db = await databaseBeforeAccounts();
+    await insertExistingData(db);
+    const initial = await fingerprint(db);
+    // Ce que l'ancienne version ajoutait en plus : jetons par email et users.email_verified_at.
+    await db.exec(MIGRATION);
+    await db.exec(`
+      alter table users add column email_verified_at timestamp with time zone;
+      create table email_verification_tokens (id uuid primary key, user_id uuid references users(id) on delete cascade);
+      create table password_reset_tokens (id uuid primary key, user_id uuid references users(id) on delete cascade);
+      insert into drizzle.__drizzle_migrations (hash, created_at) values ('ancienne', 1790455614209);
+    `);
+
+    await expect(db.exec(MIGRATION)).rejects.toThrow(/ancienne version.*db:comptes-rollback/);
+
+    await db.exec(ROLLBACK);
+    expect(await rows(db, "select to_regclass('public.email_verification_tokens') as a, to_regclass('public.password_reset_tokens') as b")).toEqual([
+      { a: null, b: null },
+    ]);
+    expect(await rows(db, "select count(*)::int as n from information_schema.columns where table_name = 'users' and column_name in ('email_verified_at', 'username')")).toEqual([
+      { n: 0 },
+    ]);
+    expect(await rows(db, "select count(*)::int as n from drizzle.__drizzle_migrations where created_at = 1790455614209")).toEqual([{ n: 0 }]);
+    const { users: _a, ...before } = initial;
+    const { users: _b, ...after } = await fingerprint(db);
+    expect(after).toEqual(before);
+
+    // La nouvelle version s'applique ensuite normalement.
     await db.exec(MIGRATION);
     expect(await rows(db, "select count(*)::int as n from users where username is null")).toEqual([{ n: 0 }]);
     await db.close();

@@ -1,9 +1,8 @@
 import { eq } from "drizzle-orm";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { projectInvitations, projectInviteLinks, projectInviteLinkUses, projectMembers, projects, taskAssignees, tasks, users } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { sendEmail } from "@/lib/email/send";
 import { afterLoginPath } from "@/lib/invitations";
 import { getInviteLinks, getPendingInvitations, getReceivedInvitations } from "@/lib/queries";
 import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
@@ -25,10 +24,6 @@ import {
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
-vi.mock("@/lib/email/send", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/email/send")>()),
-  sendEmail: vi.fn(),
-}));
 
 type User = Awaited<ReturnType<typeof insertUser>>;
 let owner: User;
@@ -52,7 +47,6 @@ async function invite(email: string, role: "admin" | "member" = "member", as = o
 }
 
 beforeEach(async () => {
-  vi.mocked(sendEmail).mockResolvedValue({ ok: true });
   await resetDb(db);
   owner = await insertUser(db, "Alice Propriétaire");
   admin = await insertUser(db, "Hugo Admin");
@@ -207,26 +201,20 @@ describe("membres et rôles", () => {
   });
 });
 
-describe("invitation par email : adresse vérifiée obligatoire", () => {
-  it("un compte à l'email non vérifié ne voit pas l'invitation et ne peut pas l'accepter, même avec le lien", async () => {
-    // Quelqu'un s'inscrit avec l'email d'un autre, qui a une invitation en attente.
-    const squatter = await insertUser(db, "Usurpateur", { emailVerified: false });
-    const token = await invite(squatter.email);
-    const [invitation] = await db.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId));
-
-    actAs(squatter);
-    expect(await getReceivedInvitations(squatter)).toEqual([]);
-    const refused = { ok: false, error: expect.stringMatching(/^Vérifiez d'abord votre adresse email/) };
-    expect(await acceptInvitation({ token })).toEqual(refused);
-    expect(await acceptInvitation({ id: invitation.id })).toEqual(refused);
-    expect(await declineInvitation({ token })).toEqual(refused);
-    expect((await roles())[squatter.id]).toBeUndefined();
-
-    // Une fois l'adresse vérifiée, l'invitation est utilisable.
-    const verified = { ...squatter, emailVerifiedAt: new Date() };
-    await db.update(users).set({ emailVerifiedAt: verified.emailVerifiedAt }).where(eq(users.id, squatter.id));
-    actAs(verified);
+describe("invitation par email, sans vérification d'adresse", () => {
+  it("s'accepte simplement connecté avec le compte qui a cet email (lien ou liste des invitations)", async () => {
+    const newcomer = await insertUser(db, "Nouveau");
+    const token = await invite(newcomer.email);
+    actAs(newcomer);
+    expect(await getReceivedInvitations(newcomer)).toMatchObject([{ projectId }]);
     expect(await acceptInvitation({ token })).toEqual({ ok: true, data: { projectId } });
+
+    const other = await insertUser(db, "Autre");
+    await invite(other.email);
+    const [pending] = await getReceivedInvitations(other);
+    actAs(other);
+    expect(await acceptInvitation({ id: pending.id })).toEqual({ ok: true, data: { projectId } });
+    expect((await roles())[other.id]).toBe("member");
   });
 });
 
@@ -236,28 +224,19 @@ describe("invitation par nom d'utilisateur", () => {
     return inviteByUsername(projectId, { username, role });
   };
 
-  it("vise un compte existant par son nom exact (casse indifférente) et le prévient par email", async () => {
-    expect(await byUsername(outsider.username!.toUpperCase(), "admin")).toEqual({ ok: true, data: { name: outsider.name, notified: true, emailError: null } });
+  it("vise un compte existant par son nom exact (casse indifférente), visible dans l'application", async () => {
+    expect(await byUsername(outsider.username!.toUpperCase(), "admin")).toEqual({ ok: true, data: { name: outsider.name } });
 
     const [invitation] = await db.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId));
     expect(invitation).toMatchObject({ email: null, invitedUserId: outsider.id, role: "admin", status: "pending" });
+    expect(await getReceivedInvitations(outsider)).toMatchObject([{ id: invitation.id, projectId, role: "admin" }]);
 
-    const [[message]] = vi.mocked(sendEmail).mock.calls;
-    expect(message.to).toBe(outsider.email);
-    expect(message.subject).toBe("Alice Propriétaire vous invite dans « Refonte du site »");
-    expect(message.text).toMatch(/http:\/\/localhost:3000\/invitations\/[A-Za-z0-9_-]{43}/);
-
-    // Visible dans l'application, même sans vérifier l'email (c'est le compte qui est visé).
-    const unverified = { ...outsider, emailVerifiedAt: null };
-    expect(await getReceivedInvitations(unverified)).toMatchObject([{ projectId, role: "admin" }]);
-
-    // Personne d'autre ne peut l'utiliser, même avec le lien de l'email.
-    const token = /\/invitations\/([A-Za-z0-9_-]+)/.exec(message.text)![1];
+    // Personne d'autre ne peut l'accepter.
     actAs(member);
-    expect(await acceptInvitation({ token })).toMatchObject({ ok: false });
+    expect(await acceptInvitation({ id: invitation.id })).toMatchObject({ ok: false });
 
-    actAs(unverified);
-    expect(await acceptInvitation({ token })).toEqual({ ok: true, data: { projectId } });
+    actAs(outsider);
+    expect(await acceptInvitation({ id: invitation.id })).toEqual({ ok: true, data: { projectId } });
     expect((await roles())[outsider.id]).toBe("admin");
   });
 
@@ -275,14 +254,6 @@ describe("invitation par nom d'utilisateur", () => {
     expect(await byUsername(member.username!)).toEqual({ ok: false, error: "Cette personne est déjà membre du projet." });
     expect(await byUsername(outsider.username!, "member", member)).toMatchObject({ ok: false });
     expect(await db.select().from(projectInvitations)).toEqual([]);
-    expect(sendEmail).not.toHaveBeenCalled();
-  });
-
-  it("si l'email ne part pas, l'invitation reste valable et l'erreur est remontée", async () => {
-    vi.mocked(sendEmail).mockResolvedValue({ ok: false, code: "unavailable" });
-    const res = await byUsername(outsider.username!);
-    expect(res).toEqual({ ok: true, data: { name: outsider.name, notified: false, emailError: expect.stringMatching(/ne répond pas/) } });
-    expect(await getReceivedInvitations(outsider)).toHaveLength(1);
   });
 
   it("apparaît dans les invitations en attente du projet, avec le nom d'utilisateur", async () => {
@@ -373,13 +344,6 @@ describe("lien d'invitation ouvert", () => {
     expect(await join(outsider, token)).toMatchObject({ ok: true });
   });
 
-  it("exige une adresse email vérifiée", async () => {
-    const token = await createLink();
-    const unverified = await insertUser(db, "Nouveau", { emailVerified: false });
-    expect(await join(unverified, token)).toEqual({ ok: false, error: expect.stringMatching(/^Vérifiez d'abord/) });
-    expect(await db.select().from(projectInviteLinkUses)).toEqual([]);
-  });
-
   it("seuls le propriétaire et les administrateurs en créent, toujours pour le rôle membre", async () => {
     actAs(member);
     expect(await createInviteLink(projectId, {})).toMatchObject({ ok: false });
@@ -408,54 +372,5 @@ describe("lien d'invitation ouvert", () => {
     expect(await getInviteLinks(projectId)).toMatchObject([
       { state: "active", useCount: 1, maxUses: 2, createdByName: "Alice Propriétaire", uses: [{ name: "Bob Extérieur" }] },
     ]);
-  });
-});
-
-describe("sans envoi d'emails configuré (production sans Resend)", () => {
-  beforeEach(() => {
-    vi.stubEnv("NODE_ENV", "production");
-    vi.stubEnv("RESEND_API_KEY", "");
-  });
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it("invitation par email : un compte non vérifié l'accepte avec le lien, pas depuis sa liste", async () => {
-    const newcomer = await insertUser(db, "Nouveau", { emailVerified: false });
-    const token = await invite(newcomer.email);
-    const [invitation] = await db.select().from(projectInvitations).where(eq(projectInvitations.projectId, projectId));
-
-    actAs(newcomer);
-    // Toujours cachée de la liste : sans le lien, rien ne prouve que l'email est le sien.
-    expect(await getReceivedInvitations(newcomer)).toEqual([]);
-    expect(await acceptInvitation({ id: invitation.id })).toEqual({ ok: false, error: expect.stringMatching(/^Pour accepter cette invitation, ouvrez le lien/) });
-    // Le lien, transmis par l'inviteur, tient lieu de preuve (comme avant les comptes).
-    expect(await acceptInvitation({ token })).toEqual({ ok: true, data: { projectId } });
-  });
-
-  it("un autre compte ne peut toujours pas utiliser le lien", async () => {
-    const token = await invite(outsider.email);
-    const newcomer = await insertUser(db, "Nouveau", { emailVerified: false });
-    actAs(newcomer);
-    expect(await acceptInvitation({ token })).toMatchObject({ ok: false, error: "Invitation introuvable, expirée ou déjà utilisée." });
-  });
-
-  it("lien ouvert : pas de vérification d'email exigée", async () => {
-    actAs(owner);
-    const res = await createInviteLink(projectId, {});
-    if (!res.ok) throw new Error(res.error);
-    const newcomer = await insertUser(db, "Nouveau", { emailVerified: false });
-    actAs(newcomer);
-    expect(await joinWithInviteLink(res.data.path.split("/").pop()!)).toEqual({ ok: true, data: { projectId } });
-  });
-
-  it("invitation par nom d'utilisateur : créée sans tenter d'email", async () => {
-    actAs(owner);
-    expect(await inviteByUsername(projectId, { username: outsider.username! })).toEqual({
-      ok: true,
-      data: { name: outsider.name, notified: false, emailError: null },
-    });
-    expect(sendEmail).not.toHaveBeenCalled();
-    expect(await getReceivedInvitations(outsider)).toHaveLength(1);
   });
 });

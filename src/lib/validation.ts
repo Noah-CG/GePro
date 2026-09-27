@@ -88,7 +88,7 @@ export type ImportantDayInput = z.input<typeof importantDayInput>;
 export const PASSWORD_MIN = 10;
 
 /**
- * Nouveau mot de passe (inscription, réinitialisation, changement, création par un administrateur).
+ * Nouveau mot de passe (inscription, changement, création ou réinitialisation par un administrateur).
  * Les mots de passe existants plus courts restent valables à la connexion. bcrypt ignore tout
  * au-delà de 72 octets : on le refuse plutôt que de le tronquer en silence.
  */
@@ -128,8 +128,6 @@ const MISMATCH = { message: "Les deux mots de passe ne correspondent pas", path:
 export const signupInput = z
   .object({ username: usernameInput, email: emailInput, password, confirm: z.string() })
   .refine(passwordsMatch, MISMATCH);
-
-export const resetPasswordInput = z.object({ password, confirm: z.string() }).refine(passwordsMatch, MISMATCH);
 
 /** Invitation à un projet : email exact (pas de recherche parmi les comptes), rôle donné à l'arrivée. */
 export const invitationInput = z.object({
