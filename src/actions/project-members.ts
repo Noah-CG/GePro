@@ -27,7 +27,7 @@ import { atLeast, authorizeProject, getProjectRole } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
 import { scheduleReconcile } from "@/lib/integrations/calendar-sync";
 import { hashInvitationToken, INVITATION_DAYS, newInvitationToken } from "@/lib/invitations";
-import { invitationForUser, isInvitationFor, type Invitee } from "@/lib/queries";
+import { invitationForUser, invitationListableBy, isInvitationFor, type Invitee } from "@/lib/queries";
 import {
   firstError,
   invitationInput,
@@ -188,7 +188,8 @@ export async function revokeInvitation(invitationId: string): Promise<ActionResu
 
 /**
  * Invitation en attente et valable, désignée par son lien ou son id, adressée à l'email exact du
- * compte connecté.
+ * compte connecté. Par son id (sans le lien), seulement si le compte existait déjà à l'envoi de
+ * l'invitation (voir `invitationListableBy`).
  */
 async function findMyInvitation(ref: { token: string } | { id: string }, me: Invitee) {
   if ("id" in ref && !isUuid(ref.id)) return null;
@@ -207,6 +208,7 @@ async function findMyInvitation(ref: { token: string } | { id: string }, me: Inv
         gt(projectInvitations.expiresAt, new Date()),
         // Seul le compte visé peut l'accepter, même avec le lien.
         invitationForUser(me),
+        "id" in ref ? invitationListableBy(me) : undefined,
       ),
     );
   return invitation && isInvitationFor(invitation, me) ? invitation : null;
@@ -251,7 +253,11 @@ export async function declineInvitation(ref: { token: string } | { id: string })
 /** Rôle d'un membre du projet, ou null s'il n'en fait pas partie (ou si l'id est invalide). */
 const memberRole = async (userId: string, projectId: string) => (isUuid(userId) ? getProjectRole(userId, projectId) : null);
 
-/** Change le rôle d'un membre (administrateur ou membre). Le propriétaire ne change que par transfert. */
+/**
+ * Change le rôle d'un membre (administrateur ou membre). Le propriétaire ne change que par
+ * transfert ; le rôle d'un administrateur, seulement par le propriétaire (sinon un administrateur
+ * pourrait rétrograder un autre administrateur, puis le retirer).
+ */
 export async function setMemberRole(projectId: string, userId: string, role: string): Promise<ActionResult> {
   const auth = await authorizeProject(projectId, "admin");
   if (!auth.ok) return fail(auth.error);
@@ -260,6 +266,9 @@ export async function setMemberRole(projectId: string, userId: string, role: str
   const current = await memberRole(userId, projectId);
   if (!current) return fail(MEMBER_NOT_FOUND);
   if (current === "owner") return fail("Le rôle du propriétaire ne change que par un transfert de propriété.");
+  if (current === "admin" && !atLeast(auth.access.role, "owner")) {
+    return fail("Seul le propriétaire peut changer le rôle d'un administrateur.");
+  }
 
   await db
     .update(projectMembers)

@@ -271,6 +271,17 @@ describe("saisie manuelle du temps de travail", () => {
     expect(await deleteWorkSession(id)).toEqual(forbidden);
   });
 
+  it("ne révèle pas les horaires d'un autre compte à qui n'a pas le droit de les modifier", async () => {
+    const stranger = await insertUser(db, "Inconnu");
+    await db.insert(workSessions).values({
+      userId: stranger.id,
+      startedAt: new Date("2026-09-21T08:00:00Z"),
+      endedAt: new Date("2026-09-21T09:00:00Z"),
+    });
+    const res = await create({ projectId: "" }, stranger.id);
+    expect(res).toEqual({ ok: false, error: "Seul le membre concerné ou un administrateur du projet peut modifier ce temps de travail." });
+  });
+
   it("le temps d'un autre ne se saisit que sur un projet dont il est membre", async () => {
     const lea = await insertUser(db, "Léa Dubois");
     expect(await create({}, lea.id)).toEqual({ ok: false, error: "Ce membre ne fait pas partie du projet." });

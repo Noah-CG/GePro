@@ -175,6 +175,12 @@ describe("membres et rôles", () => {
     // Un administrateur ne retire pas un autre administrateur ; le propriétaire, si.
     await addMember(db, projectId, outsider.id, "admin");
     expect(await removeMember(projectId, outsider.id)).toEqual({ ok: false, error: "Seul le propriétaire peut retirer un administrateur." });
+    // Ni en le rétrogradant d'abord.
+    expect(await setMemberRole(projectId, outsider.id, "member")).toEqual({
+      ok: false,
+      error: "Seul le propriétaire peut changer le rôle d'un administrateur.",
+    });
+    expect((await roles())[outsider.id]).toBe("admin");
     actAs(owner);
     expect(await removeMember(projectId, outsider.id)).toMatchObject({ ok: true });
   });
@@ -214,6 +220,24 @@ describe("invitation par email, sans vérification d'adresse", () => {
     actAs(other);
     expect(await acceptInvitation({ id: pending.id })).toEqual({ ok: true, data: { projectId } });
     expect((await roles())[other.id]).toBe("member");
+  });
+
+  it("un compte créé après l'invitation avec l'adresse invitée doit présenter le lien", async () => {
+    const token = await invite("bob@boite.fr");
+    const [{ id: invitationId }] = await db.select({ id: projectInvitations.id }).from(projectInvitations).where(eq(projectInvitations.email, "bob@boite.fr"));
+    // Quelqu'un s'inscrit ensuite avec cette adresse (non vérifiée) : l'invitation ne lui est pas montrée…
+    const [latecomer] = await db
+      .insert(users)
+      .values({ firstName: "Bob", lastName: "Usurpateur", email: "bob@boite.fr", passwordHash: "x", createdAt: new Date(Date.now() + 1000) })
+      .returning();
+    actAs(latecomer);
+    expect(await getReceivedInvitations(latecomer)).toEqual([]);
+    // …ni acceptable par son id.
+    expect(await acceptInvitation({ id: invitationId })).toMatchObject({ ok: false });
+    expect(await declineInvitation({ id: invitationId })).toMatchObject({ ok: false });
+    expect((await roles())[latecomer.id]).toBeUndefined();
+    // Avec le lien, reçu par la personne invitée, elle entre.
+    expect(await acceptInvitation({ token })).toEqual({ ok: true, data: { projectId } });
   });
 });
 

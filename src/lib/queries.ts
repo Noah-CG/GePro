@@ -330,8 +330,17 @@ export function invitationForUser(user: Invitee) {
 }
 
 /**
- * Invitations en attente (non expirées) adressées à ce compte (voir `isInvitationFor`), pour des
- * projets dont il n'est pas déjà membre.
+ * Invitation acceptable sans son lien (liste des invitations reçues) : seulement si le compte
+ * existait déjà quand elle a été envoyée. L'email n'étant pas vérifié à l'inscription, un compte
+ * créé après coup avec l'adresse invitée doit présenter le lien, que seule la personne invitée a reçu.
+ */
+export function invitationListableBy(user: Invitee) {
+  return sql`exists (select 1 from ${users} u where u.id = ${user.id}::uuid and u.created_at <= ${projectInvitations.createdAt})`;
+}
+
+/**
+ * Invitations en attente (non expirées) adressées à ce compte (voir `isInvitationFor`) quand il
+ * existait déjà (voir `invitationListableBy`), pour des projets dont il n'est pas déjà membre.
  */
 export async function getReceivedInvitations(user: Invitee): Promise<ReceivedInvitation[]> {
   const rows = await db
@@ -350,6 +359,7 @@ export async function getReceivedInvitations(user: Invitee): Promise<ReceivedInv
     .where(
       and(
         invitationForUser(user),
+        invitationListableBy(user),
         eq(projectInvitations.status, "pending"),
         gte(projectInvitations.expiresAt, new Date()),
         notInArray(projectInvitations.projectId, memberProjectIds(user.id)),

@@ -81,9 +81,9 @@ function MemberRow({ projectId, member: m, myRole }: { projectId: string; member
   const [confirm, setConfirm] = useState<"remove" | "transfer" | null>(null);
   const [pending, startTransition] = useTransition();
   const self = m.id === me.id;
-  const editable = canManage(myRole) && !self && m.role !== "owner";
-  // Un administrateur ne retire pas un autre administrateur (le propriétaire, si).
-  const removable = editable && (m.role === "member" || myRole === "owner");
+  // Un administrateur ne change le rôle ni ne retire un autre administrateur (le propriétaire, si).
+  const editable = canManage(myRole) && !self && m.role !== "owner" && (m.role === "member" || myRole === "owner");
+  const removable = editable;
 
   const run = (action: () => Promise<{ ok: boolean; error?: string }>, success: string) =>
     startTransition(async () => {

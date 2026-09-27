@@ -7,12 +7,11 @@ import { workSessions } from "@/db/schema";
 import { atLeast, getProjectRole } from "@/lib/access";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { addDays, formatDateTime, formatTime, zonedInstant } from "@/lib/dates";
-import { firstError, workNote, workSessionInput, type WorkSessionInput } from "@/lib/validation";
+import { firstError, isUuid, workNote, workSessionInput, type WorkSessionInput } from "@/lib/validation";
 import { endsNextDay } from "@/lib/work-time";
 import { fail, ok, type ActionResult } from "./result";
 
 const refresh = () => revalidatePath("/", "layout");
-const UUID = /^[0-9a-f-]{36}$/i;
 
 /** Période qui vient d'être arrêtée, pour proposer d'en rédiger le journal. */
 export type StoppedSession = { id: string; durationMs: number };
@@ -49,7 +48,7 @@ export async function stopWorkTimer(): Promise<ActionResult<StoppedSession | nul
 /** Rédige ou modifie le journal de bord d'une de ses propres périodes de travail (le chrono vient de s'arrêter). */
 export async function saveWorkNote(id: string, note: string): Promise<ActionResult> {
   const me = await requireUser();
-  if (!UUID.test(id)) return fail("Session introuvable.");
+  if (!isUuid(id)) return fail("Session introuvable.");
   const parsed = workNote.safeParse(note);
   if (!parsed.success) return fail(firstError(parsed.error));
 
@@ -92,9 +91,10 @@ type Period = { userId: string; projectId: string | null; startedAt: Date; ended
 
 /**
  * Valide une saisie et la traduit en période : instants dans le fuseau de l'équipe, fin le
- * lendemain si elle précède le début, ni dans le futur ni à cheval sur une autre période.
+ * lendemain si elle précède le début, jamais dans le futur. Sans lecture en base : les droits
+ * sont vérifiés avant de chercher un chevauchement (`overlapError`), qui révèle les horaires.
  */
-async function toPeriod(userId: string, input: WorkSessionInput, excludeId?: string): Promise<Period | string> {
+function toPeriod(userId: string, input: WorkSessionInput): Period | string {
   const parsed = workSessionInput.safeParse(input);
   if (!parsed.success) return firstError(parsed.error);
   const { date, start, end, projectId, note } = parsed.data;
@@ -103,8 +103,11 @@ async function toPeriod(userId: string, input: WorkSessionInput, excludeId?: str
   const endedAt = zonedInstant(endsNextDay(start, end) ? addDays(date, 1) : date, end);
   if (endedAt.getTime() <= startedAt.getTime()) return "L'heure de fin doit être après l'heure de début.";
   if (endedAt.getTime() > Date.now() + 60_000) return "Une période de travail ne peut pas se terminer dans le futur.";
+  return { userId, projectId, startedAt, endedAt, note };
+}
 
-  // Chevauchement avec une autre période du même membre (un chrono en cours court jusqu'à maintenant).
+/** Message si la période chevauche une autre période du même membre (un chrono en cours court jusqu'à maintenant). */
+async function overlapError({ userId, startedAt, endedAt }: Period, excludeId?: string): Promise<string | null> {
   const [overlap] = await db
     .select({ startedAt: workSessions.startedAt, endedAt: workSessions.endedAt })
     .from(workSessions)
@@ -117,21 +120,19 @@ async function toPeriod(userId: string, input: WorkSessionInput, excludeId?: str
       ),
     )
     .limit(1);
-  if (overlap) {
-    const other = `${formatDateTime(overlap.startedAt.toISOString())} → ${overlap.endedAt ? formatTime(overlap.endedAt.toISOString()) : "en cours"}`;
-    return `Cette période chevauche une autre période de travail (${other}).`;
-  }
-  return { userId, projectId, startedAt, endedAt, note };
+  if (!overlap) return null;
+  const other = `${formatDateTime(overlap.startedAt.toISOString())} → ${overlap.endedAt ? formatTime(overlap.endedAt.toISOString()) : "en cours"}`;
+  return `Cette période chevauche une autre période de travail (${other}).`;
 }
 
 /** Ajoute une période oubliée (chrono non lancé) au temps de travail de `userId`. */
 export async function createWorkSession(userId: string, input: WorkSessionInput): Promise<ActionResult<{ id: string }>> {
   const me = await requireUser();
-  if (!UUID.test(userId)) return fail("Membre introuvable.");
+  if (!isUuid(userId)) return fail("Membre introuvable.");
 
-  const period = await toPeriod(userId, input);
+  const period = toPeriod(userId, input);
   if (typeof period === "string") return fail(period);
-  const denied = await workEditError(me, userId, period.projectId);
+  const denied = (await workEditError(me, userId, period.projectId)) ?? (await overlapError(period));
   if (denied) return fail(denied);
   const [row] = await db.insert(workSessions).values(period).returning({ id: workSessions.id });
   refresh();
@@ -149,9 +150,9 @@ export async function updateWorkSession(id: string, input: WorkSessionInput): Pr
   const denied = await workEditError(me, session.userId, session.projectId, session.projectId);
   if (denied) return fail(denied);
 
-  const period = await toPeriod(session.userId, input, id);
+  const period = toPeriod(session.userId, input);
   if (typeof period === "string") return fail(period);
-  const deniedTarget = await workEditError(me, session.userId, period.projectId, session.projectId);
+  const deniedTarget = (await workEditError(me, session.userId, period.projectId, session.projectId)) ?? (await overlapError(period, id));
   if (deniedTarget) return fail(deniedTarget);
   await db.update(workSessions).set(period).where(eq(workSessions.id, id));
   refresh();
@@ -172,7 +173,7 @@ export async function deleteWorkSession(id: string): Promise<ActionResult> {
 }
 
 async function findSession(id: string) {
-  if (!UUID.test(id)) return null;
+  if (!isUuid(id)) return null;
   const [row] = await db
     .select({ userId: workSessions.userId, projectId: workSessions.projectId })
     .from(workSessions)
