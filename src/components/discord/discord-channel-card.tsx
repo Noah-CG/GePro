@@ -2,8 +2,9 @@
 
 import { CheckCircle2, ExternalLink } from "lucide-react";
 import { useState, useTransition, type FormEvent } from "react";
-import { linkDiscordChannel, unlinkDiscordChannel } from "@/actions/discord";
+import { linkDiscordChannel, prepareDiscordLink, unlinkDiscordChannel } from "@/actions/discord";
 import { useApp } from "@/components/layout/app-provider";
+import { CopyableLink } from "@/components/projects/copyable-link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/misc";
@@ -11,7 +12,11 @@ import type { DiscordChannelView } from "@/lib/discord/model";
 import { channelUrl, DISCORD_DOCS_URL } from "@/lib/discord/urls";
 import { DISCORD_COLOR, DiscordIcon } from "./discord-icon";
 
-/** Salon Discord du projet (paramètres du projet) : rattachement, changement, retrait. */
+/**
+ * Salon Discord du projet (paramètres du projet) : rattachement, changement, retrait.
+ * Rattachement en deux temps : le salon choisi, puis un code à y publier depuis son compte Discord
+ * (preuve d'accès au salon : le bot est commun à toute l'application).
+ */
 export function DiscordChannelCard({
   projectId,
   configured,
@@ -28,6 +33,8 @@ export function DiscordChannelCard({
   const [editing, setEditing] = useState(false);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  /** Code à publier dans le salon saisi (deuxième étape), ou null. */
+  const [verification, setVerification] = useState<{ channelName: string; code: string } | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
   const showForm = canManage && configured && (!channel || editing);
@@ -35,13 +42,24 @@ export function DiscordChannelCard({
   function submit(e: FormEvent) {
     e.preventDefault();
     startTransition(async () => {
+      if (!verification) {
+        const res = await prepareDiscordLink(projectId, input);
+        if (!res.ok) return setError(res.error);
+        setError(null);
+        return setVerification(res.data);
+      }
       const res = await linkDiscordChannel(projectId, input);
       if (!res.ok) return setError(res.error);
-      setError(null);
-      setInput("");
-      setEditing(false);
+      reset();
       toast(`Salon #${res.data.channelName} relié au projet`);
     });
+  }
+
+  function reset() {
+    setError(null);
+    setInput("");
+    setVerification(null);
+    setEditing(false);
   }
 
   function unlink() {
@@ -113,7 +131,10 @@ export function DiscordChannelCard({
             <Input
               id="discord-channel"
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setVerification(null);
+              }}
               placeholder="123456789012345678 ou https://discord.com/channels/…"
               autoComplete="off"
               spellCheck={false}
@@ -122,17 +143,21 @@ export function DiscordChannelCard({
               className="min-w-0 flex-1"
             />
             <Button type="submit" variant="primary" loading={pending} disabled={!input.trim()}>
-              Relier le salon
+              {verification ? "Vérifier et relier" : "Continuer"}
             </Button>
-            {editing && (
-              <Button variant="ghost" onClick={() => {
-                  setEditing(false);
-                  setError(null);
-                }}>
+            {(editing || verification) && (
+              <Button variant="ghost" onClick={reset}>
                 Annuler
               </Button>
             )}
           </div>
+          {verification && (
+            <CopyableLink
+              link={verification.code}
+              label="Code de vérification"
+              note={`Publiez ce code dans #${verification.channelName} depuis votre compte Discord (le message peut être supprimé ensuite), puis cliquez sur « Vérifier et relier ».`}
+            />
+          )}
           {error && (
             <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">
               {error}

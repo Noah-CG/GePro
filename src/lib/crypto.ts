@@ -9,7 +9,7 @@
  *   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
  */
 import "server-only";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "node:crypto";
 
 const VERSION = "v1";
 const ALGORITHM = "aes-256-gcm";
@@ -46,4 +46,9 @@ export function decryptSecret(payload: string): string {
   const decipher = createDecipheriv(ALGORITHM, getKey(), Buffer.from(iv, "base64url"));
   decipher.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(data, "base64url")), decipher.final()]).toString("utf8");
+}
+
+/** Empreinte HMAC-SHA256 (hexadécimal) de `value` avec la même clé : codes de vérification non devinables. */
+export function signValue(value: string): string {
+  return createHmac("sha256", getKey()).update(value).digest("hex");
 }

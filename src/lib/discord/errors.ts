@@ -12,6 +12,8 @@ export const DISCORD_ERROR_MESSAGES = {
   invalid_channel: "Identifiant non reconnu. Collez l'identifiant du salon (17 à 20 chiffres) ou son lien https://discord.com/channels/…",
   channel_not_found: "Salon Discord introuvable : il a peut-être été supprimé, ou l'identifiant est erroné.",
   not_text_channel: "Ce salon n'est pas un salon textuel d'un serveur Discord.",
+  link_code_missing:
+    "Code de vérification introuvable parmi les derniers messages du salon : publiez-le depuis votre compte Discord (pas depuis GePro), puis réessayez.",
   bot_not_in_guild: "Le bot GePro n'est pas (ou plus) membre de ce serveur Discord. Invitez-le avec le lien d'invitation.",
   missing_access:
     "Le bot n'a pas accès à ce salon : vérifiez qu'il est bien invité sur le serveur et qu'il a les permissions « Voir le salon » et « Voir les anciens messages ».",
@@ -69,6 +71,7 @@ export function httpStatusOf(code: DiscordErrorCode): number {
       return 401;
     case "invalid_channel":
     case "invalid_message":
+    case "link_code_missing":
     case "bad_request":
     case "rejected":
       return 400;

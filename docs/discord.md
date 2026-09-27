@@ -68,11 +68,15 @@ Ouvrez l'URL, choisissez le serveur (il faut y avoir la permission « Gérer le 
 
 1. Dans Discord, activez le **mode développeur** : *Paramètres utilisateur → Avancés → Mode développeur*.
 2. Clic droit sur le salon → **Copier l'identifiant du salon**. Vous pouvez aussi copier le lien du salon (`https://discord.com/channels/<serveur>/<salon>`).
-3. Dans GePro : **Paramètres du projet** → carte **Discord** → collez l'identifiant (ou le lien) → **Relier le salon**.
+3. Dans GePro : **Paramètres du projet** → carte **Discord** → collez l'identifiant (ou le lien) → **Continuer**.
+4. GePro affiche un **code de vérification** (`GEPRO-…`). Publiez-le dans le salon **depuis votre compte Discord**, puis cliquez sur **Vérifier et relier**. Le message peut ensuite être supprimé.
+
+Pourquoi ce code : le bot est commun à toute l'instance GePro et l'id d'un salon n'est pas secret. Sans cette preuve, n'importe quel compte (l'inscription est libre) pourrait créer un projet, y relier le salon d'une autre équipe dont le bot est membre, lire son historique et y écrire. Le code est propre au projet, au salon et à la personne (HMAC avec `INTEGRATIONS_ENCRYPTION_KEY`) ; il n'est accepté que publié par un compte Discord, ni bot ni webhook, parmi les 50 derniers messages du salon.
 
 Au rattachement, le serveur :
 
 - vérifie que le bot voit le salon (`GET /channels/{id}`), qu'il s'agit d'un salon textuel ou d'annonces d'un serveur, et récupère son `guild_id` ;
+- cherche le code de vérification parmi les derniers messages (`GET /channels/{id}/messages`, sans cache) ;
 - réutilise le webhook « GePro » du salon s'il existe, sinon en crée un (`POST /channels/{id}/webhooks`) ;
 - enregistre l'id du webhook et son jeton **chiffré**. Ils ne sont jamais envoyés au navigateur.
 
@@ -90,7 +94,7 @@ Si le webhook est supprimé côté Discord, GePro le recrée automatiquement au 
 - **Rendu** : gras, italique, souligné, barré, spoilers, code, citations, liens, mentions de membres, de rôles et de salons, emojis personnalisés, horodatages `<t:…>`, images jointes, autres fichiers en lien, embeds simples. Aucun HTML n'est interprété : le markdown est analysé en arbre (`src/lib/discord/markdown.ts`) puis rendu en composants React.
 - Les messages écrits depuis GePro portent le badge **via GePro**, ceux des bots le badge **BOT**.
 
-Tout membre du projet peut lire et écrire dans son salon (les autres comptes n'y ont pas accès : les routes répondent 404) ; seuls le propriétaire et les administrateurs du projet peuvent relier ou délier le salon. Ne reliez qu'un salon destiné à tous les membres du projet.
+Tout membre du projet peut lire et écrire dans son salon (les autres comptes n'y ont pas accès : les routes répondent 404). Les messages publiés depuis GePro portent le nom du membre suivi de « (GePro) », pour ne pas être pris pour ceux d'un compte Discord ; seuls le propriétaire et les administrateurs du projet peuvent relier ou délier le salon. Ne reliez qu'un salon destiné à tous les membres du projet.
 
 ## Dépannage
 

@@ -15,7 +15,7 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { acceptInvitation, inviteMember, leaveProject, removeMember, setMemberRole, transferOwnership } from "@/actions/project-members";
 import { saveCalendarSync } from "@/actions/calendar-sync";
-import { linkDiscordChannel, unlinkDiscordChannel } from "@/actions/discord";
+import { linkDiscordChannel, prepareDiscordLink, unlinkDiscordChannel } from "@/actions/discord";
 import { createEvent, deleteEvent, updateEvent } from "@/actions/events";
 import { cancelFileUpload, deleteFile, finishFileUpload, startFileUpload } from "@/actions/files";
 import { removeImportantDay, saveImportantDay } from "@/actions/important-days";
@@ -276,6 +276,7 @@ describe("4. B ne peut rien écrire dans le projet de A, même en forgeant la re
       ["attachGoogleDoc", () => attachGoogleDoc(a.projectId, "https://docs.google.com/document/d/abcdefghijklmnopqrstuvwxyz/edit")],
       ["detachResource", () => detachResource(a.resourceId)],
       ["refreshProjectResources", () => refreshProjectResources(a.projectId)],
+      ["prepareDiscordLink", () => prepareDiscordLink(a.projectId, "123456789012345678")],
       ["linkDiscordChannel", () => linkDiscordChannel(a.projectId, "123456789012345678")],
       ["unlinkDiscordChannel", () => unlinkDiscordChannel(a.projectId)],
       ["updateProject", () => updateProject(a.projectId, { name: "Piraté", color: "#10b981" })],

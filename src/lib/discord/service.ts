@@ -7,7 +7,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { discordReadState, projectDiscord, type ProjectDiscord } from "@/db/schema";
 import { memberProjectIds } from "@/lib/queries";
-import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import { decryptSecret, encryptSecret, signValue } from "@/lib/crypto";
 import {
   createWebhook,
   executeWebhook,
@@ -60,14 +60,44 @@ export async function getDiscordChannelViews(viewerId: string): Promise<Record<s
 
 // Rattachement
 
+/** Messages parcourus à la recherche du code de vérification. */
+const LINK_CODE_SEARCH = 50;
+
 /**
- * Relie un salon au projet (ou remplace le salon actuel) : vérifie que le bot voit le salon,
- * récupère le serveur, puis réutilise le webhook « GePro » du salon ou en crée un.
+ * Code à publier dans le salon pour prouver qu'on y a accès avant de le relier : le bot est
+ * commun à toute l'application, et un id de salon n'est pas secret. Propre au projet, au salon et
+ * à la personne, non devinable (HMAC avec la clé de chiffrement) : inutilisable par quelqu'un d'autre.
  */
-export async function linkChannel(projectId: string, channelId: string, userId: string): Promise<DiscordChannelView> {
+export function linkCode(projectId: string, channelId: string, userId: string): string {
+  return `GEPRO-${signValue(`discord-link:${projectId}:${channelId}:${userId}`).slice(0, 10).toUpperCase()}`;
+}
+
+/** Salon textuel d'un serveur, visible par le bot (sans cache) : sinon DiscordError. */
+async function textChannel(channelId: string) {
   const channel = await getChannel(channelId, { fresh: true });
   if (!channel.guild_id || !(Object.values(CHANNEL_TYPES) as number[]).includes(channel.type)) {
     throw new DiscordError("not_text_channel", `type ${channel.type}`);
+  }
+  return { ...channel, guild_id: channel.guild_id };
+}
+
+/** Première étape du rattachement : le salon est utilisable, et voici le code à y publier. */
+export async function prepareLink(projectId: string, channelId: string, userId: string): Promise<{ channelName: string; code: string }> {
+  const channel = await textChannel(channelId);
+  return { channelName: channel.name ?? channelId, code: linkCode(projectId, channelId, userId) };
+}
+
+/**
+ * Relie un salon au projet (ou remplace le salon actuel) : vérifie que le bot voit le salon et que
+ * le code de `userId` y a été publié par un compte Discord (ni bot ni webhook), puis réutilise le
+ * webhook « GePro » du salon ou en crée un.
+ */
+export async function linkChannel(projectId: string, channelId: string, userId: string): Promise<DiscordChannelView> {
+  const channel = await textChannel(channelId);
+  const code = linkCode(projectId, channelId, userId);
+  const recent = await getMessages(channelId, { limit: LINK_CODE_SEARCH }, { fresh: true });
+  if (!recent.some((m) => !m.author.bot && !m.webhook_id && m.content.includes(code))) {
+    throw new DiscordError("link_code_missing");
   }
   const webhook = await ensureWebhook(channelId);
   const values = {
@@ -158,9 +188,12 @@ async function normalizeContext(link: ProjectDiscordLink, lookup: { roles: boole
 
 // Envoi
 
+/** Suffixe des pseudos publiés par GePro : un nom choisi librement à l'inscription ne se fait pas passer pour un compte Discord. */
+const WEBHOOK_SUFFIX = " (GePro)";
+
 /**
- * Pseudo affiché sur Discord : le nom du membre GePro. Discord refuse les pseudos de webhook
- * contenant « discord », « clyde », « ``` », @, # ou :, et limite leur longueur à 80.
+ * Pseudo affiché sur Discord : le nom du membre GePro, suivi de « (GePro) ». Discord refuse les
+ * pseudos de webhook contenant « discord », « clyde », « ``` », @, # ou :, et limite leur longueur à 80.
  */
 export function webhookUsername(name: string): string {
   const cleaned = name
@@ -168,8 +201,9 @@ export function webhookUsername(name: string): string {
     .replace(/```|[@#:]/g, "")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, 80);
-  return cleaned && !/^(everyone|here)$/i.test(cleaned) ? cleaned : "Membre GePro";
+    .slice(0, 80 - WEBHOOK_SUFFIX.length)
+    .trim();
+  return cleaned && !/^(everyone|here)$/i.test(cleaned) ? `${cleaned}${WEBHOOK_SUFFIX}` : "Membre GePro";
 }
 
 /**

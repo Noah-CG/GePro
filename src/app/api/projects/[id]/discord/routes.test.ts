@@ -2,9 +2,9 @@ import { NextRequest } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth";
-import { linkChannel } from "@/lib/discord/service";
+import { linkChannel, linkCode } from "@/lib/discord/service";
 import { insertProject, insertUser, resetDb } from "@/test/db";
-import { CHANNEL_ID, discordError, LAST_MESSAGE_ID, mockDiscord } from "@/test/discord";
+import { apiMessage, CHANNEL_ID, discordError, LAST_MESSAGE_ID, mockDiscord } from "@/test/discord";
 import { json } from "@/test/google";
 import { GET as getMessages, POST as postMessage } from "./messages/route";
 import { POST as postRead } from "./read/route";
@@ -30,7 +30,7 @@ const post = (path: string, body: unknown) =>
   new NextRequest(url(path), { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
 
 async function link() {
-  mockDiscord();
+  mockDiscord({ messages: () => json([apiMessage({ content: linkCode(projectId, CHANNEL_ID, me.id) })]) });
   await linkChannel(projectId, CHANNEL_ID, me.id);
 }
 

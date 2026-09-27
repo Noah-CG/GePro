@@ -147,12 +147,12 @@ export const getGuild = (guildId: string) => request<APIGuild>(`/guilds/${guildI
 
 /**
  * Messages d'un salon (100 au plus), du plus récent au plus ancien. `before` / `after` sont
- * exclusifs ; sans eux, les derniers messages.
+ * exclusifs ; sans eux, les derniers messages. `fresh` : sans cache (code de vérification).
  */
-export const getMessages = (channelId: string, params: { before?: string; after?: string; limit: number }) =>
+export const getMessages = (channelId: string, params: { before?: string; after?: string; limit: number }, { fresh = false } = {}) =>
   request<APIMessage[]>(`/channels/${channelId}/messages`, {
     query: { before: params.before, after: params.after, limit: String(params.limit) },
-    revalidate: LIVE_CACHE_SECONDS,
+    revalidate: fresh ? undefined : LIVE_CACHE_SECONDS,
   });
 
 export const getGuildRoles = (guildId: string) => request<APIRole[]>(`/guilds/${guildId}/roles`, { revalidate: GUILD_CACHE_SECONDS });

@@ -23,6 +23,7 @@ import {
   getProjectDiscord,
   getStatus,
   linkChannel,
+  linkCode,
   markRead,
   sendMessage,
   webhookUsername,
@@ -45,23 +46,27 @@ const codeOf = (promise: Promise<unknown>) =>
     (e: DiscordError) => e.code,
   );
 
+/** Le code de vérification a été publié dans le salon par un membre du serveur. */
+const codePosted = () => ({ messages: () => json([apiMessage({ content: `Voici : ${linkCode(projectId, CHANNEL_ID, userId)}` })]) });
+
 async function linked() {
-  mockDiscord();
+  mockDiscord(codePosted());
   await linkChannel(projectId, CHANNEL_ID, userId);
   return (await getProjectDiscord(projectId))!;
 }
 
 describe("rattachement d'un salon", () => {
   it("vérifie le salon, crée le webhook GePro et chiffre son jeton", async () => {
-    const calls = mockDiscord();
+    const calls = mockDiscord(codePosted());
     expect(await linkChannel(projectId, CHANNEL_ID, userId)).toEqual({ guildId: GUILD_ID, channelId: CHANNEL_ID, channelName: "général" });
 
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       `GET /channels/${CHANNEL_ID}`,
+      `GET /channels/${CHANNEL_ID}/messages`,
       `GET /channels/${CHANNEL_ID}/webhooks`,
       `POST /channels/${CHANNEL_ID}/webhooks`,
     ]);
-    expect(calls[2].json).toEqual({ name: "GePro" });
+    expect(calls[3].json).toEqual({ name: "GePro" });
 
     const [row] = await db.select().from(projectDiscord);
     expect(row).toMatchObject({ projectId, guildId: GUILD_ID, channelId: CHANNEL_ID, webhookId: WEBHOOK_ID, linkedBy: userId });
@@ -71,6 +76,7 @@ describe("rattachement d'un salon", () => {
 
   it("réutilise le webhook GePro existant", async () => {
     const calls = mockDiscord({
+      ...codePosted(),
       webhooks: () => json([geproWebhook({ id: "111111111111111111", name: "Autre" }), geproWebhook()]),
     });
     await linkChannel(projectId, CHANNEL_ID, userId);
@@ -80,7 +86,7 @@ describe("rattachement d'un salon", () => {
 
   it("remplace le salon déjà relié", async () => {
     await linked();
-    mockDiscord({ channel: () => json({ id: CHANNEL_ID, type: 0, guild_id: GUILD_ID, name: "projet-x" }) });
+    mockDiscord({ ...codePosted(), channel: () => json({ id: CHANNEL_ID, type: 0, guild_id: GUILD_ID, name: "projet-x" }) });
     await linkChannel(projectId, CHANNEL_ID, userId);
     const rows = await db.select().from(projectDiscord);
     expect(rows).toHaveLength(1);
@@ -98,9 +104,33 @@ describe("rattachement d'un salon", () => {
   });
 
   it("signale l'absence de permission « Gérer les webhooks »", async () => {
-    mockDiscord({ webhooks: () => discordError(403, 50013) });
+    mockDiscord({ ...codePosted(), webhooks: () => discordError(403, 50013) });
     expect(await codeOf(linkChannel(projectId, CHANNEL_ID, userId))).toBe("missing_permissions");
     expect(await getProjectDiscord(projectId)).toBeNull();
+  });
+
+  it("exige le code de vérification, publié par un compte Discord (ni bot ni webhook)", async () => {
+    const code = linkCode(projectId, CHANNEL_ID, userId);
+    mockDiscord();
+    expect(await codeOf(linkChannel(projectId, CHANNEL_ID, userId))).toBe("link_code_missing");
+    mockDiscord({ messages: () => json([apiMessage({ content: code, webhook_id: WEBHOOK_ID })]) });
+    expect(await codeOf(linkChannel(projectId, CHANNEL_ID, userId))).toBe("link_code_missing");
+    mockDiscord({ messages: () => json([apiMessage({ content: code, author: { ...apiMessage().author, bot: true } })]) });
+    expect(await codeOf(linkChannel(projectId, CHANNEL_ID, userId))).toBe("link_code_missing");
+    expect(await getProjectDiscord(projectId)).toBeNull();
+  });
+
+  it("le code est propre au projet, au salon et à la personne", async () => {
+    const other = await insertUser(db, "Autre");
+    const otherProject = (await insertProject(db, "Autre projet", other.id)).id;
+    const code = linkCode(projectId, CHANNEL_ID, userId);
+    expect(code).toMatch(/^GEPRO-[0-9A-F]{10}$/);
+    expect(linkCode(otherProject, CHANNEL_ID, userId)).not.toBe(code);
+    expect(linkCode(projectId, "200000000000000009", userId)).not.toBe(code);
+    expect(linkCode(projectId, CHANNEL_ID, other.id)).not.toBe(code);
+    // Le code publié pour un autre projet ne relie pas celui-ci.
+    mockDiscord({ messages: () => json([apiMessage({ content: linkCode(otherProject, CHANNEL_ID, other.id) })]) });
+    expect(await codeOf(linkChannel(projectId, CHANNEL_ID, other.id))).toBe("link_code_missing");
   });
 });
 
@@ -137,7 +167,7 @@ describe("envoi", () => {
     const calls = mockDiscord();
     const message = await sendMessage(link, { id: userId, name: "Camille Martin" }, "Salut @everyone");
 
-    expect(calls[0].json).toEqual({ content: "Salut @everyone", username: "Camille Martin", allowed_mentions: { parse: [] } });
+    expect(calls[0].json).toEqual({ content: "Salut @everyone", username: "Camille Martin (GePro)", allowed_mentions: { parse: [] } });
     expect(message).toMatchObject({ id: "1234567890123456800", content: "Salut @everyone", fromGePro: true });
     expect(await getLastRead(userId, CHANNEL_ID)).toBe("1234567890123456800");
   });
@@ -161,8 +191,8 @@ describe("envoi", () => {
   });
 
   it("nettoie le pseudo refusé par Discord", () => {
-    expect(webhookUsername("Camille Martin")).toBe("Camille Martin");
-    expect(webhookUsername("Discord Fan @ #1")).toBe("Fan 1");
+    expect(webhookUsername("Camille Martin")).toBe("Camille Martin (GePro)");
+    expect(webhookUsername("Discord Fan @ #1")).toBe("Fan 1 (GePro)");
     expect(webhookUsername("   ")).toBe("Membre GePro");
     expect(webhookUsername("x".repeat(100))).toHaveLength(80);
   });
