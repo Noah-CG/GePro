@@ -7,7 +7,7 @@ import { useUsernameCheck } from "@/components/account/use-username-check";
 import { AuthCard, FormError } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
-import { PASSWORD_MIN } from "@/lib/validation";
+import { NAME_PART_MAX, PASSWORD_MIN } from "@/lib/validation";
 
 export function SignupForm({ next }: { next: string }) {
   const [state, action, pending] = useActionState<SignupState, FormData>(signup, {});
@@ -19,6 +19,31 @@ export function SignupForm({ next }: { next: string }) {
     <form action={action} noValidate>
       <AuthCard>
         <input type="hidden" name="suite" value={next} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Prénom" htmlFor="firstName" error={errors.firstName}>
+            <Input
+              id="firstName"
+              name="firstName"
+              autoComplete="given-name"
+              maxLength={NAME_PART_MAX}
+              autoFocus
+              required
+              defaultValue={state.values?.firstName}
+              aria-invalid={Boolean(errors.firstName)}
+            />
+          </Field>
+          <Field label="Nom" htmlFor="lastName" error={errors.lastName}>
+            <Input
+              id="lastName"
+              name="lastName"
+              autoComplete="family-name"
+              maxLength={NAME_PART_MAX}
+              required
+              defaultValue={state.values?.lastName}
+              aria-invalid={Boolean(errors.lastName)}
+            />
+          </Field>
+        </div>
         <Field
           label="Nom d'utilisateur"
           htmlFor="username"
@@ -42,7 +67,6 @@ export function SignupForm({ next }: { next: string }) {
             autoCapitalize="none"
             spellCheck={false}
             maxLength={30}
-            autoFocus
             required
             value={username}
             onChange={(e) => setUsername(e.target.value)}

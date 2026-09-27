@@ -11,6 +11,7 @@ import { migrate } from "drizzle-orm/pglite/migrator";
 import type { Db } from "@/db";
 import { createProjectWithOwner } from "@/db/create-project";
 import * as schema from "@/db/schema";
+import { splitName } from "@/lib/names";
 
 export async function createTestDb(): Promise<Db> {
   const db = drizzle({ client: new PGlite(), schema });
@@ -38,7 +39,7 @@ export async function insertUser(
   const [user] = await db
     .insert(schema.users)
     .values({
-      name,
+      ...splitName(name),
       email: `user${n}@exemple.fr`,
       passwordHash: options.passwordHash ?? "x",
       username: options.username ?? `user${n}`,

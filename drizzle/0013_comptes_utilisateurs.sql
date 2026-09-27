@@ -1,19 +1,25 @@
--- Comptes utilisateurs : inscription (sans vérification d'email), nom d'utilisateur, invitations
--- par nom d'utilisateur et par lien, limitation des tentatives de connexion.
+-- Comptes utilisateurs : inscription (sans vérification d'email), prénom et nom séparés, nom
+-- d'utilisateur, invitations par nom d'utilisateur et par lien, limitation des tentatives de connexion.
 --
 -- Un seul bloc DO : Postgres l'exécute d'un seul tenant (tout ou rien), y compris sur Neon, dont le
 -- migrateur n'ouvre pas de transaction. Rejouable : sans effet si la migration est déjà appliquée
 -- (colonne users.username présente).
 --
--- Ajouts uniquement : aucune ligne n'est supprimée ni insérée dans users (ni ailleurs). Les comptes
--- existants gardent leur id, leur email et leur mot de passe ; ils reçoivent un nom d'utilisateur
--- proposé (tiré du nom, sinon de l'email ; suffixe -2, -3… en cas de collision), à confirmer ou
--- modifier à la prochaine connexion (username_confirmed_at nul).
+-- Aucune ligne n'est supprimée ni insérée dans users (ni ailleurs). Les comptes existants gardent
+-- leur id, leur email et leur mot de passe ; ils reçoivent :
+--   - un nom d'utilisateur proposé (tiré du nom, sinon de l'email ; suffixe -2, -3… en cas de
+--     collision), à confirmer ou modifier à la prochaine connexion (username_confirmed_at nul) ;
+--   - un prénom et un nom (first_name, last_name), découpés sur le premier espace de leur nom actuel
+--     (un seul mot : prénom seul, nom vide).
+-- users.name devient une colonne calculée par Postgres (« Prénom Nom ») : le reste de l'application
+-- la lit sans changement. Avant de remplacer l'ancienne colonne, la migration vérifie que le nom
+-- recalculé est identique au nom actuel pour chaque compte (sinon elle s'arrête en les listant).
 -- Seule contrainte relâchée : project_invitations.email devient nullable (invitation par nom
 -- d'utilisateur), l'un des deux restant obligatoire.
 --
 -- Garde-fous : refuse de s'appliquer si la migration 0012 (isolation des projets) manque, si
--- deux comptes ont le même email à la casse près (ils sont listés ; à régler avant de relancer), ou
+-- deux comptes ont le même email à la casse près (ils sont listés ; à régler avant de relancer), si
+-- un nom ne se découpe pas sans perte (espace en tête, en fin ou doublé : listés), ou
 -- si une version de développement antérieure de cette migration (avec vérification d'email) est
 -- déjà en place : lancer alors npm run db:comptes-rollback -- --confirm, puis npm run db:migrate.
 --
@@ -30,6 +36,7 @@ DECLARE
     'deconnexion', 'inscription', 'invitations', 'membres', 'projets', 'parametres', 'settings'
   ];
   duplicates text;
+  mismatches text;
   u record;
   base text;
   candidate text;
@@ -136,6 +143,26 @@ BEGIN
 
     UPDATE "users" SET "username" = candidate WHERE "id" = u."id";
   END LOOP;
+
+  -- Prénom et nom, découpés sur le premier espace du nom actuel.
+  ALTER TABLE "users" ADD COLUMN "first_name" text;
+  ALTER TABLE "users" ADD COLUMN "last_name" text DEFAULT '' NOT NULL;
+  UPDATE "users" SET
+    "first_name" = split_part("name", ' ', 1),
+    "last_name" = CASE WHEN position(' ' IN "name") > 0 THEN substr("name", position(' ' IN "name") + 1) ELSE '' END;
+  SELECT string_agg(format('%s (%L)', "email", "name"), ' ; ' ORDER BY "email") INTO mismatches
+  FROM "users"
+  WHERE "first_name" = ''
+     OR "last_name" <> btrim("last_name")
+     OR "first_name" || CASE WHEN "last_name" = '' THEN '' ELSE ' ' || "last_name" END <> "name";
+  IF mismatches IS NOT NULL THEN
+    RAISE EXCEPTION '0013_comptes_utilisateurs : noms impossibles à découper en prénom et nom sans perte (espace en tête, en fin ou doublé), à corriger avant de migrer : %', mismatches;
+  END IF;
+  ALTER TABLE "users" ALTER COLUMN "first_name" SET NOT NULL;
+
+  -- users.name : calculé à partir du prénom et du nom (même valeur, vérifiée ci-dessus).
+  ALTER TABLE "users" DROP COLUMN "name";
+  ALTER TABLE "users" ADD COLUMN "name" text GENERATED ALWAYS AS ("first_name" || case when "last_name" = '' then '' else ' ' || "last_name" end) STORED NOT NULL;
 
   ALTER TABLE "users" ADD CONSTRAINT "users_username_format" CHECK ("users"."username" ~ '^[A-Za-z0-9_-]{3,30}$');
   CREATE UNIQUE INDEX "users_email_lower_uq" ON "users" USING btree (lower("email"));

@@ -93,7 +93,16 @@ export const users = pgTable(
   "users",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    name: text("name").notNull(),
+    firstName: text("first_name").notNull(),
+    /** Vide possible pour un compte d'avant la séparation dont le nom tenait en un mot. */
+    lastName: text("last_name").notNull().default(""),
+    /**
+     * Nom affiché partout (avatars, listes, invitations…) : « Prénom Nom », calculé par Postgres
+     * (colonne générée, jamais écrite par l'application ni désynchronisée).
+     */
+    name: text("name")
+      .notNull()
+      .generatedAlwaysAs(sql`"first_name" || case when "last_name" = '' then '' else ' ' || "last_name" end`),
     /** Toujours stocké en minuscules. */
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),

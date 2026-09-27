@@ -30,7 +30,7 @@ export async function createMember(input: MemberInput): Promise<ActionResult> {
       passwordHash: await hashPassword(pwd),
       color: COLORS[existing.length % COLORS.length],
       // Nom d'utilisateur proposé, à confirmer à la première connexion.
-      username: await suggestUsername(data.name, data.email, (c) => taken.has(c.toLowerCase())),
+      username: await suggestUsername(`${data.firstName} ${data.lastName}`, data.email, (c) => taken.has(c.toLowerCase())),
     });
   } catch (err) {
     if (isUniqueViolation(err)) return fail("Un compte existe déjà avec cet email.");

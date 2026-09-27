@@ -5,8 +5,9 @@
 -- appliquée. Défait aussi l'ancienne version de développement de la migration (avec vérification
 -- d'email : tables de jetons et users.email_verified_at).
 --
--- Aucun compte n'est supprimé (aucun DELETE sur users). Ce qui est perdu :
---   - noms d'utilisateur ;
+-- Aucun compte n'est supprimé (aucun DELETE sur users). users.name redevient une colonne
+-- ordinaire, avec la même valeur (« Prénom Nom »). Ce qui est perdu :
+--   - la séparation prénom / nom, et les noms d'utilisateur ;
 --   - liens d'invitation et leur journal (les membres entrés par un lien restent membres) ;
 --   - invitations par nom d'utilisateur (sans email, elles ne peuvent pas redevenir des
 --     invitations par email : elles sont retirées ; les membres qui les ont acceptées restent) ;
@@ -36,6 +37,20 @@ BEGIN
   ALTER TABLE "project_invitations" DROP COLUMN "invited_user_id";
   ALTER TABLE "project_invitations" ALTER COLUMN "email" SET NOT NULL;
 
+  -- users.name : colonne ordinaire, même valeur que la colonne calculée.
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'first_name'
+  ) THEN
+    ALTER TABLE "users" RENAME COLUMN "name" TO "name_calcule";
+    ALTER TABLE "users" ADD COLUMN "name" text;
+    UPDATE "users" SET "name" = "name_calcule";
+    ALTER TABLE "users" ALTER COLUMN "name" SET NOT NULL;
+    ALTER TABLE "users" DROP COLUMN "name_calcule";
+    ALTER TABLE "users" DROP COLUMN "first_name";
+    ALTER TABLE "users" DROP COLUMN "last_name";
+  END IF;
+
   DROP INDEX "users_username_lower_uq";
   DROP INDEX "users_email_lower_uq";
   ALTER TABLE "users" DROP CONSTRAINT "users_username_format";
@@ -44,6 +59,6 @@ BEGIN
   ALTER TABLE "users" DROP COLUMN "username";
 
   -- Oublie la migration (version actuelle et ancienne version) : `npm run db:migrate` la rejouerait.
-  DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" IN (1790501117470, 1790455614209);
+  DELETE FROM "drizzle"."__drizzle_migrations" WHERE "created_at" IN (1790501594117, 1790455614209);
 END
 $rollback$;

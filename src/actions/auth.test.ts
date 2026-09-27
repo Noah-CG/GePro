@@ -1,6 +1,6 @@
 /**
- * Comptes de bout en bout : inscription (sans vérification d'email), connexion (email ou nom
- * d'utilisateur), déconnexion, limitation des tentatives, comptes existants.
+ * Comptes de bout en bout : inscription (prénom, nom, sans vérification d'email), connexion (email
+ * ou nom d'utilisateur), déconnexion, limitation des tentatives, comptes existants.
  *
  * La vraie lib/auth est utilisée, avec un cookie simulé : un « navigateur » = un pot de cookies.
  */
@@ -55,7 +55,7 @@ async function redirectOf(run: () => Promise<unknown>): Promise<string> {
 
 const PASSWORD = "un-mot-de-passe-solide";
 const signupForm = (username: string, email: string, extra: Record<string, string> = {}) =>
-  form({ username, email, password: PASSWORD, confirm: PASSWORD, ...extra });
+  form({ firstName: "Nadia", lastName: "Rahmani", username, email, password: PASSWORD, confirm: PASSWORD, ...extra });
 const signUp = (username: string, email: string, extra: Record<string, string> = {}) =>
   redirectOf(() => signup({}, signupForm(username, email, extra)));
 const loginWith = (identifier: string, password = PASSWORD) => login({}, form({ identifier, password }));
@@ -72,15 +72,30 @@ describe("inscription", () => {
     expect(await signUp("Nadia_R", "Nadia@Exemple.fr")).toBe("/");
 
     const [user] = await db.select().from(users).where(eq(users.email, "nadia@exemple.fr"));
-    expect(user).toMatchObject({ username: "Nadia_R" });
+    expect(user).toMatchObject({ username: "Nadia_R", firstName: "Nadia", lastName: "Rahmani", name: "Nadia Rahmani" });
     expect(user.usernameConfirmedAt).not.toBeNull();
     // Même coût bcrypt que les comptes existants.
     expect(user.passwordHash).toMatch(/^\$2[aby]\$10\$/);
     expect((await getCurrentUser())?.id).toBe(user.id);
   });
 
+  it("stocke prénom et nom séparément, espaces superflus retirés ; les deux sont obligatoires", async () => {
+    expect(await signUp("jean-pierre", "jp@exemple.fr", { firstName: "  Jean   Pierre ", lastName: " de  La Fontaine " })).toBe("/");
+    const [user] = await db.select().from(users).where(eq(users.email, "jp@exemple.fr"));
+    expect(user).toMatchObject({ firstName: "Jean Pierre", lastName: "de La Fontaine", name: "Jean Pierre de La Fontaine" });
+    expect(await getCurrentUser()).toMatchObject({ firstName: "Jean Pierre", lastName: "de La Fontaine", name: "Jean Pierre de La Fontaine" });
+
+    web.jar.clear();
+    const res = await signup({}, signupForm("autre", "autre@exemple.fr", { firstName: "  ", lastName: "" }));
+    expect(res.fieldErrors).toMatchObject({ firstName: "Le prénom est obligatoire", lastName: "Le nom est obligatoire" });
+    expect(res.values).toMatchObject({ firstName: "", lastName: "", username: "autre" });
+    expect((await signup({}, signupForm("autre", "autre@exemple.fr", { firstName: "x".repeat(51) }))).fieldErrors).toMatchObject({
+      firstName: "50 caractères maximum",
+    });
+  });
+
   it("valide le nom d'utilisateur, l'email et le mot de passe", async () => {
-    const res = await signup({}, form({ username: "ab", email: "pas-un-email", password: "court", confirm: "autre" }));
+    const res = await signup({}, form({ firstName: "Nadia", lastName: "Rahmani", username: "ab", email: "pas-un-email", password: "court", confirm: "autre" }));
     expect(res.fieldErrors).toMatchObject({
       username: "3 caractères minimum",
       email: "Email invalide",
@@ -226,6 +241,17 @@ describe("comptes existants (migrés)", () => {
     expect(me.id).toBe(hugo.id);
     const projects = await getProjectsWithStats(me.id, { today: "2026-09-26" });
     expect(projects.map((p) => p.id).sort()).toEqual([project.id, other.id].sort());
+  });
+
+  it("affichent le prénom et le nom déduits de l'ancien champ name", async () => {
+    // insertUser découpe le nom comme la migration 0013.
+    const marie = await insertUser(db, "Marie-Charlotte de La Rochefoucauld", { passwordHash: await hashPassword(PASSWORD), username: "marie-c" });
+    const jo = await insertUser(db, "Jo", { passwordHash: await hashPassword(PASSWORD), username: "jo-d" });
+    expect(marie).toMatchObject({ firstName: "Marie-Charlotte", lastName: "de La Rochefoucauld", name: "Marie-Charlotte de La Rochefoucauld" });
+    expect(jo).toMatchObject({ firstName: "Jo", lastName: "", name: "Jo" });
+
+    await redirectOf(() => loginWith("marie-c"));
+    expect(await getCurrentUser()).toMatchObject({ firstName: "Marie-Charlotte", lastName: "de La Rochefoucauld", name: "Marie-Charlotte de La Rochefoucauld" });
   });
 
   it("les sessions ouvertes avant la migration restent valables", async () => {

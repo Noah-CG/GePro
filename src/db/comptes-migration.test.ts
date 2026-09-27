@@ -10,11 +10,12 @@ import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { splitName } from "@/lib/names";
 import { RESERVED_USERNAMES, suggestUsername } from "@/lib/usernames";
 
 const MIGRATION = readFileSync("drizzle/0013_comptes_utilisateurs.sql", "utf8");
 const ROLLBACK = readFileSync("scripts/rollback/0013_comptes_utilisateurs.sql", "utf8");
-const JOURNAL_WHEN = 1790501117470;
+const JOURNAL_WHEN = 1790501594117;
 
 const folders: string[] = [];
 
@@ -184,6 +185,32 @@ describe("migration 0013_comptes_utilisateurs", () => {
     }
   });
 
+  it("sépare prénom et nom sur le premier espace ; le nom affiché (users.name) reste identique", async () => {
+    const users = await rows<{ id: string; first_name: string; last_name: string; name: string }>(
+      client,
+      "select id, first_name, last_name, name from users order by created_at, id",
+    );
+    expect(users.map(({ first_name, last_name, name }) => ({ first_name, last_name, name }))).toEqual([
+      { first_name: "Camille", last_name: "Martin", name: "Camille Martin" },
+      { first_name: "Camille", last_name: "Martin", name: "Camille Martin" },
+      { first_name: "Émilie", last_name: "Lœuvre-Ça", name: "Émilie Lœuvre-Ça" },
+      // Un seul mot : prénom seul, nom vide.
+      { first_name: "Jo", last_name: "", name: "Jo" },
+      { first_name: "Admin", last_name: "", name: "Admin" },
+      { first_name: "!!", last_name: "", name: "!!" },
+      { first_name: "Marie-Charlotte", last_name: "de La Rochefoucauld-Liancourt", name: "Marie-Charlotte de La Rochefoucauld-Liancourt" },
+    ]);
+    // Même règle que l'application.
+    for (const u of users) expect(splitName(u.name)).toEqual({ firstName: u.first_name, lastName: u.last_name });
+  });
+
+  it("users.name est calculé par Postgres : suit le prénom et le nom, jamais écrit directement", async () => {
+    await client.exec(`update users set last_name = 'Durand' where id = '${ids.jo}'`);
+    expect(await rows(client, `select name from users where id = '${ids.jo}'`)).toEqual([{ name: "Jo Durand" }]);
+    await client.exec(`update users set last_name = '' where id = '${ids.jo}'`);
+    await expect(client.exec(`update users set name = 'X' where id = '${ids.jo}'`)).rejects.toThrow(/name/);
+  });
+
   it("impose l'unicité sans tenir compte de la casse, et le format du nom d'utilisateur", async () => {
     await expect(client.exec(`update users set email = 'CAMILLE@exemple.fr' where id = '${ids.camille2}'`)).rejects.toThrow(/users_email_lower_uq/);
     await expect(client.exec(`update users set username = 'CAMILLE-MARTIN' where id = '${ids.camille2}'`)).rejects.toThrow(/users_username_lower_uq/);
@@ -213,6 +240,16 @@ describe("migration 0013_comptes_utilisateurs", () => {
 });
 
 describe("migration 0013 : garde-fous", () => {
+  it("refuse de s'appliquer si un nom ne se découpe pas sans perte, en le listant, sans rien modifier", async () => {
+    const db = await databaseBeforeAccounts();
+    await db.exec(`insert into users (name, email, password_hash) values ('Jean ', 'jean@exemple.fr', 'x'), ('Léa  Dubois', 'lea@exemple.fr', 'x')`);
+    await expect(db.exec(MIGRATION)).rejects.toThrow(/noms impossibles à découper.*jean@exemple.fr.*lea@exemple.fr/);
+    const [{ n }] = await rows<{ n: number }>(db, "select count(*)::int as n from information_schema.columns where table_name = 'users' and column_name in ('username', 'first_name')");
+    expect(n).toBe(0);
+    expect(await rows(db, "select name from users order by email")).toEqual([{ name: "Jean " }, { name: "Léa  Dubois" }]);
+    await db.close();
+  }, 120_000);
+
   it("refuse de s'appliquer s'il existe des emails en double à la casse près, en les listant, sans rien modifier", async () => {
     const db = await databaseBeforeAccounts();
     await db.exec(`insert into users (name, email, password_hash) values ('A', 'Double@exemple.fr', 'x'), ('B', 'double@exemple.fr', 'x')`);
@@ -233,7 +270,7 @@ describe("retour arrière de la migration 0013", () => {
     await db.exec(`insert into drizzle.__drizzle_migrations (hash, created_at) values ('0013', ${JOURNAL_WHEN})`);
     // Données créées après la mise en production : un compte inscrit, une invitation par nom d'utilisateur.
     await db.exec(`
-      insert into users (name, email, password_hash, username) values ('Nadia', 'nadia@exemple.fr', 'x', 'nadia');
+      insert into users (first_name, last_name, email, password_hash, username) values ('Nadia', 'Rahmani', 'nadia@exemple.fr', 'x', 'nadia');
       insert into project_invitations (project_id, invited_user_id, token_hash, expires_at)
         select '${ids.site}', id, 'by-username', now() + interval '1 day' from users where username = 'nadia';
     `);

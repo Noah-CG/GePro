@@ -1,7 +1,7 @@
 /**
  * Création d'un compte en ligne de commande (utile pour le tout premier administrateur).
  *
- *   npm run user:create -- --name "Alice Durand" --email alice@societe.fr --password "motdepasse" [--admin]
+ *   npm run user:create -- --prenom "Alice" --nom "Durand" --email alice@societe.fr --password "motdepasse" [--admin]
  */
 import "./env";
 import { sql } from "drizzle-orm";
@@ -19,14 +19,15 @@ function arg(name: string) {
 
 async function main() {
   const parsed = memberInput.safeParse({
-    name: arg("name"),
+    firstName: arg("prenom"),
+    lastName: arg("nom"),
     email: arg("email"),
     password: arg("password"),
     role: process.argv.includes("--admin") ? "admin" : "member",
   });
   if (!parsed.success) {
     console.error("Paramètres invalides :", parsed.error.issues.map((i) => `${i.path.join(".")} → ${i.message}`).join(", "));
-    console.error('Usage : npm run user:create -- --name "Nom Prénom" --email x@y.fr --password "10+ caractères" [--admin]');
+    console.error('Usage : npm run user:create -- --prenom "Prénom" --nom "Nom" --email x@y.fr --password "10+ caractères" [--admin]');
     process.exit(1);
   }
   const { password, ...data } = parsed.data;
@@ -40,7 +41,7 @@ async function main() {
   const all = await db.select({ username: users.username }).from(users);
   const taken = new Set(all.map((u) => u.username?.toLowerCase()));
   // Nom d'utilisateur proposé, à confirmer à la première connexion.
-  const username = await suggestUsername(data.name, data.email, (c) => taken.has(c.toLowerCase()));
+  const username = await suggestUsername(`${data.firstName} ${data.lastName}`, data.email, (c) => taken.has(c.toLowerCase()));
   await db.insert(users).values({
     ...data,
     passwordHash: await hashPassword(password),

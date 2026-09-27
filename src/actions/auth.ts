@@ -99,26 +99,30 @@ export async function changePassword(current: string, next: string): Promise<Act
 
 // --- Inscription ----------------------------------------------------------------
 
+type SignupField = "firstName" | "lastName" | "username" | "email" | "password" | "confirm";
+
 export type SignupState = {
   error?: string;
-  fieldErrors?: Partial<Record<"username" | "email" | "password" | "confirm", string>>;
-  values?: { username: string; email: string };
+  fieldErrors?: Partial<Record<SignupField, string>>;
+  values?: { firstName: string; lastName: string; username: string; email: string };
 };
 
 /** Crée le compte, ouvre la session et mène à l'accueil (ou au lien d'invitation à reprendre). */
 export async function signup(_prev: SignupState, form: FormData): Promise<SignupState> {
   const raw = {
+    firstName: String(form.get("firstName") ?? ""),
+    lastName: String(form.get("lastName") ?? ""),
     username: String(form.get("username") ?? ""),
     email: String(form.get("email") ?? ""),
     password: String(form.get("password") ?? ""),
     confirm: String(form.get("confirm") ?? ""),
   };
-  const values = { username: raw.username.trim(), email: raw.email.trim() };
+  const values = { firstName: raw.firstName.trim(), lastName: raw.lastName.trim(), username: raw.username.trim(), email: raw.email.trim() };
   const parsed = signupInput.safeParse(raw);
   if (!parsed.success) {
     const fieldErrors: SignupState["fieldErrors"] = {};
     for (const issue of parsed.error.issues) {
-      const field = issue.path[0] as keyof NonNullable<SignupState["fieldErrors"]>;
+      const field = issue.path[0] as SignupField;
       fieldErrors[field] ??= issue.message;
     }
     return { fieldErrors, values };
@@ -127,14 +131,15 @@ export async function signup(_prev: SignupState, form: FormData): Promise<Signup
   const wait = (await lockedFor([key])) || (await recordFailure(key, SIGNUP_IP));
   if (wait > 0) return { error: tooMany(wait), values };
 
-  const { username, email, password } = parsed.data;
+  const { firstName, lastName, username, email, password } = parsed.data;
   const [{ total }] = await db.select({ total: count() }).from(users);
   let userId: string;
   try {
     [{ id: userId }] = await db
       .insert(users)
       .values({
-        name: username,
+        firstName,
+        lastName,
         username,
         usernameConfirmedAt: new Date(),
         email,

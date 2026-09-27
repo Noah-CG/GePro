@@ -1,5 +1,5 @@
 {
-  "id": "f47d15b1-4067-4c59-9e0f-1642244004c3",
+  "id": "01bfcd18-6e78-4bbc-a122-708e33e0b0de",
   "prevId": "0c40516d-c616-4f82-8b6c-7eb54a0febd0",
   "version": "7",
   "dialect": "postgresql",
@@ -2283,11 +2283,28 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "first_name": {
+          "name": "first_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_name": {
+          "name": "last_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
         "name": {
           "name": "name",
           "type": "text",
           "primaryKey": false,
-          "notNull": true
+          "notNull": true,
+          "generated": {
+            "as": "\"first_name\" || case when \"last_name\" = '' then '' else ' ' || \"last_name\" end",
+            "type": "stored"
+          }
         },
         "email": {
           "name": "email",

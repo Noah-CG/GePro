@@ -19,7 +19,11 @@ const SESSION_DAYS = 30;
 
 export type SessionUser = {
   id: string;
+  /** « Prénom Nom », calculé par Postgres. */
   name: string;
+  firstName: string;
+  /** Vide possible pour un compte d'avant la séparation dont le nom tenait en un mot. */
+  lastName: string;
   email: string;
   role: "admin" | "member";
   color: string;
@@ -67,6 +71,8 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     .select({
       id: users.id,
       name: users.name,
+      firstName: users.firstName,
+      lastName: users.lastName,
       email: users.email,
       role: users.role,
       color: users.color,

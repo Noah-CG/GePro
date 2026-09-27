@@ -19,7 +19,7 @@ COPY . .
 
 # --- Outils : lance les migrations par défaut ----------------------------------
 # docker run --rm -e DATABASE_URL=... gepro-tools
-# docker run --rm -e DATABASE_URL=... gepro-tools npm run user:create -- --name ... --email ... --password ... --admin
+# docker run --rm -e DATABASE_URL=... gepro-tools npm run user:create -- --prenom ... --nom ... --email ... --password ... --admin
 FROM source AS tools
 CMD ["npm", "run", "db:migrate"]
 

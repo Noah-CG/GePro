@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Field, Input, Segmented } from "@/components/ui/input";
 import { Card } from "@/components/ui/misc";
+import { fullName } from "@/lib/names";
 import type { Account } from "@/lib/queries";
+import { PASSWORD_MIN } from "@/lib/validation";
 
 /** Administration des comptes de l'application (sans rapport avec les membres des projets). */
 export function MembersManager({ team }: { team: Account[] }) {
@@ -84,7 +86,7 @@ export function MembersManager({ team }: { team: Account[] }) {
 
 function CreateMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const { toast } = useApp();
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "member" as "member" | "admin" });
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "", password: "", role: "member" as "member" | "admin" });
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -93,7 +95,7 @@ function CreateMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChang
     startTransition(async () => {
       const res = await createMember(form);
       if (!res.ok) return setError(res.error);
-      toast(`Compte créé pour ${form.name}`);
+      toast(`Compte créé pour ${fullName(form.firstName.trim(), form.lastName.trim())}`);
       onOpenChange(false);
     });
   }
@@ -101,13 +103,18 @@ function CreateMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   return (
     <Dialog open={open} onOpenChange={onOpenChange} title="Nouveau membre" description="Communiquez-lui ensuite son email et son mot de passe.">
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Nom complet" htmlFor="m-name">
-          <Input id="m-name" autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Prénom" htmlFor="m-first-name">
+            <Input id="m-first-name" autoFocus value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+          </Field>
+          <Field label="Nom" htmlFor="m-last-name">
+            <Input id="m-last-name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+          </Field>
+        </div>
         <Field label="Email" htmlFor="m-email">
           <Input id="m-email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </Field>
-        <Field label="Mot de passe provisoire" htmlFor="m-pwd" hint="8 caractères minimum. Le membre pourra le changer depuis son menu.">
+        <Field label="Mot de passe provisoire" htmlFor="m-pwd" hint={`${PASSWORD_MIN} caractères minimum. Le membre pourra le changer depuis son menu.`}>
           <Input id="m-pwd" type="text" autoComplete="off" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         </Field>
         <Field label="Rôle">
@@ -152,7 +159,7 @@ function ResetPasswordDialog({ member, onClose }: { member: Account | null; onCl
   return (
     <Dialog open={!!member} onOpenChange={(o) => !o && onClose()} title={`Nouveau mot de passe pour ${member?.name ?? ""}`} description="Ses sessions ouvertes seront fermées.">
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Nouveau mot de passe" htmlFor="r-pwd" hint="8 caractères minimum">
+        <Field label="Nouveau mot de passe" htmlFor="r-pwd" hint={`${PASSWORD_MIN} caractères minimum`}>
           <Input id="r-pwd" autoFocus type="text" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         {error && <p className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger">{error}</p>}

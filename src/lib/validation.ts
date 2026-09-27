@@ -114,8 +114,18 @@ export const usernameInput = z
     if (error) ctx.addIssue({ code: "custom", message: error });
   });
 
+export const NAME_PART_MAX = 50;
+
+/** Prénom ou nom : obligatoire, espaces superflus retirés (users.name = « Prénom Nom »). */
+const namePart = (label: string) =>
+  z
+    .string()
+    .transform((v) => v.trim().replace(/\s+/g, " "))
+    .pipe(z.string().min(1, `${label} est obligatoire`).max(NAME_PART_MAX, `${NAME_PART_MAX} caractères maximum`));
+
 export const memberInput = z.object({
-  name: z.string().trim().min(1, "Le nom est obligatoire").max(80),
+  firstName: namePart("Le prénom"),
+  lastName: namePart("Le nom"),
   email: emailInput,
   password,
   role: z.enum(["admin", "member"]).default("member"),
@@ -126,7 +136,7 @@ const passwordsMatch = (v: { password: string; confirm: string }) => v.password 
 const MISMATCH = { message: "Les deux mots de passe ne correspondent pas", path: ["confirm"] };
 
 export const signupInput = z
-  .object({ username: usernameInput, email: emailInput, password, confirm: z.string() })
+  .object({ firstName: namePart("Le prénom"), lastName: namePart("Le nom"), username: usernameInput, email: emailInput, password, confirm: z.string() })
   .refine(passwordsMatch, MISMATCH);
 
 /** Invitation à un projet : email exact (pas de recherche parmi les comptes), rôle donné à l'arrivée. */

@@ -25,6 +25,7 @@ import {
   type TaskStatus,
 } from "../src/db/schema";
 import { hashPassword } from "../src/lib/password";
+import { splitName } from "../src/lib/names";
 import { suggestUsername } from "../src/lib/usernames";
 import { addDays, todayISO } from "../src/lib/dates";
 
@@ -159,10 +160,10 @@ async function main() {
   // Comptes de démo : nom d'utilisateur tiré du nom.
   const usernames = new Set<string>();
   const demoUsers = [];
-  for (const { key: _, ...m } of MEMBERS) {
-    const username = await suggestUsername(m.name, m.email, (c) => usernames.has(c));
+  for (const { key: _, name, ...m } of MEMBERS) {
+    const username = await suggestUsername(name, m.email, (c) => usernames.has(c));
     usernames.add(username);
-    demoUsers.push({ ...m, passwordHash, username, usernameConfirmedAt: new Date() });
+    demoUsers.push({ ...m, ...splitName(name), passwordHash, username, usernameConfirmedAt: new Date() });
   }
 
   const insertedUsers = await db
