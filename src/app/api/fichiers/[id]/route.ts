@@ -45,8 +45,9 @@ export async function GET(request: NextRequest, { params }: Props) {
     "Content-Length": String(bytes.end - bytes.start + 1),
     "Content-Disposition": contentDisposition(download ? "attachment" : "inline", file.name),
     "Accept-Ranges": "bytes",
-    // Le contenu d'un fichier ne change jamais : le navigateur peut le garder (pour cette personne seulement).
-    "Cache-Control": "private, max-age=86400",
+    // Le contenu d'un fichier ne change jamais : le navigateur peut le garder, pour cette personne
+    // seulement et pas trop longtemps (un membre retiré du projet ne le relit plus au-delà d'une heure).
+    "Cache-Control": "private, max-age=3600",
     "X-Content-Type-Options": "nosniff",
   });
   if (range) headers.set("Content-Range", `bytes ${range.start}-${range.end}/${file.size}`);

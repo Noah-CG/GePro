@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { DiscordChannelCard } from "@/components/discord/discord-channel-card";
 import { GoogleConnectionCard, type Notice } from "@/components/integrations/google-connection-card";
-import { MembersManager } from "@/components/members/members-manager";
 import { ProjectInfoForm } from "@/components/projects/project-info-form";
 import { ProjectDangerZone, ProjectMembers } from "@/components/projects/project-members";
 import { PageHeader } from "@/components/ui/misc";
@@ -11,10 +10,9 @@ import { isDiscordConfigured } from "@/lib/discord/client";
 import { getDiscordChannelView } from "@/lib/discord/service";
 import { integrationErrorMessage, isIntegrationErrorCode } from "@/lib/integrations/errors";
 import { isGoogleConfigured } from "@/lib/integrations/google";
-import { MEMBERS_SECTION_ID } from "@/lib/members";
 import { loadProjectPage } from "@/lib/project-page";
 import { atLeast } from "@/lib/access";
-import { getAccounts, getConnectionView, getInviteLinks, getPendingInvitations, getProjectMembers } from "@/lib/queries";
+import { getConnectionView, getInviteLinks, getPendingInvitations, getProjectMembers } from "@/lib/queries";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -38,15 +36,12 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
   const { project, user: me, role } = await loadProjectPage(id);
   const { google, reason } = await searchParams;
   const manager = atLeast(role, "admin");
-  const [connection, discordChannel, members, invitations, links, accounts] = await Promise.all([
+  const [connection, discordChannel, members, invitations, links] = await Promise.all([
     getConnectionView(me.id, "google"),
     getDiscordChannelView(project.id),
     getProjectMembers(project.id),
     manager ? getPendingInvitations(project.id) : [],
     manager ? getInviteLinks(project.id) : [],
-    // Gestion des comptes : réservée aux administrateurs de l'application, comme les actions de
-    // actions/members.ts. Sans rapport avec le rôle dans ce projet.
-    me.role === "admin" ? getAccounts() : null,
   ]);
 
   return (
@@ -90,17 +85,6 @@ export default async function ProjectSettingsPage({ params, searchParams }: Prop
           <DiscordChannelCard projectId={project.id} configured={isDiscordConfigured()} channel={discordChannel} canManage={manager} />
         </div>
       </section>
-
-      {accounts && (
-        <section id={MEMBERS_SECTION_ID} className="mb-8 scroll-mt-4">
-          <h2 className="mb-1 text-sm font-semibold">Comptes de l&apos;équipe</h2>
-          <p className="mb-3 text-sm text-muted">
-            Chacun peut aussi créer son compte depuis la page d&apos;inscription. Les comptes sont communs à tous les
-            projets, mais un nouveau compte ne voit aucun projet tant qu&apos;il n&apos;y est pas invité.
-          </p>
-          <MembersManager team={accounts} />
-        </section>
-      )}
 
       <section>
         <h2 className="mb-3 text-sm font-semibold">{role === "owner" ? "Zone de danger" : "Quitter le projet"}</h2>

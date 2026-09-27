@@ -115,6 +115,13 @@ describe("import d'un PDF", () => {
     expect(await startFileUpload(projectId, file)).toEqual({ ok: false, error });
   });
 
+  it("refuse un fichier qui dépasserait l'espace du projet", async () => {
+    actAs(camille);
+    await db.insert(projectFiles).values({ projectId, name: "gros.pdf", size: 195 * 1024 * 1024, chunkCount: 1, status: "ready" });
+    const res = await startFileUpload(projectId, { name: "encore.pdf", size: 10 * 1024 * 1024, type: "application/pdf" });
+    expect(res).toMatchObject({ ok: false, error: expect.stringMatching(/^Espace des fichiers du projet épuisé/) });
+  });
+
   it("refuse un projet inconnu", async () => {
     actAs(camille);
     const file = { name: "a.pdf", size: 100, type: "application/pdf" };

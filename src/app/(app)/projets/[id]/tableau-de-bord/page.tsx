@@ -5,7 +5,7 @@ import { MyDashboard, TeamDashboard } from "@/components/dashboard/dashboard-vie
 import { PageHeader } from "@/components/ui/misc";
 import { endOfWeekISO, formatLong, todayISO } from "@/lib/dates";
 import { loadProjectPage } from "@/lib/project-page";
-import { getImportantDays, getTasks, getTeam } from "@/lib/queries";
+import { getImportantDays, getProjectMembers, getTasks } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
 type Props = { params: Promise<{ id: string }>; searchParams: Promise<{ pour?: string }> };
@@ -29,7 +29,9 @@ export default async function DashboardPage({ params, searchParams }: Props) {
 
   const [tasks, team, importantDays] = await Promise.all([
     getTasks({ projectId, ...(mine && { assigneeId: me.id }) }),
-    mine ? null : getTeam(me.id).then((team) => team.filter((m) => m.projectIds.includes(projectId))),
+    mine
+      ? null
+      : getProjectMembers(projectId).then((members) => members.map(({ id, name, email, color }) => ({ id, name, email, color, projectIds: [projectId] }))),
     getImportantDays(projectId, { from: today, limit: 5 }),
   ]);
   const common = { me, project, today, weekEnd, tasks, importantDays };

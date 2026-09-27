@@ -6,7 +6,7 @@ import { db } from "@/db";
 import { projectFileChunks, projectFiles } from "@/db/schema";
 import { atLeast, authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { requireUser, type SessionUser } from "@/lib/auth";
-import { chunkCount, cleanFileName, expectedChunkSize, isPdfSignature, pdfFileError, PDF_MIME } from "@/lib/files";
+import { chunkCount, cleanFileName, expectedChunkSize, formatFileSize, isPdfSignature, MAX_PROJECT_STORAGE, pdfFileError, PDF_MIME } from "@/lib/files";
 import { isUuid } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -51,6 +51,17 @@ export async function startFileUpload(
   await db
     .delete(projectFiles)
     .where(and(eq(projectFiles.status, "uploading"), lt(projectFiles.createdAt, new Date(Date.now() - ABANDONED_UPLOAD_MS))));
+
+  // Espace du projet (imports en cours compris) : un membre ne peut pas remplir la base.
+  const [{ used }] = await db
+    .select({ used: sql<number>`coalesce(sum(${projectFiles.size}), 0)::float8` })
+    .from(projectFiles)
+    .where(eq(projectFiles.projectId, projectId));
+  if (Number(used) + size > MAX_PROJECT_STORAGE) {
+    return fail(
+      `Espace des fichiers du projet épuisé (${formatFileSize(Number(used))} sur ${formatFileSize(MAX_PROJECT_STORAGE)}) : supprimez des fichiers inutiles.`,
+    );
+  }
 
   const count = chunkCount(size);
   const [row] = await db

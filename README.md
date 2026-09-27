@@ -35,7 +35,7 @@ Connexion : **camille@exemple.fr / demo1234** (administratrice, propriétaire de
    npm run db:seed                  # option A : données de démo
    npm run user:create -- --prenom "Prénom" --nom "Nom" --email vous@societe.fr --password "motdepasse" --admin   # option B : base vide
    ```
-5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les membres**, qui mène à la section **Comptes de l'équipe** des paramètres du projet). Un compte ne voit aucun projet tant qu'il n'y est pas invité (voir [Projets étanches, membres et invitations](#projets-étanches-membres-et-invitations)).
+5. Lancez `npm run dev`. Les comptes suivants se créent ensuite depuis l'app (**menu du compte → Gérer les comptes**, page `/membres`, réservée aux administrateurs de GePro). Un compte ne voit aucun projet tant qu'il n'y est pas invité (voir [Projets étanches, membres et invitations](#projets-étanches-membres-et-invitations)).
 
 ### Déploiement sur Vercel
 
@@ -211,7 +211,7 @@ En mode **Test** (application Externe), Google fait expirer les autorisations au
 
 Chaque projet peut aussi recevoir des **PDF importés depuis l'ordinateur**, lisibles par toute l'équipe dans GePro, en lecture seule. Aucune configuration n'est nécessaire.
 
-- **Importer** : **+** de la section Documents de la barre latérale, puis *Importer un PDF*, ou page **Documents** du projet (bouton ou glisser-déposer, plusieurs fichiers à la fois). 20 Mo au plus par fichier. Un PDF importé seul s'ouvre aussitôt dans un nouvel onglet GePro.
+- **Importer** : **+** de la section Documents de la barre latérale, puis *Importer un PDF*, ou page **Documents** du projet (bouton ou glisser-déposer, plusieurs fichiers à la fois). 20 Mo au plus par fichier, 200 Mo au plus par projet (`MAX_PROJECT_STORAGE`, `src/lib/files.ts`). Un PDF importé seul s'ouvre aussitôt dans un nouvel onglet GePro.
 - **Lire** : le lecteur de GePro affiche les pages telles qu'elles sont dans le PDF (texte, images, mise en page), sans iframe. Le texte se sélectionne, se copie et se trouve avec Ctrl+F (sur les pages déjà affichées). Zoom, ajustement à la largeur, accès direct à une page, liens cliquables, bouton **Télécharger**.
 - **Supprimer** : réservé à la personne qui a importé le fichier et au propriétaire ou aux administrateurs du projet.
 
@@ -424,7 +424,7 @@ src/
 │       ├── projets/[id]/     Pages d'un projet (404 aux non-membres) : tâches, tableau-de-bord, calendrier,
 │       │                     temps, documents, parametres (membres, invitations), discord
 │       ├── projets/          Liste des projets ; [id] = tâches, [id]/documents(/[docId], /pdf/[fileId]) = documents et lecture, [id]/parametres, [id]/discord = salon Discord en onglet
-│       └── membres/          Fiche d'un membre ([id]) ; /membres redirige vers les paramètres du projet (#comptes)
+│       └── membres/          Administration des comptes (admins de GePro) ; fiche d'un membre ([id])
 │   └── api/                  integrations/ (OAuth : connect → Google → callback), fichiers/[id] (contenu des PDF), pdfjs/ (fichiers annexes du lecteur), projects/[id]/discord/ (salon Discord : status, messages, read)
 ├── actions/                  Server Actions (mutations), chacune vérifie la session
 ├── components/

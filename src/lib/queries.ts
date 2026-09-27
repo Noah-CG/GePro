@@ -453,12 +453,17 @@ export async function getInviteLinkByTokenHash(tokenHash: string): Promise<Invit
   return row ?? null;
 }
 
+const accountColumns = { id: users.id, name: users.name, email: users.email, role: users.role, color: users.color };
+
 /** Tous les comptes, pour leur administration (réservé aux administrateurs de l'application). */
 export async function getAccounts(): Promise<Account[]> {
-  return db
-    .select({ id: users.id, name: users.name, email: users.email, role: users.role, color: users.color })
-    .from(users)
-    .orderBy(asc(users.name));
+  return db.select(accountColumns).from(users).orderBy(asc(users.name));
+}
+
+/** Un compte (fiche d'un membre), ou null. L'appelant vérifie qu'il a le droit de le voir. */
+export async function getAccount(id: string): Promise<Account | null> {
+  const [row] = await db.select(accountColumns).from(users).where(eq(users.id, id)).limit(1);
+  return row ?? null;
 }
 
 /** Liste courte des projets de `viewerId` (sélecteurs, navigation). */

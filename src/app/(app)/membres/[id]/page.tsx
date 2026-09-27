@@ -10,18 +10,16 @@ import { Card, PageHeader, Section, Stat } from "@/components/ui/misc";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { compareByDueThenPriority } from "@/lib/constants";
 import { todayISO } from "@/lib/dates";
-import { membersSettingsHref } from "@/lib/members";
-import { getAccounts, getTasks, type TaskView } from "@/lib/queries";
-import { getSelectedProjectId } from "@/lib/selected-project";
+import { getAccount, getTasks, type TaskView } from "@/lib/queries";
+import { isUuid } from "@/lib/validation";
 
 type Props = { params: Promise<{ id: string }> };
 
-const UUID = /^[0-9a-f-]{36}$/i;
 
 /** Fiche visible par son titulaire et par les administrateurs de l'application. */
 async function loadMember(me: SessionUser, id: string) {
-  if (!UUID.test(id) || (me.role !== "admin" && me.id !== id)) return null;
-  return (await getAccounts()).find((m) => m.id === id) ?? null;
+  if (!isUuid(id) || (me.role !== "admin" && me.id !== id)) return null;
+  return getAccount(id);
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -57,8 +55,8 @@ export default async function MemberPage({ params }: Props) {
   return (
     <div className="mx-auto max-w-6xl">
       {me.role === "admin" && (
-        <Link href={membersSettingsHref(await getSelectedProjectId(me.id))} className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-text">
-          <ArrowLeft size={14} /> Membres
+        <Link href="/membres" className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-text">
+          <ArrowLeft size={14} /> Comptes
         </Link>
       )}
       <PageHeader

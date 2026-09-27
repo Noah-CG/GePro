@@ -11,6 +11,12 @@ export const PDF_MIME = "application/pdf";
 /** Taille maximale d'un fichier importé. */
 export const MAX_FILE_SIZE = 20 * 1024 * 1024;
 
+/**
+ * Espace total des fichiers d'un projet : ils sont stockés dans Postgres, dont l'espace est
+ * compté (et payé) sur Neon.
+ */
+export const MAX_PROJECT_STORAGE = 200 * 1024 * 1024;
+
 /** Taille d'un morceau : sous la limite de 1 Mo d'une Server Action, en-têtes du formulaire compris. */
 export const CHUNK_SIZE = 960 * 1024;
 
