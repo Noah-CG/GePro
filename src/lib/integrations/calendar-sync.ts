@@ -2,8 +2,8 @@
  * Synchronisation GePro → Google Agenda.
  *
  * Chaque membre qui l'active reçoit dans son compte Google un agenda « GePro », créé par l'app :
- * événements d'équipe, événements des projets choisis et, selon son réglage, échéances des
- * tâches non terminées de ces projets. Sens unique : GePro est la référence.
+ * événements des projets choisis et, selon son réglage, échéances des tâches non terminées de
+ * ces projets. Sens unique : GePro est la référence.
  *
  * - Au fil de l'eau : après chaque modification d'un événement ou d'une tâche, `after()` met à
  *   jour les éléments concernés dans l'agenda de chaque membre synchronisé, sans ralentir l'action.

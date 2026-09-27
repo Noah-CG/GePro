@@ -33,7 +33,3 @@ export function FormError({ children }: { children: ReactNode }) {
     </p>
   );
 }
-
-export function FormNotice({ children }: { children: ReactNode }) {
-  return <p className="rounded-lg bg-accent-soft px-3 py-2 text-sm text-text">{children}</p>;
-}

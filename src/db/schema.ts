@@ -2,14 +2,14 @@
  * Modèle de données GePro.
  *
  *   users ──< sessions
- *   users ──< project_members >── projects ──< project_invitations (email ou compte invité)
+ *   users ──< project_members >── projects ──< project_invitations (email invité)
  *   projects ──< project_invite_links ──< project_invite_link_uses >── users
  *   auth_throttle : limitation des tentatives de connexion (sans lien vers users)
  *   users ──< task_assignees >── tasks >── projects
  *   tasks ──< tasks (sous-tâches, via parent_id)
  *   tasks ──< task_dependencies >── tasks
  *   users ──< external_connections ──< external_resources >── projects
- *   projects ──< project_events (projet facultatif : sans projet, événement d'équipe)
+ *   projects ──< project_events
  *   projects ──< important_days (une journée importante au plus par date et par projet)
  *   projects ──< project_files ──< project_file_chunks (PDF importés, découpés en morceaux)
  *   users ──< work_sessions >── projects
@@ -31,7 +31,7 @@
  * - Intégrations : un utilisateur rattache un compte externe (Google, puis GitHub) ; les
  *   ressources externes (Google Docs, puis dépôts, issues…) sont rattachées à un projet.
  */
-import { relations, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import {
   customType,
@@ -103,7 +103,10 @@ export const users = pgTable(
     name: text("name")
       .notNull()
       .generatedAlwaysAs(sql`"first_name" || case when "last_name" = '' then '' else ' ' || "last_name" end`),
-    /** Toujours stocké en minuscules. */
+    /**
+     * Toujours stocké en minuscules. La contrainte `users_email_unique` (migration 0000) double
+     * l'index sur lower() ; elle est gardée : le retour arrière de la migration 0013 s'appuie dessus.
+     */
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
     role: userRole("role").notNull().default("member"),
@@ -117,8 +120,8 @@ export const users = pgTable(
 );
 
 /**
- * Limitation des tentatives (connexion, inscription, mot de passe oublié…). `key` désigne ce qui
- * est limité : "login-ip:<ip>", "login-account:<identifiant>"… Après `failures` échecs, verrouillé
+ * Limitation des tentatives (connexion, inscription, changement de mot de passe). `key` désigne ce
+ * qui est limité : "login-ip:<ip>", "login-account:<identifiant>"… Après `failures` échecs, verrouillé
  * jusqu'à `locked_until` (durée croissante, voir lib/throttle.ts). Aucun lien vers users : une
  * clé existe aussi pour un identifiant inconnu, sans révéler quels comptes existent.
  */
@@ -603,95 +606,6 @@ export const googleCalendarSyncProjects = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.projectId] }), index("google_calendar_sync_projects_project_idx").on(t.projectId)],
 );
-
-// Relations (pour les requêtes relationnelles `db.query.*`)
-
-export const usersRelations = relations(users, ({ many }) => ({
-  assignments: many(taskAssignees),
-  memberships: many(projectMembers),
-  sessions: many(sessions),
-  connections: many(externalConnections),
-  workSessions: many(workSessions),
-}));
-
-export const sessionsRelations = relations(sessions, ({ one }) => ({
-  user: one(users, { fields: [sessions.userId], references: [users.id] }),
-}));
-
-export const projectsRelations = relations(projects, ({ one, many }) => ({
-  owner: one(users, { fields: [projects.ownerId], references: [users.id] }),
-  members: many(projectMembers),
-  invitations: many(projectInvitations),
-  tasks: many(tasks),
-  resources: many(externalResources),
-  events: many(projectEvents),
-  importantDays: many(importantDays),
-  files: many(projectFiles),
-  discord: one(projectDiscord),
-}));
-
-export const projectMembersRelations = relations(projectMembers, ({ one }) => ({
-  project: one(projects, { fields: [projectMembers.projectId], references: [projects.id] }),
-  user: one(users, { fields: [projectMembers.userId], references: [users.id] }),
-}));
-
-export const projectInvitationsRelations = relations(projectInvitations, ({ one }) => ({
-  project: one(projects, { fields: [projectInvitations.projectId], references: [projects.id] }),
-}));
-
-export const projectFilesRelations = relations(projectFiles, ({ one, many }) => ({
-  project: one(projects, { fields: [projectFiles.projectId], references: [projects.id] }),
-  uploader: one(users, { fields: [projectFiles.uploadedBy], references: [users.id] }),
-  chunks: many(projectFileChunks),
-}));
-
-export const projectFileChunksRelations = relations(projectFileChunks, ({ one }) => ({
-  file: one(projectFiles, { fields: [projectFileChunks.fileId], references: [projectFiles.id] }),
-}));
-
-export const projectEventsRelations = relations(projectEvents, ({ one }) => ({
-  project: one(projects, { fields: [projectEvents.projectId], references: [projects.id] }),
-  creator: one(users, { fields: [projectEvents.createdBy], references: [users.id] }),
-}));
-
-export const importantDaysRelations = relations(importantDays, ({ one }) => ({
-  project: one(projects, { fields: [importantDays.projectId], references: [projects.id] }),
-  creator: one(users, { fields: [importantDays.createdBy], references: [users.id] }),
-}));
-
-export const tasksRelations = relations(tasks, ({ one, many }) => ({
-  project: one(projects, { fields: [tasks.projectId], references: [projects.id] }),
-  parent: one(tasks, { fields: [tasks.parentId], references: [tasks.id], relationName: "subtasks" }),
-  subtasks: many(tasks, { relationName: "subtasks" }),
-  assignees: many(taskAssignees),
-}));
-
-export const taskAssigneesRelations = relations(taskAssignees, ({ one }) => ({
-  task: one(tasks, { fields: [taskAssignees.taskId], references: [tasks.id] }),
-  user: one(users, { fields: [taskAssignees.userId], references: [users.id] }),
-}));
-
-export const externalConnectionsRelations = relations(externalConnections, ({ one, many }) => ({
-  user: one(users, { fields: [externalConnections.userId], references: [users.id] }),
-  resources: many(externalResources),
-}));
-
-export const externalResourcesRelations = relations(externalResources, ({ one }) => ({
-  project: one(projects, { fields: [externalResources.projectId], references: [projects.id] }),
-  connection: one(externalConnections, {
-    fields: [externalResources.connectionId],
-    references: [externalConnections.id],
-  }),
-}));
-
-export const projectDiscordRelations = relations(projectDiscord, ({ one }) => ({
-  project: one(projects, { fields: [projectDiscord.projectId], references: [projects.id] }),
-}));
-
-export const workSessionsRelations = relations(workSessions, ({ one }) => ({
-  user: one(users, { fields: [workSessions.userId], references: [users.id] }),
-  project: one(projects, { fields: [workSessions.projectId], references: [projects.id] }),
-}));
 
 export type User = typeof users.$inferSelect;
 export type Project = typeof projects.$inferSelect;

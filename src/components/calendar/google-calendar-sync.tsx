@@ -134,7 +134,6 @@ export function GoogleCalendarSync({ view, google, reason }: { view: CalendarSyn
             <>
               <fieldset>
                 <legend className="mb-1 text-sm font-medium">Projets</legend>
-                <p className="mb-2 text-xs text-muted">Les événements d&apos;équipe (sans projet) sont toujours inclus.</p>
                 {activeProjects.length === 0 ? (
                   <p className="text-sm text-muted">Aucun projet actif.</p>
                 ) : (
