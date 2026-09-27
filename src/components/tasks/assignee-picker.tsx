@@ -47,7 +47,7 @@ export function AssigneePicker({ projectId, value, onChange }: { projectId: stri
                 onClick={() => add(me.id)}
                 className="mb-1 w-full rounded-lg px-2 py-1.5 text-left text-xs font-medium text-accent hover:bg-accent-soft"
               >
-                M'assigner
+                M&apos;assigner
               </button>
             )}
             {available.length === 0 && <p className="px-2 py-3 text-center text-xs text-muted">Tout le monde est déjà assigné.</p>}

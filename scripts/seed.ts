@@ -135,6 +135,12 @@ const PROJECTS: {
 
 async function main() {
   const reset = process.argv.includes("--reset");
+  // Sur une vraie base (Neon…), tout effacer exige une confirmation explicite.
+  if (reset && !isLocalDb && !process.argv.includes("--confirm")) {
+    console.error("--reset efface TOUTES les données de la base DATABASE_URL. Relancez avec --reset --confirm si c'est bien voulu.");
+    process.exitCode = 1;
+    return;
+  }
   const existing = await db.select({ id: users.id }).from(users).limit(1);
   if (existing.length && !reset) {
     console.log("La base contient déjà des données. Relancez avec --reset pour tout effacer et recharger la démo.");
@@ -212,7 +218,7 @@ async function main() {
 }
 
 main()
-  .then(() => process.exit(0))
+  .then(() => process.exit())
   .catch((err) => {
     console.error(err);
     process.exit(1);

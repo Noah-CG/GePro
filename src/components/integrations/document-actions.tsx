@@ -5,7 +5,6 @@ import { useTransition } from "react";
 import { refreshProjectResources } from "@/actions/integrations";
 import { useApp } from "@/components/layout/app-provider";
 import { Button, buttonClass } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 
 /**
  * Actions de la page de lecture d'un document : « Actualiser » (titre, date et contenu relus

@@ -15,18 +15,19 @@ GePro is a project-management app for small teams (projects, tasks with Kanban/l
 ```bash
 npm run dev                  # http://localhost:3000 (demo login: camille@exemple.fr / demo1234)
 npm run build
-npm run lint                 # = typecheck (tsc --noEmit); there is no ESLint
+npm run lint                 # ESLint (eslint.config.mjs: Next, React, hooks, TypeScript)
+npm run typecheck            # tsc --noEmit
 npm test                     # vitest run
 npm run test:e2e             # Playwright (e2e/), own dev server on :3200 + throwaway PGlite; stop npm run dev first
 npx vitest run src/lib/gantt.test.ts      # single file
 npx vitest run -t "nom du test"           # single test by name
 npm run db:generate          # new SQL migration in drizzle/ after editing src/db/schema.ts
 npm run db:migrate           # apply migrations (Neon if DATABASE_URL set, else ./.pglite)
-npm run db:seed [-- --reset] # demo data (--reset wipes ALL data)
+npm run db:seed [-- --reset] # demo data (--reset wipes ALL data; needs --confirm on a real DATABASE_URL)
 npm run user:create -- --prenom "…" --nom "…" --email … --password … --admin
 ```
 
-Without `DATABASE_URL`, the app uses an embedded PGlite database in `.pglite/` that only allows **one process at a time**: stop `npm run dev` before running any `db:*` script. On Vercel, migrations run as part of the build (`vercel.json`).
+Without `DATABASE_URL`, the app uses an embedded PGlite database in `.pglite/` that only allows **one process at a time**: stop `npm run dev` before running any `db:*` script. On Vercel, migrations run as part of production builds only (`vercel.json`, `scripts/migrate.ts --vercel`; previews need `MIGRATE_PREVIEW=1` and their own database).
 
 ## Architecture
 

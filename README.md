@@ -39,7 +39,9 @@ Connexion : **camille@exemple.fr / demo1234** (administratrice, propriétaire de
 
 ### Déploiement sur Vercel
 
-Importez le dépôt dans Vercel. Ajoutez `DATABASE_URL` et `APP_TIMEZONE` dans *Settings → Environment Variables*, puis déployez. **Les migrations s'appliquent automatiquement à chaque déploiement** (`vercel.json` : `npm run db:migrate && npm run build`) ; on peut aussi les lancer depuis son poste avec `npm run db:migrate`, `.env.local` pointant sur Neon.
+Importez le dépôt dans Vercel. Ajoutez `DATABASE_URL` et `APP_TIMEZONE` dans *Settings → Environment Variables*, puis déployez. **Les migrations s'appliquent automatiquement à chaque déploiement de production** (`vercel.json` : `npm run db:migrate -- --vercel && npm run build`) ; on peut aussi les lancer depuis son poste avec `npm run db:migrate`, `.env.local` pointant sur Neon.
+
+Les déploiements de **preview** (branches, pull requests) ne migrent **pas** la base : s'ils partagent la `DATABASE_URL` de la production, une branche non fusionnée la modifierait. Pour tester une migration en preview, donnez aux previews leur propre base (branche Neon, intégration Neon de Vercel) et définissez `MIGRATE_PREVIEW=1` dans l'environnement *Preview*.
 
 ### Mettre à jour une base existante : isolation des projets (migration 0012)
 
@@ -225,12 +227,13 @@ Fonctionnement :
 | Commande | Rôle |
 |---|---|
 | `npm run dev` / `build` / `start` | Développement, build, production |
-| `npm run lint` / `npm run typecheck` | Vérification TypeScript |
+| `npm run lint` | ESLint (règles Next.js, React, hooks et TypeScript, `eslint.config.mjs`) |
+| `npm run typecheck` | Vérification TypeScript |
 | `npm test` / `npm run test:watch` | Tests (Vitest) |
 | `npm run test:e2e` | Tests end-to-end dans un vrai navigateur (Playwright) |
 | `npm run db:generate` | Génère une migration SQL après modification de `src/db/schema.ts` |
 | `npm run db:migrate` | Applique les migrations (Neon ou base locale) |
-| `npm run db:seed [-- --reset]` | Charge la démo (`--reset` efface d'abord **toutes** les données) |
+| `npm run db:seed [-- --reset]` | Charge la démo (`--reset` efface d'abord **toutes** les données ; sur une base Neon, ajouter `--confirm`) |
 | `npm run user:create -- …` | Crée un compte en ligne de commande |
 | `npm run db:comptes-preview` | Aperçu de la migration 0013 (lecture seule) |
 | `npm run db:comptes-rollback -- --confirm` | Retour arrière de la migration 0013 |
@@ -463,3 +466,5 @@ Principes :
 - les modules propres à Next.js (`next/headers`, `next/cache`, `next/navigation`) et la session (`@/lib/auth`) sont remplacés par `vi.mock` dans les tests qui en ont besoin.
 
 `npm run test:e2e` lance les tests Playwright du dossier `e2e/` (glisser-déposer du Kanban à la souris et au doigt, rechargement de la page, échec d'enregistrement). Ils démarrent leur propre serveur `next dev` (port 3200) sur une base PGlite jetable, `.pglite-e2e/`, recréée et remplie par `e2e/seed.ts` à chaque lancement : jamais sur Neon, même si `DATABASE_URL` est défini dans `.env.local`. Arrêtez `npm run dev` avant (les deux partagent le dossier `.next`). Première fois : `npx playwright install chromium`.
+
+La CI GitHub (`.github/workflows/ci.yml`) lance `typecheck`, `lint` et `test` à chaque push sur `main` et à chaque pull request.

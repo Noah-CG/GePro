@@ -183,7 +183,7 @@ export function TaskDialog({
       }
     >
       {activeProjects.length === 0 ? (
-        <p className="text-sm text-muted">Créez d'abord un projet pour pouvoir y ajouter des tâches.</p>
+        <p className="text-sm text-muted">Créez d&apos;abord un projet pour pouvoir y ajouter des tâches.</p>
       ) : (
         <form
           id={FORM_ID}

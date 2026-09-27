@@ -55,6 +55,7 @@ function Favicon({ domain, size, className }: { domain: string; size: number; cl
         <Globe size={size} />
       ) : (
         // <img> et non next/image : rien à optimiser, et aucune requête ne passe par le serveur.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           ref={img}
           src={faviconUrl(domain)}

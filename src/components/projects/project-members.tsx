@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, LogOut, Trash2, UserPlus } from "lucide-react";
+import { LogOut, Trash2, UserPlus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { deleteProject } from "@/actions/projects";

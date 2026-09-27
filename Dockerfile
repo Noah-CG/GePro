@@ -3,7 +3,7 @@
 # Image de production : docker build -t gepro .
 # Outils (migrations, seed, comptes) : docker build --target tools -t gepro-tools .
 
-FROM node:22-alpine AS base
+FROM node:24-alpine AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 

@@ -52,7 +52,6 @@ export function pdfFileError(file: { name: string; size: number; type?: string }
 export function cleanFileName(name: string): string {
   const base = name.split(/[\\/]/).pop() ?? "";
   // Caractères de contrôle et espaces multiples : sans intérêt dans un titre.
-  // eslint-disable-next-line no-control-regex
   const clean = base.replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim();
   return (clean || "Document.pdf").slice(0, 200);
 }
