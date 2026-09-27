@@ -32,7 +32,9 @@ export function Field({
   error?: string | null;
 }) {
   return (
-    <div className="space-y-1.5">
+    // gap plutôt que space-y : le <select> caché que Radix ajoute après une liste déroulante
+    // donnerait sinon une marge basse à la liste et la décalerait des champs voisins.
+    <div className="flex flex-col gap-1.5">
       <label htmlFor={htmlFor} className="block text-xs font-medium text-muted">
         {label}
       </label>
