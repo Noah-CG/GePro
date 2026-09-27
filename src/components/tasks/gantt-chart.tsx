@@ -1,13 +1,27 @@
 "use client";
 
-import { AlertCircle, CalendarPlus } from "lucide-react";
+import { AlertCircle, CalendarPlus, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { setTaskDates } from "@/actions/tasks";
 import { useApp } from "@/components/layout/app-provider";
 import { AvatarStack } from "@/components/ui/avatar";
 import { PRIORITY_DOT, StatusIcon } from "@/components/ui/badges";
-import { addDays, formatMonthYear, formatShort, formatWeekdayShort } from "@/lib/dates";
-import { barBox, GANTT_ZOOMS, ganttMonths, ganttRange, planTasks, shiftSpan, spanDays, type DragMode, type GanttZoom, type Span } from "@/lib/gantt";
+import { addDays, formatMonthYear, formatShort, formatWeekdayDayMonth, formatWeekdayShort } from "@/lib/dates";
+import {
+  barBox,
+  GANTT_DAY_WIDTH,
+  GANTT_ZOOMS,
+  ganttMonths,
+  ganttRange,
+  planTasks,
+  shiftSpan,
+  spanDays,
+  zoomForDayWidth,
+  type DragMode,
+  type GanttZoom,
+  type Span,
+} from "@/lib/gantt";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 
@@ -32,14 +46,18 @@ type Drag = { taskId: string; mode: DragMode; span: Span; originX: number; days:
  */
 export function GanttChart({ tasks, showProject }: { tasks: TaskView[]; showProject?: boolean }) {
   const { membersById, today, editTask, toast } = useApp();
-  const [zoom, setZoom] = useState<GanttZoom>("semaine");
-  const dayWidth = GANTT_ZOOMS[zoom].dayWidth;
+  // Zoom continu (curseur) ; les boutons d'échelle ne sont que des raccourcis vers une largeur.
+  const [dayWidth, setDayWidth] = useState<number>(GANTT_ZOOMS.semaine.dayWidth);
+  const zoom = zoomForDayWidth(dayWidth);
 
   // Dates modifiées à l'écran, en attente de la réponse du serveur.
   const [overrides, setOverrides] = useState<Record<string, Span>>({});
   useEffect(() => setOverrides({}), [tasks]);
   const [drag, setDrag] = useState<Drag | null>(null);
   const saveTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // Position du curseur pendant un glissement, pour la bulle qui affiche le jour visé.
+  const pointer = useRef({ x: 0, y: 0 });
+  const cursorTip = useRef<HTMLDivElement>(null);
 
   const withDates = useMemo(
     () => tasks.map((t) => (overrides[t.id] ? { ...t, startDate: overrides[t.id].start, dueDate: overrides[t.id].end } : t)),
@@ -69,14 +87,25 @@ export function GanttChart({ tasks, showProject }: { tasks: TaskView[]; showProj
   const width = totalDays * dayWidth;
   const todayOffset = barBox({ start: today, end: today }, range).offset;
 
-  // Au premier affichage et à chaque changement d'échelle : aujourd'hui vers le tiers gauche.
+  // Au premier affichage : aujourd'hui vers le tiers gauche. Quand on zoome : le jour au centre
+  // de la frise y reste (la période commence toujours au même lundi, seule sa fin s'allonge).
   const scroller = useRef<HTMLDivElement>(null);
   const scrollToToday = () => {
     const el = scroller.current;
     if (el) el.scrollLeft = todayOffset * dayWidth - el.clientWidth / 3;
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(scrollToToday, [zoom]);
+  const shownDayWidth = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const previous = shownDayWidth.current;
+    shownDayWidth.current = dayWidth;
+    if (previous === null) return scrollToToday();
+    const label = parseFloat(getComputedStyle(el).getPropertyValue("--gantt-label")) || 0;
+    const half = (el.clientWidth - label) / 2;
+    el.scrollLeft = ((el.scrollLeft + half) / previous) * dayWidth - half;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayWidth]);
 
   /** Enregistre les nouvelles dates ; en cas d'échec, l'écran revient aux dates du serveur. */
   function save(task: TaskView, span: Span) {
@@ -96,11 +125,15 @@ export function GanttChart({ tasks, showProject }: { tasks: TaskView[]; showProj
     if (e.button !== 0) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
+    pointer.current = { x: e.clientX, y: e.clientY };
     setDrag({ taskId: task.id, mode, span, originX: e.clientX, days: 0, moved: false });
   }
 
   function onPointerMove(e: PointerEvent) {
     if (!drag) return;
+    // La bulle suit le curseur sans re-rendre tout le diagramme à chaque pixel.
+    pointer.current = { x: e.clientX, y: e.clientY };
+    if (cursorTip.current) cursorTip.current.style.transform = tipTransform(pointer.current);
     const dx = e.clientX - drag.originX;
     const moved = drag.moved || Math.abs(dx) >= DRAG_THRESHOLD;
     const days = Math.round(dx / dayWidth);
@@ -156,8 +189,31 @@ export function GanttChart({ tasks, showProject }: { tasks: TaskView[]; showProj
       : []),
   ].join(", ");
 
+  // Pendant un glissement (dès l'appui pour une poignée) : dates de la barre à l'arrivée, et le
+  // jour visé affiché dans une bulle près du curseur (le bord tiré, ou les deux si on déplace).
+  const dragSpan = drag && (drag.moved || drag.mode !== "move") ? shiftSpan(drag.span, drag.mode, drag.days) : null;
+  const tipLabel = !dragSpan
+    ? null
+    : drag!.mode === "start"
+      ? formatWeekdayDayMonth(dragSpan.start)
+      : drag!.mode === "end" || dragSpan.start === dragSpan.end
+        ? formatWeekdayDayMonth(dragSpan.end)
+        : `${formatWeekdayDayMonth(dragSpan.start)} → ${formatWeekdayDayMonth(dragSpan.end)}`;
+
   return (
     <div className="space-y-4">
+      {tipLabel &&
+        createPortal(
+          <div
+            ref={cursorTip}
+            aria-live="polite"
+            className="pointer-events-none fixed top-0 left-0 z-50 rounded-md bg-text px-2 py-1 text-xs font-medium whitespace-nowrap text-surface shadow-lg"
+            style={{ transform: tipTransform(pointer.current) }}
+          >
+            {tipLabel}
+          </div>,
+          document.body,
+        )}
       <div ref={card} className="overflow-hidden rounded-xl border border-border bg-surface [--gantt-label:150px] md:[--gantt-label:280px]">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface-2/50 px-3 py-2">
           <p className="text-xs text-muted">
@@ -168,13 +224,27 @@ export function GanttChart({ tasks, showProject }: { tasks: TaskView[]; showProj
             <button onClick={scrollToToday} className="h-7 rounded-md border border-border px-2.5 text-xs hover:bg-surface-2">
               Aujourd&apos;hui
             </button>
+            <label className="flex items-center gap-1.5 text-muted" title="Zoom">
+              <ZoomOut size={14} aria-hidden />
+              <input
+                type="range"
+                aria-label="Zoom"
+                min={GANTT_DAY_WIDTH.min}
+                max={GANTT_DAY_WIDTH.max}
+                step={1}
+                value={dayWidth}
+                onChange={(e) => setDayWidth(Number(e.target.value))}
+                className="w-24 cursor-pointer accent-[var(--accent)] sm:w-32"
+              />
+              <ZoomIn size={14} aria-hidden />
+            </label>
             <div className="flex rounded-lg border border-border bg-surface p-0.5" role="radiogroup" aria-label="Échelle">
               {(Object.keys(GANTT_ZOOMS) as GanttZoom[]).map((z) => (
                 <button
                   key={z}
                   role="radio"
                   aria-checked={zoom === z}
-                  onClick={() => setZoom(z)}
+                  onClick={() => setDayWidth(GANTT_ZOOMS[z].dayWidth)}
                   className={cn("h-6 rounded-md px-2 text-xs", zoom === z ? "bg-surface-2 font-medium" : "text-muted hover:text-text")}
                 >
                   {GANTT_ZOOMS[z].label}
@@ -230,7 +300,8 @@ export function GanttChart({ tasks, showProject }: { tasks: TaskView[]; showProj
                 <ul>
                   {planned.map(({ task, span: saved }) => {
                     const dragging = drag?.taskId === task.id && drag.moved;
-                    const span = dragging ? shiftSpan(drag.span, drag.mode, drag.days) : saved;
+                    const dragged = drag?.taskId === task.id ? dragSpan : null;
+                    const span = dragged ?? saved;
                     const box = barBox(span, range);
                     const barWidth = box.days * dayWidth;
                     const done = task.status === "done";
@@ -327,6 +398,11 @@ export function GanttChart({ tasks, showProject }: { tasks: TaskView[]; showProj
       )}
     </div>
   );
+}
+
+/** Place la bulle du glissement juste en dessous à droite du curseur. */
+function tipTransform({ x, y }: { x: number; y: number }) {
+  return `translate(${x + 14}px, ${y + 18}px)`;
 }
 
 /** Poignée d'un bord de barre : tirer dessus change le début ou l'échéance. */
