@@ -2,7 +2,7 @@
  * Projet sélectionné : tout le site (barre latérale, tableau de bord, tâches, recherche) n'affiche
  * que ce projet. C'est celui de l'adresse sur les pages d'un projet (/projets/<id>/…) ; ailleurs,
  * le dernier choisi, mémorisé dans un cookie (simple préférence d'affichage, sans lien avec la
- * session) ; à défaut, le premier projet actif par ordre alphabétique.
+ * session) ; à défaut, le premier projet actif par ordre alphabétique (archivé s'il n'y a que ça).
  */
 
 export const SELECTED_PROJECT_COOKIE = "gepro_projet";
@@ -29,8 +29,8 @@ export function resolveSelectedProjectId({
   const fromUrl = projectIdFromPath(pathname);
   if (exists(fromUrl)) return fromUrl;
   if (exists(rememberedId)) return rememberedId;
-  const [first] = projects.filter((p) => !p.archived).sort((a, b) => a.name.localeCompare(b.name, "fr"));
-  return first?.id ?? null;
+  const byName = [...projects].sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  return (byName.find((p) => !p.archived) ?? byName[0])?.id ?? null;
 }
 
 /**

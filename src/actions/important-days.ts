@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { importantDays } from "@/db/schema";
 import { authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { formatDayLong } from "@/lib/dates";
+import { isUniqueViolation } from "@/lib/db-errors";
 import { firstError, importantDayInput, type ImportantDayInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
@@ -36,20 +37,21 @@ export async function saveImportantDay(id: string | null, input: ImportantDayInp
     .select({ id: importantDays.id })
     .from(importantDays)
     .where(and(eq(importantDays.projectId, data.projectId), eq(importantDays.date, data.date), id ? ne(importantDays.id, id) : undefined));
-  if (taken) return fail(`Le ${formatDayLong(data.date)} est déjà une journée importante de ce projet.`);
+  const takenMessage = `Le ${formatDayLong(data.date)} est déjà une journée importante de ce projet.`;
+  if (taken) return fail(takenMessage);
 
-  if (id) {
-    const [row] = await db.update(importantDays).set(data).where(eq(importantDays.id, id)).returning({ id: importantDays.id });
+  try {
+    const [row] = id
+      ? await db.update(importantDays).set(data).where(eq(importantDays.id, id)).returning({ id: importantDays.id })
+      : await db.insert(importantDays).values({ ...data, createdBy: me.id }).returning({ id: importantDays.id });
     if (!row) return fail("Journée importante introuvable.");
     refresh();
     return ok({ id: row.id });
+  } catch (err) {
+    // Même date enregistrée au même moment par quelqu'un d'autre.
+    if (isUniqueViolation(err)) return fail(takenMessage);
+    throw err;
   }
-  const [row] = await db
-    .insert(importantDays)
-    .values({ ...data, createdBy: me.id })
-    .returning({ id: importantDays.id });
-  refresh();
-  return ok({ id: row.id });
 }
 
 /** Retire une journée importante (la date redevient une journée ordinaire). */

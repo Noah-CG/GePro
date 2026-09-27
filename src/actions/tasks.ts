@@ -1,10 +1,10 @@
 "use server";
 
-import { and, asc, eq, inArray, isNull, max, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, max, notInArray, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { scheduleCalendarSync, taskWithSubtasks } from "@/lib/integrations/calendar-sync";
 import { db } from "@/db";
-import { taskAssignees, taskDependencies, tasks, type TaskStatus } from "@/db/schema";
+import { projectMembers, taskAssignees, taskDependencies, tasks, type TaskStatus } from "@/db/schema";
 import { allMembers, authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { getSubtaskIds } from "@/lib/queries";
 import { createsCycle, nestingError } from "@/lib/task-links";
@@ -16,18 +16,34 @@ const refresh = () => revalidatePath("/", "layout");
 
 const NOT_MEMBER = "Un des responsables n'est pas membre du projet.";
 
-/** Remplace la liste des responsables d'une tâche. */
+/** Tableau Postgres d'uuid, pour `= any(…)` et `unnest(…)`. */
+const uuidArray = (ids: string[]) => sql`${`{${[...new Set(ids)].join(",")}}`}::uuid[]`;
+
+/**
+ * Remplace la liste des responsables d'une tâche, en une seule instruction : retire ceux qui
+ * n'y sont plus et ajoute les nouveaux (jamais de tâche laissée sans responsables en cas d'erreur).
+ */
 async function setAssignees(taskId: string, userIds: string[]) {
-  await db.delete(taskAssignees).where(eq(taskAssignees.taskId, taskId));
-  const unique = [...new Set(userIds)];
-  if (unique.length) await db.insert(taskAssignees).values(unique.map((userId) => ({ taskId, userId })));
+  await db.execute(sql`
+    with removed as (
+      delete from ${taskAssignees} where task_id = ${taskId}::uuid and not (user_id = any(${uuidArray(userIds)}))
+    )
+    insert into ${taskAssignees} (task_id, user_id)
+    select ${taskId}::uuid, unnest(${uuidArray(userIds)})
+    on conflict do nothing
+  `);
 }
 
-/** Remplace la liste des tâches dont dépend `taskId`. */
+/** Remplace la liste des tâches dont dépend `taskId`, en une seule instruction (voir `setAssignees`). */
 async function setDependencies(taskId: string, dependsOnIds: string[]) {
-  await db.delete(taskDependencies).where(eq(taskDependencies.taskId, taskId));
-  const unique = [...new Set(dependsOnIds)];
-  if (unique.length) await db.insert(taskDependencies).values(unique.map((dependsOnId) => ({ taskId, dependsOnId })));
+  await db.execute(sql`
+    with removed as (
+      delete from ${taskDependencies} where task_id = ${taskId}::uuid and not (depends_on_id = any(${uuidArray(dependsOnIds)}))
+    )
+    insert into ${taskDependencies} (task_id, depends_on_id)
+    select ${taskId}::uuid, unnest(${uuidArray(dependsOnIds)})
+    on conflict do nothing
+  `);
 }
 
 /**
@@ -71,6 +87,26 @@ async function checkLinks(
     if (createsCycle(edges, id, deps)) return "Ces dépendances formeraient une boucle : une tâche attendrait indirectement la fin d'elle-même.";
   }
   return null;
+}
+
+/** En dessous de cet écart entre deux cartes voisines, la colonne est renumérotée. */
+const MIN_POSITION_GAP = 1e-6;
+
+/**
+ * Renumérote une colonne Kanban (1024, 2048…) quand des insertions répétées entre les deux mêmes
+ * cartes ont épuisé la précision des positions flottantes. Sans effet sinon.
+ */
+async function spreadPositionsIfCramped(projectId: string, status: TaskStatus) {
+  await db.execute(sql`
+    with ranked as (
+      select id, position, row_number() over (order by position, created_at) as rank,
+             position - lag(position) over (order by position, created_at) as gap
+        from ${tasks} where project_id = ${projectId}::uuid and status = ${status}
+    )
+    update ${tasks} t set position = ranked.rank * 1024
+      from ranked
+     where t.id = ranked.id and exists (select 1 from ranked where gap < ${MIN_POSITION_GAP})
+  `);
 }
 
 /** Position en bas d'une colonne (projet + statut). */
@@ -159,6 +195,18 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
     // Les sous-tâches (à tous les niveaux) suivent leur parente dans le nouveau projet…
     const subtree = [id, ...(await getSubtaskIds(id))];
     await db.update(tasks).set({ projectId: data.projectId }).where(inArray(tasks.id, subtree));
+    // …sans leurs responsables qui ne sont pas membres de ce projet…
+    await db
+      .delete(taskAssignees)
+      .where(
+        and(
+          inArray(taskAssignees.taskId, subtree),
+          notInArray(
+            taskAssignees.userId,
+            db.select({ id: projectMembers.userId }).from(projectMembers).where(eq(projectMembers.projectId, data.projectId)),
+          ),
+        ),
+      );
     // …et les dépendances devenues inter-projets n'ont plus de sens.
     await db.execute(sql`
       delete from ${taskDependencies} d
@@ -200,6 +248,7 @@ export async function moveTask(id: string, status: TaskStatus, position?: number
     .where(eq(tasks.id, id))
     .returning({ id: tasks.id });
   if (!row) return fail("Tâche introuvable.");
+  if (parsed.data.position !== undefined) await spreadPositionsIfCramped(current.projectId, next);
   await scheduleCalendarSync([{ kind: "task", id }]);
   refresh();
   return ok(undefined);

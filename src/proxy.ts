@@ -22,7 +22,14 @@ function isCrossSite(request: NextRequest): boolean {
 }
 
 /**
- * Vérification rapide : sans cookie de session, on redirige vers /connexion.
+ * Routes API appelées par l'application (fetch, pdf.js…) : sans session, une réponse 401 plutôt
+ * qu'une page de connexion. Les routes d'intégration, ouvertes par le navigateur (redirections
+ * OAuth), redirigent comme les pages.
+ */
+const API_PATH = /^\/api\/(?!integrations\/)/;
+
+/**
+ * Vérification rapide : sans cookie de session, on redirige vers /connexion (401 pour les routes API).
  * La vraie vérification (session valide en base) est faite dans chaque page et Server Action.
  * Un lien d'invitation est repris après la connexion (?suite=).
  */
@@ -31,6 +38,7 @@ export function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   if (!PUBLIC_PATHS.test(pathname) && !request.cookies.has("gepro_session")) {
+    if (API_PATH.test(pathname)) return NextResponse.json({ error: "unauthenticated", message: "Connexion requise." }, { status: 401 });
     const login = new URL("/connexion", request.url);
     if (/^\/(invitations|rejoindre)\//.test(pathname)) login.searchParams.set("suite", pathname);
     return NextResponse.redirect(login);

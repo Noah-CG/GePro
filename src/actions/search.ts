@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { projectMembers, projects, tasks, type TaskStatus } from "@/db/schema";
 import { getProjectRole } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
+import { searchQuery } from "@/lib/validation";
 
 export type SearchResults = {
   projects: { id: string; name: string; color: string; archived: boolean }[];
@@ -25,7 +26,8 @@ export type SearchResults = {
  */
 export async function search(query: string, projectId: string | null): Promise<SearchResults> {
   const me = await requireUser();
-  const q = query.trim();
+  const parsed = searchQuery.safeParse(query);
+  const q = parsed.success ? parsed.data : "";
   if (q.length < 2) return { projects: [], tasks: [] };
   // Échappe les jokers SQL saisis par l'utilisateur.
   const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;

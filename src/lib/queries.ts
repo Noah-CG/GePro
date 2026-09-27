@@ -102,7 +102,6 @@ export type CalendarEvent = {
   createdBy: string | null;
 };
 
-/** Contenu d'une vue du calendrier : tâches (par échéance) et événements, triés par jour. */
 /** Journée importante d'un projet, telle qu'affichée (calendrier, tableau de bord). */
 export type ImportantDayView = {
   id: string;
@@ -114,6 +113,7 @@ export type ImportantDayView = {
   color: string;
 };
 
+/** Contenu d'une vue du calendrier : tâches (par échéance), événements et journées importantes, triés par jour. */
 export type CalendarItems = { tasks: TaskView[]; events: CalendarEvent[]; importantDays: ImportantDayView[] };
 
 /** Connexion d'un utilisateur à un fournisseur, sans aucun jeton. */
@@ -480,9 +480,10 @@ export async function getProjectOptions(viewerId: string): Promise<ProjectOption
 /** Projets de `viewerId` avec leurs compteurs de tâches (progression, retard). */
 export async function getProjectsWithStats(
   viewerId: string,
-  opts: { archived?: boolean; id?: string; today?: string } = {},
+  /** `today` : "YYYY-MM-DD" dans le fuseau de l'équipe (todayISO), pour compter les tâches en retard. */
+  opts: { archived?: boolean; id?: string; today: string },
 ): Promise<ProjectWithStats[]> {
-  const today = opts.today ?? new Date().toISOString().slice(0, 10);
+  const { today } = opts;
   const conditions = [];
   if (opts.id) conditions.push(eq(projects.id, opts.id));
   else if (opts.archived !== undefined)
@@ -913,13 +914,6 @@ type CalendarRow = {
 const jsonArray = (value: unknown): string[] =>
   Array.isArray(value) ? value : typeof value === "string" ? (JSON.parse(value) as string[]) : [];
 
-/**
- * Tâches (par échéance) et événements d'un projet entre `from` et `to` inclus ("YYYY-MM-DD").
- *
- * Une seule requête, bornée sur l'intervalle affiché : UNION ALL des deux sources, responsables
- * agrégés en JSON. Dates et énumérations sont converties en texte côté SQL pour que Neon et
- * PGlite renvoient exactement les mêmes valeurs (dates "YYYY-MM-DD", convention du projet).
- */
 const importantDayColumns = {
   id: importantDays.id,
   projectId: importantDays.projectId,
@@ -951,6 +945,13 @@ export async function getImportantDays(
   return limit ? query.limit(limit) : query;
 }
 
+/**
+ * Tâches (par échéance) et événements d'un projet entre `from` et `to` inclus ("YYYY-MM-DD").
+ *
+ * Une seule requête, bornée sur l'intervalle affiché : UNION ALL des deux sources, responsables
+ * agrégés en JSON. Dates et énumérations sont converties en texte côté SQL pour que Neon et
+ * PGlite renvoient exactement les mêmes valeurs (dates "YYYY-MM-DD", convention du projet).
+ */
 export async function getCalendarItems({
   from,
   to,

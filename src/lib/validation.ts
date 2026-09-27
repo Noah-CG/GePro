@@ -3,9 +3,18 @@ import { z } from "zod";
 import { DEFAULT_IMPORTANT_DAY_COLOR, IMPORTANT_DAY_COLORS, IMPORTANT_DAY_TITLE_MAX, TASK_STATUSES } from "./constants";
 import { defaultLinkTitle, detectLink } from "./links/detect";
 
+/** Vrai si "YYYY-MM-DD" désigne une date qui existe (refuse par exemple un 31 septembre). */
+const isRealDate = (iso: string) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+};
+
+/** Date facultative "YYYY-MM-DD" (vide = aucune), qui doit exister dans le calendrier. */
 const isoDate = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide")
+  .refine(isRealDate, "Date invalide")
   .nullable()
   .or(z.literal("").transform(() => null));
 
@@ -36,7 +45,7 @@ export type TaskInput = z.input<typeof taskInput>;
 /** Changement de colonne ou d'ordre d'une tâche (glisser-déposer du Kanban, cases à cocher). */
 export const moveTaskInput = z.object({
   status: z.enum(TASK_STATUSES, "Statut de tâche inconnu."),
-  position: z.number().finite().optional(),
+  position: z.number().finite("Position invalide").optional(),
 });
 
 /** Déplacement ou redimensionnement d'une barre du diagramme de Gantt. */
@@ -59,15 +68,8 @@ export const projectInput = z
   });
 export type ProjectInput = z.input<typeof projectInput>;
 
-/** Vraie date du calendrier au format "YYYY-MM-DD" (refuse par exemple un 31 septembre). */
-const requiredDate = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Choisissez une date")
-  .refine((iso) => {
-    const [y, m, d] = iso.split("-").map(Number);
-    const date = new Date(Date.UTC(y, m - 1, d));
-    return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
-  }, "Date invalide");
+/** Vraie date du calendrier au format "YYYY-MM-DD", obligatoire. */
+const requiredDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choisissez une date").refine(isRealDate, "Date invalide");
 
 export const eventInput = z.object({
   title: z.string().trim().min(1, "Le titre est obligatoire").max(200),
@@ -191,9 +193,11 @@ export const projectLinkInput = z
   .transform(({ url, title }) => ({ url: url.href, title: title || defaultLinkTitle(url) }));
 export type ProjectLinkInput = z.input<typeof projectLinkInput>;
 
-export const docSearchQuery =z.string().trim().max(100, "Recherche trop longue");
+export const docSearchQuery = z.string().trim().max(100, "Recherche trop longue");
 
-/** Premier message d'erreur lisible d'une validation Zod. */
+/** Recherche globale (palette de commandes). */
+export const searchQuery = z.string().trim().max(100);
+
 /** Journal de bord d'une période de travail. */
 export const workNote = z.string().trim().max(5000, "Le journal est limité à 5 000 caractères.");
 
@@ -217,6 +221,7 @@ export const workSessionInput = z
   .refine((v) => v.start !== v.end, { message: "L'heure de fin doit être différente de l'heure de début.", path: ["end"] });
 export type WorkSessionInput = z.input<typeof workSessionInput>;
 
+/** Premier message d'erreur lisible d'une validation Zod. */
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Données invalides";
 }

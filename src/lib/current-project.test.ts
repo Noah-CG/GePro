@@ -41,6 +41,10 @@ describe("resolveSelectedProjectId", () => {
     expect(resolveSelectedProjectId({ pathname: `/projets/${unknown}`, rememberedId: unknown, projects })).toBe(B);
   });
 
+  it("seulement des projets archivés : le premier d'entre eux", () => {
+    expect(resolveSelectedProjectId({ pathname: "/", rememberedId: null, projects: [projects[2]] })).toBe(C);
+  });
+
   it("aucun projet : null", () => {
     expect(resolveSelectedProjectId({ pathname: "/", rememberedId: A, projects: [] })).toBeNull();
   });

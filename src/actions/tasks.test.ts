@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { tasks, type TaskStatus } from "@/db/schema";
+import { taskAssignees, tasks, type TaskStatus } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
-import { insertProject, insertUser, resetDb } from "@/test/db";
+import { addMember, insertProject, insertUser, resetDb } from "@/test/db";
 import { createTask, moveTask, setTaskDates, updateTask } from "./tasks";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
@@ -11,6 +11,7 @@ vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 let projectId: string;
+let meId: string;
 
 const findTask = async (id: string) => (await db.select().from(tasks).where(eq(tasks.id, id)))[0];
 
@@ -23,6 +24,7 @@ async function newTask(dates: { startDate?: string; dueDate?: string } = {}) {
 beforeEach(async () => {
   await resetDb(db);
   const user = await insertUser(db);
+  meId = user.id;
   vi.mocked(requireUser).mockResolvedValue({ ...user, role: "member" });
   projectId = (await insertProject(db, "Refonte du site", user.id)).id;
 });
@@ -92,5 +94,64 @@ describe("moveTask", () => {
     }
     expect(await moveTask(id, "done", Number.NaN)).toMatchObject({ ok: false });
     expect((await findTask(id)).status).toBe("todo");
+  });
+});
+
+describe("validation", () => {
+  it("refuse une date qui n'existe pas au lieu d'échouer en base", async () => {
+    expect(await createTask({ projectId, title: "Maquettes", dueDate: "2026-02-31" })).toEqual({ ok: false, error: "Date invalide" });
+    const id = await newTask();
+    expect(await setTaskDates(id, { startDate: null, dueDate: "2026-09-31" })).toEqual({ ok: false, error: "Date invalide" });
+  });
+
+  it("moveTask refuse un statut ou une position invalides", async () => {
+    const id = await newTask();
+    expect(await moveTask(id, "archivee" as never)).toEqual({ ok: false, error: "Statut de tâche inconnu." });
+    expect(await moveTask(id, "done", Number.NaN)).toMatchObject({ ok: false });
+    expect(await moveTask(id, "done", Number.POSITIVE_INFINITY)).toMatchObject({ ok: false });
+    expect(await findTask(id)).toMatchObject({ status: "todo" });
+  });
+});
+
+describe("responsables", () => {
+  it("remplace la liste sans perdre ceux qui restent", async () => {
+    const lea = await insertUser(db, "Léa");
+    await addMember(db, projectId, lea.id);
+    const res = await createTask({ projectId, title: "Maquettes", assigneeIds: [meId, lea.id] });
+    if (!res.ok) throw new Error(res.error);
+    await updateTask(res.data.id, { projectId, title: "Maquettes", assigneeIds: [lea.id] });
+    const rows = await db.select().from(taskAssignees).where(eq(taskAssignees.taskId, res.data.id));
+    expect(rows.map((r) => r.userId)).toEqual([lea.id]);
+    await updateTask(res.data.id, { projectId, title: "Maquettes", assigneeIds: [] });
+    expect(await db.select().from(taskAssignees)).toEqual([]);
+  });
+
+  it("une tâche déplacée dans un autre projet perd, avec ses sous-tâches, les responsables qui n'en sont pas membres", async () => {
+    const lea = await insertUser(db, "Léa");
+    await addMember(db, projectId, lea.id);
+    const other = (await insertProject(db, "Autre projet", meId)).id;
+    const parent = await createTask({ projectId, title: "Parente", assigneeIds: [meId] });
+    if (!parent.ok) throw new Error(parent.error);
+    const child = await createTask({ projectId, title: "Enfant", parentId: parent.data.id, assigneeIds: [meId, lea.id] });
+    if (!child.ok) throw new Error(child.error);
+
+    expect(await updateTask(parent.data.id, { projectId: other, title: "Parente", assigneeIds: [meId] })).toMatchObject({ ok: true });
+    const rows = await db.select().from(taskAssignees).where(eq(taskAssignees.taskId, child.data.id));
+    expect(rows.map((r) => r.userId)).toEqual([meId]);
+  });
+});
+
+describe("positions du Kanban", () => {
+  it("renumérote la colonne quand deux cartes n'ont plus d'écart", async () => {
+    const a = await newTask();
+    const b = await newTask();
+    const c = await newTask();
+    const positions = async () => Promise.all([a, b, c].map(async (id) => (await findTask(id)).position));
+    // Écart suffisant : rien ne bouge.
+    await moveTask(c, "todo", 1500);
+    expect(await positions()).toEqual([1024, 2048, 1500]);
+    // Écart épuisé entre a et c : toute la colonne est renumérotée, dans le même ordre.
+    await moveTask(c, "todo", 1024 + 1e-9);
+    expect(await positions()).toEqual([1024, 3072, 2048]);
   });
 });

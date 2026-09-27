@@ -21,6 +21,8 @@ async function authorizeEdit(id: string): Promise<AccessResult> {
   if (!auth.ok) return auth;
   const { user, role } = auth.access;
   const [event] = await db.select({ createdBy: projectEvents.createdBy }).from(projectEvents).where(eq(projectEvents.id, id));
+  // Supprimé entre-temps (autre onglet, autre membre).
+  if (!event) return { ok: false, error: "Événement introuvable." };
   if (!atLeast(role, "admin") && event.createdBy !== user.id) {
     return { ok: false, error: "Seul le créateur de l'événement ou un administrateur du projet peut le modifier ou le supprimer." };
   }

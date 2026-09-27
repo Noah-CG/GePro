@@ -171,8 +171,8 @@ describe("2. B ne voit pas le projet de A", () => {
   it("ni dans ses listes, ni dans la recherche, ni dans l'équipe", async () => {
     const a = await projectOfA();
     actAs(B);
-    expect(await getProjectsWithStats(B.id)).toEqual([]);
-    expect(await getProjectsWithStats(B.id, { id: a.projectId })).toEqual([]);
+    expect(await getProjectsWithStats(B.id, { today: "2026-09-26" })).toEqual([]);
+    expect(await getProjectsWithStats(B.id, { id: a.projectId, today: "2026-09-26" })).toEqual([]);
     expect(await getProjectOptions(B.id)).toEqual([]);
     expect(await getTasks({ viewerId: B.id })).toEqual([]);
     expect(await getResourceLinks(B.id)).toEqual([]);
@@ -325,7 +325,7 @@ describe("5. A invite B, B accepte", () => {
     must(await acceptInvitation({ token: path.split("/").pop()! }));
 
     expect(await getProjectOptions(B.id)).toEqual([expect.objectContaining({ id: a.projectId, role: "member" })]);
-    expect((await getProjectsWithStats(B.id)).map((p) => p.name)).toEqual(["Projet secret de A"]);
+    expect((await getProjectsWithStats(B.id, { today: "2026-09-26" })).map((p) => p.name)).toEqual(["Projet secret de A"]);
     expect((await getTasks({ viewerId: B.id })).map((t) => t.title).sort()).toEqual(["Sous-tâche secrète", "Tâche secrète"]);
     expect((await getTeam(B.id)).map((m) => m.id).sort()).toEqual([A.id, B.id].sort());
     await expect(ProjectPage({ params: Promise.resolve({ id: a.projectId }) })).resolves.toBeTruthy();
