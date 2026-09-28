@@ -8,7 +8,7 @@ import { taskAssignees, taskDependencies, tasks, type TaskStatus } from "@/db/sc
 import { allMembers, authorizeProject, authorizeProjectOf } from "@/lib/access";
 import { getSubtaskIds } from "@/lib/queries";
 import { createsCycle, nestingError } from "@/lib/task-links";
-import { firstError, isUuid, taskDatesInput, taskInput, type TaskDatesInput, type TaskInput } from "@/lib/validation";
+import { firstError, isUuid, moveTaskInput, taskDatesInput, taskInput, type TaskDatesInput, type TaskInput } from "@/lib/validation";
 import { fail, ok, type ActionResult } from "./result";
 
 /** Rafraîchit toutes les pages (tableau de bord, listes, projets) après une modification. */
@@ -181,20 +181,25 @@ export async function updateTask(id: string, input: TaskInput): Promise<ActionRe
 export async function moveTask(id: string, status: TaskStatus, position?: number): Promise<ActionResult> {
   const auth = await authorizeProjectOf("task", id);
   if (!auth.ok) return fail(auth.error);
+  const parsed = moveTaskInput.safeParse({ status, position });
+  if (!parsed.success) return fail(firstError(parsed.error));
   const [current] = await db
     .select({ status: tasks.status, projectId: tasks.projectId })
     .from(tasks)
     .where(eq(tasks.id, id));
   if (!current) return fail("Tâche introuvable.");
 
-  await db
+  const next = parsed.data.status;
+  const [row] = await db
     .update(tasks)
     .set({
-      status,
-      position: position ?? (await nextPosition(current.projectId, status)),
-      ...(current.status !== status && { completedAt: status === "done" ? new Date() : null }),
+      status: next,
+      position: parsed.data.position ?? (await nextPosition(current.projectId, next)),
+      ...(current.status !== next && { completedAt: next === "done" ? new Date() : null }),
     })
-    .where(eq(tasks.id, id));
+    .where(eq(tasks.id, id))
+    .returning({ id: tasks.id });
+  if (!row) return fail("Tâche introuvable.");
   await scheduleCalendarSync([{ kind: "task", id }]);
   refresh();
   return ok(undefined);

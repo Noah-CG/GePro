@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db";
-import { tasks } from "@/db/schema";
+import { tasks, type TaskStatus } from "@/db/schema";
 import { requireUser } from "@/lib/auth";
 import { insertProject, insertUser, resetDb } from "@/test/db";
-import { createTask, setTaskDates, updateTask } from "./tasks";
+import { createTask, moveTask, setTaskDates, updateTask } from "./tasks";
 
 vi.mock("@/db", async () => ({ db: await (await import("@/test/db")).createTestDb() }));
 vi.mock("@/lib/auth", () => ({ requireUser: vi.fn() }));
@@ -60,5 +60,37 @@ describe("setTaskDates", () => {
     const dates = { startDate: "2026-09-28", dueDate: "2026-10-02" };
     expect(await setTaskDates("pas-un-uuid", dates)).toEqual({ ok: false, error: "Tâche introuvable." });
     expect(await setTaskDates("00000000-0000-4000-8000-000000000000", dates)).toEqual({ ok: false, error: "Tâche introuvable." });
+  });
+});
+
+describe("moveTask", () => {
+  it("enregistre le passage à « Terminé » (statut, position, date de fin) et le retour", async () => {
+    const id = await newTask();
+    expect(await moveTask(id, "done", 512)).toEqual({ ok: true, data: undefined });
+    const done = await findTask(id);
+    expect(done).toMatchObject({ status: "done", position: 512 });
+    expect(done.completedAt).toBeInstanceOf(Date);
+
+    expect(await moveTask(id, "todo", 256)).toEqual({ ok: true, data: undefined });
+    expect(await findTask(id)).toMatchObject({ status: "todo", position: 256, completedAt: null });
+  });
+
+  it("termine une tâche parente sans exiger ses sous-tâches, et une sous-tâche seule", async () => {
+    const parentId = await newTask();
+    const child = await createTask({ projectId, title: "Sous-tâche", parentId });
+    if (!child.ok) throw new Error(child.error);
+    expect(await moveTask(parentId, "done")).toMatchObject({ ok: true });
+    expect(await moveTask(child.data.id, "done")).toMatchObject({ ok: true });
+    expect((await findTask(parentId)).status).toBe("done");
+    expect((await findTask(child.data.id)).status).toBe("done");
+  });
+
+  it("refuse un statut inconnu avec un message, sans rien modifier", async () => {
+    const id = await newTask();
+    for (const status of ["terminee", "completed", "Done", ""]) {
+      expect(await moveTask(id, status as TaskStatus)).toEqual({ ok: false, error: "Statut de tâche inconnu." });
+    }
+    expect(await moveTask(id, "done", Number.NaN)).toMatchObject({ ok: false });
+    expect((await findTask(id)).status).toBe("todo");
   });
 });

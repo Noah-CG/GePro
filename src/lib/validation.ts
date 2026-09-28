@@ -1,6 +1,6 @@
 /** Schémas de validation partagés par les Server Actions. */
 import { z } from "zod";
-import { DEFAULT_IMPORTANT_DAY_COLOR, IMPORTANT_DAY_COLORS, IMPORTANT_DAY_TITLE_MAX } from "./constants";
+import { DEFAULT_IMPORTANT_DAY_COLOR, IMPORTANT_DAY_COLORS, IMPORTANT_DAY_TITLE_MAX, TASK_STATUSES } from "./constants";
 import { defaultLinkTitle, detectLink } from "./links/detect";
 
 const isoDate = z
@@ -20,7 +20,7 @@ export const taskInput = z
     projectId: z.uuid("Choisissez un projet"),
     title: z.string().trim().min(1, "Le titre est obligatoire").max(200),
     description: z.string().max(5000).default(""),
-    status: z.enum(["todo", "in_progress", "done"]).default("todo"),
+    status: z.enum(TASK_STATUSES).default("todo"),
     priority: z.enum(["low", "medium", "high"]).default("medium"),
     startDate: isoDate.default(null),
     dueDate: isoDate.default(null),
@@ -32,6 +32,12 @@ export const taskInput = z
   })
   .refine(startBeforeDue, { message: START_AFTER_DUE, path: ["startDate"] });
 export type TaskInput = z.input<typeof taskInput>;
+
+/** Changement de colonne ou d'ordre d'une tâche (glisser-déposer du Kanban, cases à cocher). */
+export const moveTaskInput = z.object({
+  status: z.enum(TASK_STATUSES, "Statut de tâche inconnu."),
+  position: z.number().finite().optional(),
+});
 
 /** Déplacement ou redimensionnement d'une barre du diagramme de Gantt. */
 export const taskDatesInput = z
