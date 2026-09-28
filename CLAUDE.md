@@ -17,6 +17,7 @@ npm run dev                  # http://localhost:3000 (demo login: camille@exempl
 npm run build
 npm run lint                 # = typecheck (tsc --noEmit); there is no ESLint
 npm test                     # vitest run
+npm run test:e2e             # Playwright (e2e/), own dev server on :3200 + throwaway PGlite; stop npm run dev first
 npx vitest run src/lib/gantt.test.ts      # single file
 npx vitest run -t "nom du test"           # single test by name
 npm run db:generate          # new SQL migration in drizzle/ after editing src/db/schema.ts

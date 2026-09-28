@@ -224,6 +224,7 @@ Fonctionnement :
 | `npm run dev` / `build` / `start` | Développement, build, production |
 | `npm run lint` / `npm run typecheck` | Vérification TypeScript |
 | `npm test` / `npm run test:watch` | Tests (Vitest) |
+| `npm run test:e2e` | Tests end-to-end dans un vrai navigateur (Playwright) |
 | `npm run db:generate` | Génère une migration SQL après modification de `src/db/schema.ts` |
 | `npm run db:migrate` | Applique les migrations (Neon ou base locale) |
 | `npm run db:seed [-- --reset]` | Charge la démo (`--reset` efface d'abord **toutes** les données) |
@@ -457,3 +458,5 @@ Principes :
 - la base de données est une instance PGlite **en mémoire**, créée avec les vraies migrations (`src/test/db.ts`) ;
 - Google et Discord sont simulés en remplaçant `fetch` (`src/test/google.ts`, `src/test/discord.ts`) : aucun appel réseau, aucun identifiant réel ;
 - les modules propres à Next.js (`next/headers`, `next/cache`, `next/navigation`) et la session (`@/lib/auth`) sont remplacés par `vi.mock` dans les tests qui en ont besoin.
+
+`npm run test:e2e` lance les tests Playwright du dossier `e2e/` (glisser-déposer du Kanban à la souris et au doigt, rechargement de la page, échec d'enregistrement). Ils démarrent leur propre serveur `next dev` (port 3200) sur une base PGlite jetable, `.pglite-e2e/`, recréée et remplie par `e2e/seed.ts` à chaque lancement : jamais sur Neon, même si `DATABASE_URL` est défini dans `.env.local`. Arrêtez `npm run dev` avant (les deux partagent le dossier `.next`). Première fois : `npx playwright install chromium`.

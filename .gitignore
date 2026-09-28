@@ -11,3 +11,7 @@ next-env.d.ts
 .vercel
 .env*
 !.env.example
+# Base jetable des tests end-to-end et rapports Playwright
+.pglite-e2e/
+test-results/
+playwright-report/
