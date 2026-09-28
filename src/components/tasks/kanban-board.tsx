@@ -4,7 +4,7 @@ import {
   DndContext,
   DragOverlay,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
   TouchSensor,
   useDroppable,
   useSensor,
@@ -69,7 +69,10 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
 
   const sensors = useSensors(
     // Petit seuil : un simple clic ouvre la tâche, un déplacement la fait glisser.
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 6 } }),
+    // Au doigt, appui long (un glissé rapide fait défiler la page). Pas de PointerSensor : il
+    // captait aussi les appuis tactiles, que le défilement du navigateur annulait aussitôt
+    // (pointercancel), si bien qu'aucun glisser ne démarrait sur écran tactile.
     useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
