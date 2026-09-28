@@ -129,14 +129,20 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
     setColumns((cols) => ({ ...cols, [status]: column }));
     setById((m) => new Map(m).set(id, { ...original, status, position }));
 
-    moveTask(id, status, position).then((res) => {
-      if (!res.ok) {
-        toast(res.error, "error");
-        setColumns(toColumns(tasks));
-      } else if (status !== original.status && status === "done") {
-        toast("Tâche terminée 🎉");
-      }
-    });
+    moveTask(id, status, position)
+      .then((res) => {
+        if (!res.ok) {
+          toast(`Déplacement annulé : ${res.error}`, "error");
+          rollback();
+        } else if (status !== original.status && status === "done") {
+          toast("Tâche terminée 🎉");
+        }
+      })
+      .catch(() => {
+        // Réseau coupé, serveur injoignable… : pas d'échec silencieux.
+        toast("Déplacement non enregistré : vérifiez votre connexion puis réessayez.", "error");
+        rollback();
+      });
   }
 
   const activeTask = activeId ? byId.get(activeId) : undefined;
