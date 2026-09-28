@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  closestCorners,
   DndContext,
   DragOverlay,
   KeyboardSensor,
@@ -25,6 +24,7 @@ import { StatusIcon } from "@/components/ui/badges";
 import { Spinner } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { STATUSES } from "@/lib/constants";
+import { kanbanCollisionDetection } from "@/lib/kanban";
 import type { TaskView } from "@/lib/queries";
 import { cn } from "@/lib/utils";
 import { TaskCard } from "./task-card";
@@ -99,12 +99,19 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
     });
   }
 
+  /** Revient à l'état du serveur (glisser annulé ou enregistrement refusé). */
+  function rollback() {
+    setById(new Map(tasks.map((t) => [t.id, t])));
+    setColumns(toColumns(tasks));
+  }
+
   function onDragEnd({ active, over }: DragEndEvent) {
     setActiveId(null);
     const id = String(active.id);
     const status = findColumn(id);
     const original = byId.get(id);
-    if (!over || !status || !original) return;
+    // Lâchée hors du tableau : onDragOver a pu la montrer dans une autre colonne, on l'y retire.
+    if (!over || !status || !original) return rollback();
 
     // Réordonnancement dans la colonne d'arrivée.
     let column = columns[status];
@@ -135,20 +142,21 @@ export function KanbanBoard({ tasks, projectId, showProject }: { tasks: TaskView
     <DndContext
       id={dndId}
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={kanbanCollisionDetection}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragEnd={onDragEnd}
       onDragCancel={() => {
         setActiveId(null);
-        setColumns(toColumns(tasks));
+        rollback();
       }}
     >
       {/* Sur mobile : colonnes en défilement horizontal avec aimantation. */}
       <div className="scroll-thin -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-4 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0">
         {STATUSES.map(({ value, label }) => (
           <Column key={value} status={value} label={label} count={columns[value].length} onAdd={() => newTask({ status: value, projectId })} projectId={projectId}>
-            <SortableContext items={columns[value]} strategy={verticalListSortingStrategy}>
+            {/* id = statut : kanbanCollisionDetection retrouve ainsi la colonne de chaque carte. */}
+            <SortableContext id={value} items={columns[value]} strategy={verticalListSortingStrategy}>
               {columns[value].map((id) => {
                 const task = byId.get(id);
                 return task ? <SortableCard key={id} task={task} showProject={showProject} onOpen={() => editTask(task)} /> : null;

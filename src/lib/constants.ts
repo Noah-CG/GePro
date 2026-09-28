@@ -1,5 +1,11 @@
 import type { TaskPriority, TaskStatus } from "@/db/schema";
 
+/**
+ * Statuts de tâche, dans l'ordre des colonnes du Kanban. Doit rester identique à l'enum Postgres
+ * `task_status` (src/db/schema.ts) : vérifié par src/lib/kanban.test.ts, y compris sur la base migrée.
+ */
+export const TASK_STATUSES = ["todo", "in_progress", "done"] as const satisfies readonly TaskStatus[];
+
 export const STATUSES: { value: TaskStatus; label: string }[] = [
   { value: "todo", label: "À faire" },
   { value: "in_progress", label: "En cours" },
