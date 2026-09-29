@@ -1,7 +1,7 @@
 "use client";
 
 import * as Popover from "@radix-ui/react-popover";
-import { Megaphone, X } from "lucide-react";
+import { Megaphone, Wind, X, Zap, type LucideIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { tabShape } from "@/components/discord/discord-tab";
 import { Button } from "@/components/ui/button";
@@ -17,26 +17,36 @@ const MAX_LENGTH = 100;
 
 /** Phrases enregistrées (public/audio) : jouées telles quelles, les autres passent par la synthèse vocale. */
 const RECORDINGS: Record<string, string> = { [DEFAULT_PHRASE]: "/audio/travail-enzo.mp3" };
+/** Bruitages (public/audio), proposés en tête de liste. */
+const SOUNDS: { label: string; src: string; Icon: LucideIcon }[] = [
+  { label: "Coup de fouet", src: "/audio/coup-de-fouet.mp3", Icon: Zap },
+  { label: "Pet qui aboie", src: "/audio/bark-fart.mp3", Icon: Wind },
+];
 
-/** Enregistrement en cours de lecture, arrêté si on crie autre chose. */
+/** Enregistrement en cours de lecture, arrêté si on joue autre chose. */
 let playing: HTMLAudioElement | null = null;
 
-/** Crie la phrase : son enregistrement s'il y en a un, sinon la synthèse vocale du navigateur. */
-function shout(phrase: string) {
-  // Un nouveau clic relance le cri au lieu de l'empiler derrière le précédent.
+/** Un nouveau clic relance le son au lieu de l'empiler derrière le précédent. */
+function stopAll() {
   playing?.pause();
   playing = null;
   if ("speechSynthesis" in window) speechSynthesis.cancel();
+}
 
+/** Joue un fichier de public/audio ; `onError` si le fichier est introuvable ou la lecture refusée. */
+function playFile(src: string, onError?: () => void) {
+  stopAll();
+  const audio = new Audio(src);
+  playing = audio;
+  audio.play().catch(() => playing === audio && onError?.());
+}
+
+/** Crie la phrase : son enregistrement s'il y en a un (synthèse vocale en secours), sinon la synthèse vocale. */
+function shout(phrase: string) {
   const recording = RECORDINGS[phrase];
-  if (recording) {
-    const audio = new Audio(recording);
-    playing = audio;
-    // Fichier introuvable ou lecture refusée : la synthèse vocale prend le relais.
-    audio.play().catch(() => playing === audio && speak(phrase));
-  } else {
-    speak(phrase);
-  }
+  if (recording) return playFile(recording, () => speak(phrase));
+  stopAll();
+  speak(phrase);
 }
 
 function speak(phrase: string) {
@@ -52,8 +62,8 @@ function speak(phrase: string) {
 }
 
 /**
- * Onglet fixe à gauche de celui de Discord : ouvre la liste des phrases à crier (« Travail, Enzo ! »
- * et celles qu'on ajoute). Un clic sur une phrase la crie.
+ * Onglet fixe à gauche de celui de Discord : ouvre la liste des sons (coup de fouet) et des phrases
+ * à crier (« Travail, Enzo ! » et celles qu'on ajoute). Un clic sur l'une d'elles la joue.
  */
 export function TravailEnzoButton() {
   const [phrases, setPhrases] = useState<string[]>([]);
@@ -90,8 +100,8 @@ export function TravailEnzoButton() {
       <span aria-hidden className="mr-1 mb-2 h-4 w-px shrink-0 self-end bg-border" />
       <Popover.Root onOpenChange={load}>
         <Popover.Trigger
-          aria-label="Crier une phrase"
-          title="Crier une phrase"
+          aria-label="Crier une phrase ou donner un coup de fouet"
+          title="Crier une phrase ou donner un coup de fouet"
           className={cn(tabShape, "border-transparent text-muted hover:bg-surface-2 hover:text-accent data-[state=open]:border-border data-[state=open]:bg-surface data-[state=open]:text-accent")}
         >
           <Megaphone size={16} />
@@ -102,8 +112,16 @@ export function TravailEnzoButton() {
             sideOffset={6}
             className="z-50 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-surface p-1 shadow-xl"
           >
-            <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted">Cliquez sur une phrase pour la crier</p>
+            <p className="px-2.5 pt-1.5 pb-1 text-xs text-muted">Cliquez sur un son ou une phrase</p>
             <ul className="max-h-64 overflow-y-auto">
+              {SOUNDS.map(({ label, src, Icon }) => (
+                <li key={src} className="flex items-center rounded-lg hover:bg-surface-2">
+                  <button type="button" onClick={() => playFile(src)} className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2 text-left text-sm">
+                    <Icon size={14} className="shrink-0 text-muted" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                </li>
+              ))}
               {[DEFAULT_PHRASE, ...phrases].map((phrase) => (
                 <li key={phrase} className="flex items-center rounded-lg hover:bg-surface-2">
                   <button
