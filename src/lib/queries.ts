@@ -828,6 +828,35 @@ export async function getWorkByProject(userId: string, scope: WorkScope): Promis
     .orderBy(desc(ms));
 }
 
+/** Entrée du journal de bord d'un projet, pour l'export PDF. */
+export type JournalEntry = { startedAt: string; endedAt: string | null; author: string; note: string };
+
+/**
+ * Entrées rédigées (compte rendu non vide) du journal de bord d'un projet, de la plus ancienne à
+ * la plus récente. `userId` : celles de ce membre seulement ; `from` / `to` ("YYYY-MM-DD",
+ * inclus) : jour de démarrage de la période, dans le fuseau de l'équipe.
+ */
+export async function getJournalEntries(
+  projectId: string,
+  { userId, from, to }: { userId?: string; from?: string | null; to?: string | null } = {},
+): Promise<JournalEntry[]> {
+  const rows = await db
+    .select({ startedAt: workSessions.startedAt, endedAt: workSessions.endedAt, author: users.name, note: workSessions.note })
+    .from(workSessions)
+    .innerJoin(users, eq(users.id, workSessions.userId))
+    .where(
+      and(
+        eq(workSessions.projectId, projectId),
+        userId ? eq(workSessions.userId, userId) : undefined,
+        sql`btrim(${workSessions.note}) <> ''`,
+        from ? sql`${startedDay} >= ${from}::date` : undefined,
+        to ? sql`${startedDay} <= ${to}::date` : undefined,
+      ),
+    )
+    .orderBy(asc(workSessions.startedAt));
+  return rows.map((r) => ({ ...r, startedAt: r.startedAt.toISOString(), endedAt: r.endedAt?.toISOString() ?? null }));
+}
+
 /** Temps de l'équipe sur un projet cette semaine, et chronos en cours sur ce projet. */
 export async function getProjectTeamWork(projectId: string, today: string): Promise<MemberWork[]> {
   const thisWeek = sql`${startedDay} >= ${weekStartOf(today)}::date`;

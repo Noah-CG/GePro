@@ -401,6 +401,8 @@ Le temps se corrige depuis le journal. **Ajouter une période** couvre un chrono
 
 Chacun corrige son propre temps. Le propriétaire et les administrateurs d'un projet peuvent consulter et corriger celui de ses membres, **sur ce projet seulement**, avec le sélecteur de membre en haut de la page (`/projets/<id>/temps?membre=<id>`). Un projet dont on n'est pas (ou plus) membre n'est jamais nommé dans son propre journal.
 
+**Exporter le journal en PDF** : le bouton **Exporter** du tableau de bord télécharge les entrées rédigées du journal de bord du projet, depuis le début ou entre deux dates (incluses). Chaque entrée donne la date, les heures et son auteur, puis, à la ligne, le texte rédigé ; les entrées vont de la plus ancienne à la plus récente. Chacun exporte ses propres entrées. Le propriétaire et les administrateurs peuvent aussi exporter celles d'un membre ou de toute l'équipe, **sur ce projet seulement** (`/api/projects/<id>/journal?membre=<id>|tous&du=…&au=…`). Le PDF utilise la police Helvetica standard : les caractères qu'elle ne sait pas écrire, comme les émojis, deviennent « ? ».
+
 ### Onglets
 
 Au-dessus du contenu, une barre d'onglets permet de garder plusieurs pages ouvertes (un autre projet, un Google Doc…). Chaque onglet mémorise une adresse de GePro : changer d'onglet affiche sa page, à la position de défilement où on l'avait laissée. Les filtres des tâches et la vue Kanban/Liste sont dans l'adresse, donc propres à chaque onglet.

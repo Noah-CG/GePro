@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { projectFileChunks, projectFiles } from "@/db/schema";
 import { getProjectRole } from "@/lib/access";
 import { getCurrentUser } from "@/lib/auth";
-import { CHUNK_SIZE, chunkSpan, parseRange, type ByteRange } from "@/lib/files";
+import { CHUNK_SIZE, chunkSpan, contentDisposition, parseRange, type ByteRange } from "@/lib/files";
 import { isUuid } from "@/lib/validation";
 
 type Props = { params: Promise<{ id: string }> };
@@ -73,11 +73,4 @@ function streamBytes(fileId: string, { start, end }: ByteRange): ReadableStream<
       if (++position > last) controller.close();
     },
   });
-}
-
-/** En-tête Content-Disposition avec un nom de fichier accentué (RFC 6266), et un repli ASCII. */
-function contentDisposition(type: "inline" | "attachment", name: string): string {
-  const ascii = name.normalize("NFD").replace(/[^\x20-\x7e]/g, "").replace(/["\\]/g, "") || "document.pdf";
-  const encoded = encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-  return `${type}; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }

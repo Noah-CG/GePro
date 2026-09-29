@@ -2,7 +2,9 @@ import { User, Users } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { MyDashboard, TeamDashboard } from "@/components/dashboard/dashboard-views";
+import { JournalExport } from "@/components/dashboard/journal-export";
 import { PageHeader } from "@/components/ui/misc";
+import { atLeast } from "@/lib/access";
 import { endOfWeekISO, formatLong, todayISO } from "@/lib/dates";
 import { loadProjectPage } from "@/lib/project-page";
 import { getImportantDays, getProjectMembers, getTasks } from "@/lib/queries";
@@ -21,19 +23,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export default async function DashboardPage({ params, searchParams }: Props) {
   const { id: projectId } = await params;
-  const { project, user: me } = await loadProjectPage(projectId);
+  const { project, user: me, role } = await loadProjectPage(projectId);
   const mine = (await searchParams).pour === "moi";
   const today = todayISO();
   const weekEnd = endOfWeekISO(today);
   const base = `/projets/${projectId}/tableau-de-bord`;
 
-  const [tasks, team, importantDays] = await Promise.all([
+  // L'export des entrées des autres membres est réservé au propriétaire et aux administrateurs.
+  const canExportTeam = atLeast(role, "admin");
+
+  const [tasks, members, importantDays] = await Promise.all([
     getTasks({ projectId, ...(mine && { assigneeId: me.id }) }),
-    mine
-      ? null
-      : getProjectMembers(projectId).then((members) => members.map(({ id, name, email, color }) => ({ id, name, email, color, projectIds: [projectId] }))),
+    mine && !canExportTeam ? null : getProjectMembers(projectId),
     getImportantDays(projectId, { from: today, limit: 5 }),
   ]);
+  const team = mine || !members ? null : members.map(({ id, name, email, color }) => ({ id, name, email, color, projectIds: [projectId] }));
   const common = { me, project, today, weekEnd, tasks, importantDays };
 
   const tab = (active: boolean) =>
@@ -45,14 +49,22 @@ export default async function DashboardPage({ params, searchParams }: Props) {
         title={`Bonjour ${me.firstName} 👋`}
         subtitle={`${project.name} · ${formatLong(today)}`}
         actions={
-          <nav aria-label="Vue du tableau de bord" className="flex rounded-lg border border-border bg-surface p-1 text-sm">
-            <Link href={base} className={tab(!mine)} aria-current={!mine ? "page" : undefined}>
-              <Users size={15} /> Équipe
-            </Link>
-            <Link href={`${base}?pour=moi`} className={tab(mine)} aria-current={mine ? "page" : undefined}>
-              <User size={15} /> Mes tâches
-            </Link>
-          </nav>
+          <div className="flex flex-wrap items-center gap-2">
+            <JournalExport
+              projectId={projectId}
+              meId={me.id}
+              team={canExportTeam && members ? members.map(({ id, name, color }) => ({ id, name, color })) : null}
+              today={today}
+            />
+            <nav aria-label="Vue du tableau de bord" className="flex rounded-lg border border-border bg-surface p-1 text-sm">
+              <Link href={base} className={tab(!mine)} aria-current={!mine ? "page" : undefined}>
+                <Users size={15} /> Équipe
+              </Link>
+              <Link href={`${base}?pour=moi`} className={tab(mine)} aria-current={mine ? "page" : undefined}>
+                <User size={15} /> Mes tâches
+              </Link>
+            </nav>
+          </div>
         }
       />
 

@@ -160,6 +160,19 @@ export const memberRoleInput = z.enum(["admin", "member"]);
 
 export const isUuid = (value: string) => z.uuid().safeParse(value).success;
 
+/**
+ * Export PDF du journal de bord d'un projet (paramètres d'URL) : `membre` = un membre, "tous"
+ * pour toute l'équipe, absent pour soi ; `du` et `au` bornent la période (incluses), absentes
+ * = depuis le début / jusqu'à aujourd'hui.
+ */
+export const journalExportInput = z
+  .object({
+    membre: z.union([z.literal("tous"), z.uuid("Membre invalide")]).optional(),
+    du: isoDate.optional(),
+    au: isoDate.optional(),
+  })
+  .refine(({ du, au }) => !du || !au || du <= au, { message: "La date de fin doit suivre la date de début", path: ["au"] });
+
 /** Rattachement d'un Google Doc : lien collé ou identifiant choisi dans la recherche. */
 export const attachDocInput = z.object({
   projectId: z.uuid("Projet invalide"),
