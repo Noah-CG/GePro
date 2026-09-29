@@ -103,7 +103,12 @@ export function CalendarView({
                 </Link>
               ))}
             </nav>
-            <Link href={`/projets/${projectId}/calendrier/journees`} className={buttonClass({ size: "sm", variant: "ghost" })}>
+            <Link
+              href={`/projets/${projectId}/calendrier/journees`}
+              aria-label="Journées importantes"
+              title="Journées importantes"
+              className={buttonClass({ size: "sm", variant: "ghost" })}
+            >
               <Star size={14} /> <span className="hidden lg:inline">Journées importantes</span>
             </Link>
             {sync}

@@ -53,7 +53,8 @@ export function WorkTimer({ summary, large }: { summary: WorkSummary; large?: bo
 
   return (
     <>
-      <div className={cn("flex items-center", large ? "gap-5 p-5" : "gap-4 p-4")}>
+      {/* Sur un écran étroit, les totaux passent sous le chrono au lieu de le chevaucher. */}
+      <div className={cn("flex flex-wrap items-center gap-y-3", large ? "gap-x-5 p-5" : "gap-x-4 p-4")}>
         <button
           onClick={toggle}
           disabled={pending}
@@ -79,12 +80,12 @@ export function WorkTimer({ summary, large }: { summary: WorkSummary; large?: bo
             )}
           </p>
         </div>
-        <dl className={cn("shrink-0 space-y-0.5 text-right", large ? "text-sm" : "text-xs")}>
-          <div className="flex items-center justify-end gap-1.5">
+        <dl className={cn("flex w-full gap-4 sm:block sm:w-auto sm:shrink-0 sm:space-y-0.5 sm:text-right", large ? "text-sm" : "text-xs")}>
+          <div className="flex items-center gap-1.5 sm:justify-end">
             <dt className="text-muted">Aujourd&apos;hui</dt>
             <dd className="font-medium tabular-nums">{formatDuration(summary.todayMs + elapsed)}</dd>
           </div>
-          <div className="flex items-center justify-end gap-1.5">
+          <div className="flex items-center gap-1.5 sm:justify-end">
             <dt className="text-muted">Semaine</dt>
             <dd className="font-medium tabular-nums">{formatDuration(summary.weekMs + elapsed)}</dd>
           </div>

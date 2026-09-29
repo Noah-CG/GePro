@@ -13,6 +13,11 @@ export function initials(name: string): string {
     .join("");
 }
 
+/** Minuscules, sans accents : « Rédiger l'Édito » → « rediger l'edito ». Pour les recherches et filtres. */
+export function foldText(s: string): string {
+  return s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 export function percent(done: number, total: number): number {
   return total === 0 ? 0 : Math.round((done / total) * 100);
 }

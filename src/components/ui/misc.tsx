@@ -50,7 +50,8 @@ export function PageHeader({ title, subtitle, actions }: { title: ReactNode; sub
         <h1 className="truncate text-xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="mt-0.5 text-sm text-muted">{subtitle}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {/* Les boutons passent à la ligne sur un écran étroit plutôt que de faire défiler la page. */}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

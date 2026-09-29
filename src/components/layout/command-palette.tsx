@@ -9,6 +9,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { search, type SearchResults } from "@/actions/search";
 import { StatusIcon } from "@/components/ui/badges";
 import { Kbd } from "@/components/ui/misc";
+import { foldText } from "@/lib/utils";
 import { useApp } from "./app-provider";
 
 const EMPTY: SearchResults = { projects: [], tasks: [] };
@@ -73,8 +74,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       run: () => setTheme(resolvedTheme === "dark" ? "light" : "dark"),
     },
   ];
-  const q = query.trim().toLowerCase();
-  const visibleActions = q ? actions.filter((a) => a.label.toLowerCase().includes(q)) : actions;
+  const q = foldText(query.trim());
+  const visibleActions = q ? actions.filter((a) => foldText(a.label).includes(q)) : actions;
   const nothing = q.length >= 2 && !loading && !visibleActions.length && !results.projects.length && !results.tasks.length;
 
   const item = "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm data-[selected=true]:bg-surface-2";

@@ -1,10 +1,11 @@
 "use server";
 
-import { and, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq, or, sql, type AnyColumn } from "drizzle-orm";
 import { db } from "@/db";
 import { projectMembers, projects, tasks, type TaskStatus } from "@/db/schema";
 import { getProjectRole } from "@/lib/access";
 import { requireUser } from "@/lib/auth";
+import { foldText } from "@/lib/utils";
 import { searchQuery } from "@/lib/validation";
 
 export type SearchResults = {
@@ -19,8 +20,19 @@ export type SearchResults = {
   }[];
 };
 
+/** Lettres accentuées courantes et leur équivalent sans accent (le même que foldText, côté client). */
+const ACCENTED = "àáâãäåçèéêëìíîïñòóôõöùúûüýÿ";
+const FOLD_FROM = ACCENTED + ACCENTED.toUpperCase();
+const FOLD_TO = [...FOLD_FROM].map(foldText).join("");
+
 /**
- * Recherche simple (titre + description, insensible à la casse), dans ses propres projets
+ * `column` contient le motif, sans tenir compte de la casse ni des accents : « edito » trouve
+ * « l'Édito ». translate() plutôt que l'extension unaccent, pour marcher sur Neon comme sur PGlite.
+ */
+const matches = (column: AnyColumn, pattern: string) => sql`translate(lower(${column}), ${FOLD_FROM}, ${FOLD_TO}) like ${pattern}`;
+
+/**
+ * Recherche simple (titre + description, insensible à la casse et aux accents), dans ses propres projets
  * seulement. Les tâches sont limitées au projet sélectionné, s'il est bien l'un d'eux ; les
  * projets trouvés servent à changer de projet.
  */
@@ -30,7 +42,7 @@ export async function search(query: string, projectId: string | null): Promise<S
   const q = parsed.success ? parsed.data : "";
   if (q.length < 2) return { projects: [], tasks: [] };
   // Échappe les jokers SQL saisis par l'utilisateur.
-  const pattern = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+  const pattern = `%${foldText(q).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   // Sans projet sélectionné dont on est membre, aucune tâche.
   const taskProjectId = projectId && (await getProjectRole(me.id, projectId)) ? projectId : null;
 
@@ -39,7 +51,7 @@ export async function search(query: string, projectId: string | null): Promise<S
       .select({ id: projects.id, name: projects.name, color: projects.color, archivedAt: projects.archivedAt })
       .from(projects)
       .innerJoin(projectMembers, and(eq(projectMembers.projectId, projects.id), eq(projectMembers.userId, me.id)))
-      .where(or(ilike(projects.name, pattern), ilike(projects.description, pattern)))
+      .where(or(matches(projects.name, pattern), matches(projects.description, pattern)))
       .orderBy(desc(projects.updatedAt))
       .limit(5),
     taskProjectId
@@ -54,7 +66,7 @@ export async function search(query: string, projectId: string | null): Promise<S
           })
           .from(tasks)
           .innerJoin(projects, eq(projects.id, tasks.projectId))
-          .where(and(eq(tasks.projectId, taskProjectId), or(ilike(tasks.title, pattern), ilike(tasks.description, pattern))))
+          .where(and(eq(tasks.projectId, taskProjectId), or(matches(tasks.title, pattern), matches(tasks.description, pattern))))
           .orderBy(desc(tasks.updatedAt))
           .limit(10)
       : [],

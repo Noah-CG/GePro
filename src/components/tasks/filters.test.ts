@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FILTERS, filtersFromParams, filtersToParams, type TaskFilters } from "./filters";
+import type { TaskView } from "@/lib/queries";
+import { applyFilters, DEFAULT_FILTERS, filtersFromParams, filtersToParams, type TaskFilters } from "./filters";
 
 const MEMBER = "0d9b8e6a-1c2f-4b3a-9d8e-7f6a5b4c3d2e";
 const PROJECT = "3b08fcaa-91af-45d6-ac57-fb01af8d079c";
@@ -41,5 +42,19 @@ describe("filtres dans l'adresse", () => {
   it("aller-retour", () => {
     const filters: TaskFilters = { q: "a b & c", assignee: "none", priority: "medium", status: "done", due: "none", project: PROJECT };
     expect(filtersFromParams(filtersToParams(filters, new URLSearchParams()))).toEqual(filters);
+  });
+});
+
+describe("recherche dans les tâches", () => {
+  const tasks = [
+    { id: "1", title: "Rédiger l'Édito", description: "" },
+    { id: "2", title: "Maquettes", description: "Écran d'accueil" },
+  ] as TaskView[];
+  const found = (q: string) => applyFilters(tasks, { ...DEFAULT_FILTERS, q }, { meId: MEMBER, today: "2026-09-29" }).map((t) => t.id);
+
+  it("ignore les accents et la casse, dans le titre comme dans la description", () => {
+    expect(found("edito")).toEqual(["1"]);
+    expect(found("RÉDIGER")).toEqual(["1"]);
+    expect(found("ecran")).toEqual(["2"]);
   });
 });

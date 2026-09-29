@@ -10,7 +10,7 @@ import { SimpleSelect } from "@/components/ui/select";
 import { PRIORITIES, PRIORITY_RANK, STATUSES, STATUS_RANK } from "@/lib/constants";
 import { endOfWeekISO } from "@/lib/dates";
 import type { TaskView } from "@/lib/queries";
-import { cn } from "@/lib/utils";
+import { cn, foldText } from "@/lib/utils";
 
 export type DueFilter = "all" | "overdue" | "today" | "week" | "none";
 
@@ -66,10 +66,10 @@ export type Sort = { key: SortKey; dir: "asc" | "desc" };
 
 /** Applique les filtres (côté client : une petite équipe a au plus quelques centaines de tâches). */
 export function applyFilters(tasks: TaskView[], f: TaskFilters, ctx: { meId: string; today: string }): TaskView[] {
-  const q = f.q.trim().toLowerCase();
+  const q = foldText(f.q.trim());
   const weekEnd = endOfWeekISO(ctx.today);
   return tasks.filter((t) => {
-    if (q && !t.title.toLowerCase().includes(q) && !t.description.toLowerCase().includes(q)) return false;
+    if (q && !foldText(t.title).includes(q) && !foldText(t.description).includes(q)) return false;
     if (f.project !== "all" && t.projectId !== f.project) return false;
     if (f.priority !== "all" && t.priority !== f.priority) return false;
     if (f.status !== "all" && t.status !== f.status) return false;

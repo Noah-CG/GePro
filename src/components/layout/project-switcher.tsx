@@ -8,15 +8,12 @@ import { useState } from "react";
 import { projectSwitchHref } from "@/lib/current-project";
 import { SideTooltip } from "@/components/ui/misc";
 import type { ProjectWithStats } from "@/lib/queries";
-import { cn } from "@/lib/utils";
+import { cn, foldText } from "@/lib/utils";
 import { useApp } from "./app-provider";
 
-/** Minuscules, sans accents : « Équipe » est trouvé en tapant « equipe ». */
-const normalize = (s: string) => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-
-/** Filtre « contient » sur le nom du projet (plus prévisible que la recherche approchée par défaut). */
+/** Filtre « contient » sur le nom du projet, sans tenir compte des accents (plus prévisible que la recherche approchée par défaut). */
 const containsFilter = (_value: string, search: string, keywords?: string[]) =>
-  normalize((keywords ?? []).join(" ")).includes(normalize(search.trim())) ? 1 : 0;
+  foldText((keywords ?? []).join(" ")).includes(foldText(search.trim())) ? 1 : 0;
 
 const item = "flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm data-[selected=true]:bg-surface-2";
 const group = "[&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-xs [&_[cmdk-group-heading]]:text-muted";
