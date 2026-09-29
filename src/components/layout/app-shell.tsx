@@ -17,6 +17,7 @@ import {
 import { useApp } from "./app-provider";
 import { Sidebar, type SidebarData } from "./sidebar";
 import { TabBar, TabPanel, TabsProvider } from "./tabs";
+import { TravailEnzoButton } from "./travail-enzo-button";
 
 /** Salon Discord de chaque projet (onglet fixe de la barre d'onglets). */
 export type DiscordShellData = { configured: boolean; channels: Record<string, DiscordChannelView> };
@@ -28,7 +29,7 @@ export type SidebarPrefs = { collapsed: boolean; collapsedSections: SidebarSecti
  * Structure de page.
  * - Ordinateur : barre latérale (réductible aux icônes) + contenu.
  * - Mobile : en-tête ; la même barre latérale s'ouvre en tiroir.
- * Au-dessus du contenu, la barre d'onglets de GePro, précédée de l'onglet fixe Discord.
+ * Au-dessus du contenu, la barre d'onglets de GePro, suivie des onglets fixes « Travail, Enzo ! » et Discord.
  */
 export function AppShell({
   sidebar,
@@ -114,7 +115,14 @@ export function AppShell({
           </RadixDialog.Root>
 
           <div className="flex min-w-0 flex-1 flex-col">
-            <TabBar pinned={<DiscordTab />} />
+            <TabBar
+              pinned={
+                <>
+                  <TravailEnzoButton />
+                  <DiscordTab />
+                </>
+              }
+            />
             <TabPanel>
               <main className="px-4 pt-5 pb-10 sm:px-6 md:px-8 md:py-8">{children}</main>
             </TabPanel>

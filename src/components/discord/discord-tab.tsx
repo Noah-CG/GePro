@@ -6,8 +6,8 @@ import { DiscordIcon } from "./discord-icon";
 import { DISCORD_PANEL_ID } from "./discord-panel";
 import { useDiscord } from "./discord-provider";
 
-/** Même forme que les onglets de la barre, réduite au logo. */
-const tabShape = "relative flex h-8 w-10 shrink-0 items-center justify-center rounded-t-lg border border-b-0 transition-colors";
+/** Même forme que les onglets de la barre, réduite au logo (reprise par les autres onglets fixes). */
+export const tabShape = "relative flex h-8 w-10 shrink-0 items-center justify-center rounded-t-lg border border-b-0 transition-colors";
 
 /**
  * Onglet fixe Discord, tout à droite de la barre d'onglets, juste au-dessus du panneau qu'il ouvre :

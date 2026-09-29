@@ -286,7 +286,7 @@ function TabIcon({ url }: { url: string }) {
 
 /**
  * Barre d'onglets : ←/→ (et Début/Fin) déplacent le focus, Entrée ouvre, Suppr ferme.
- * `pinned` : onglet fixe affiché tout à droite, hors de la liste (Discord).
+ * `pinned` : onglets fixes affichés tout à droite, hors de la liste (« Travail, Enzo ! », Discord).
  */
 export function TabBar({ pinned }: { pinned?: ReactNode }) {
   const pinnedSlot = pinned && <div className="ml-auto flex shrink-0 items-end pl-1">{pinned}</div>;
